@@ -1,0 +1,8 @@
+{
+  "name": "WordPad Document Editor",
+  "description": "A Microsoft Word style rich text document processor powered by Tiptap with ribbon toolbar, page layout, and styling tools.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

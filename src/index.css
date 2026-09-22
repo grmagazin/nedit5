@@ -1,0 +1,485 @@
+@import "tailwindcss";
+
+@layer base {
+  body {
+    font-family: 'Carlito', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    background-color: #f3f2f1;
+    color: #242424;
+    overflow-x: hidden;
+  }
+}
+
+/* Custom scrollbars like Office */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: #f1f1f1;
+}
+::-webkit-scrollbar-thumb {
+  background: #c8c8c8;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #a6a6a6;
+}
+
+/* Tiptap ProseMirror styling inside document */
+.ProseMirror {
+  min-height: 100%;
+  outline: none;
+  font-family: inherit;
+  color: #1f2937;
+  font-size: 15px;
+  line-height: 1.6;
+}
+
+.ProseMirror > *:first-child {
+  margin-top: 0;
+}
+
+.ProseMirror p {
+  margin-bottom: 0.75rem;
+}
+
+/* Show paragraph formatting marks (¶) like Microsoft Word */
+.word-paragraph-marks-active .ProseMirror p:not(:empty)::after,
+.word-paragraph-marks-active .ProseMirror h1:not(:empty)::after,
+.word-paragraph-marks-active .ProseMirror h2:not(:empty)::after,
+.word-paragraph-marks-active .ProseMirror h3:not(:empty)::after {
+  content: ' \00b6';
+  color: #94a3b8;
+  font-weight: 400;
+  pointer-events: none;
+  font-size: 0.85em;
+  opacity: 0.65;
+}
+
+.ProseMirror h1 {
+  font-size: 1.85rem;
+  font-weight: 700;
+  line-height: 1.25;
+  margin-top: 1.5rem;
+  margin-bottom: 0.6rem;
+}
+
+.ProseMirror h2 {
+  font-size: 1.4rem;
+  font-weight: 600;
+  line-height: 1.3;
+  margin-top: 1.3rem;
+  margin-bottom: 0.5rem;
+}
+
+.ProseMirror h3 {
+  font-size: 1.15rem;
+  font-weight: 600;
+  line-height: 1.35;
+  margin-top: 1rem;
+  margin-bottom: 0.4rem;
+}
+
+.ProseMirror ul:not([data-type="taskList"]) {
+  list-style-type: disc;
+  padding-left: 1.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.ProseMirror ol {
+  list-style-type: decimal;
+  padding-left: 1.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.ProseMirror li {
+  margin-bottom: 0.25rem;
+}
+
+.ProseMirror blockquote {
+  border-left: 4px solid #185abd;
+  padding: 0.5rem 1rem;
+  margin: 1rem 0;
+  background-color: #f8fafc;
+  color: #475569;
+  font-style: italic;
+  border-radius: 0 4px 4px 0;
+}
+
+.ProseMirror hr {
+  border: none;
+  border-top: 1px solid #cbd5e1;
+  margin: 1.5rem 0;
+}
+
+/* Microsoft Word Page Break Visual Separator */
+.ProseMirror .word-page-break {
+  display: block;
+  margin: 2.5rem 0;
+  border: none;
+  border-top: 2px dashed #94a3b8;
+  position: relative;
+  page-break-after: always;
+  break-after: page;
+}
+
+.ProseMirror .word-page-break::after {
+  content: 'Page Break';
+  position: absolute;
+  top: -10px;
+  right: 16px;
+  background: #f1f5f9;
+  color: #64748b;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  padding: 0 8px;
+  border-radius: 4px;
+  border: 1px solid #cbd5e1;
+  user-select: none;
+}
+
+.ProseMirror .word-blank-page {
+  display: block;
+  min-height: 280px;
+  margin: 2rem 0;
+  border: 2px dashed #cbd5e1;
+  background-color: #fafbfc;
+  border-radius: 6px;
+  padding: 2rem;
+  position: relative;
+  page-break-after: always;
+  break-after: page;
+}
+
+.ProseMirror .word-blank-page::before {
+  content: '--- Blank Page Section ---';
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  color: #94a3b8;
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.ProseMirror pre {
+  background-color: #0f172a;
+  color: #f8fafc;
+  padding: 0.75rem 1rem;
+  border-radius: 6px;
+  font-family: 'Source Code Pro', monospace;
+  font-size: 13px;
+  overflow-x: auto;
+  margin: 0.75rem 0;
+}
+
+.ProseMirror code {
+  background-color: #f1f5f9;
+  color: #0f172a;
+  padding: 0.15rem 0.35rem;
+  border-radius: 4px;
+  font-family: 'Source Code Pro', monospace;
+  font-size: 0.9em;
+}
+
+.ProseMirror pre code {
+  background-color: transparent;
+  color: inherit;
+  padding: 0;
+}
+
+.ProseMirror a {
+  color: #1a73e8;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* Tiptap Table Styling */
+.ProseMirror table {
+  border-collapse: collapse;
+  table-layout: fixed;
+  width: 100%;
+  margin: 1rem 0;
+  overflow: hidden;
+  border-radius: 4px;
+}
+
+.ProseMirror td,
+.ProseMirror th {
+  min-width: 1em;
+  border: 1px solid #d1d5db;
+  padding: 8px 12px;
+  vertical-align: top;
+  box-sizing: border-box;
+  position: relative;
+}
+
+.ProseMirror th {
+  font-weight: 600;
+  text-align: left;
+  background-color: #f8fafc;
+}
+
+/* Table Style Themes */
+.ProseMirror table.theme-slate-blue th {
+  background-color: #3b5998;
+  color: #ffffff;
+  border-color: #2e477a;
+}
+.ProseMirror table.theme-slate-blue tr:nth-child(even) td {
+  background-color: #f0f4fa;
+}
+
+.ProseMirror table.theme-charcoal th {
+  background-color: #2d3748;
+  color: #ffffff;
+  border-color: #1a202c;
+}
+.ProseMirror table.theme-charcoal tr:nth-child(even) td {
+  background-color: #f7fafc;
+}
+
+.ProseMirror table.theme-olive th {
+  background-color: #658a24;
+  color: #ffffff;
+  border-color: #4f6e1b;
+}
+.ProseMirror table.theme-olive tr:nth-child(even) td {
+  background-color: #f6f8f0;
+}
+
+.ProseMirror table.theme-orange th {
+  background-color: #e67e22;
+  color: #ffffff;
+  border-color: #cf6d17;
+}
+.ProseMirror table.theme-orange tr:nth-child(even) td {
+  background-color: #fef7f0;
+}
+
+.ProseMirror table.theme-white th {
+  background-color: #ffffff;
+  color: #1e293b;
+  border: 2px solid #cbd5e1;
+}
+.ProseMirror table.theme-white td {
+  border: 1px solid #e2e8f0;
+}
+
+.ProseMirror table.theme-azure th {
+  background-color: #185abd;
+  color: #ffffff;
+  border-color: #114b9c;
+}
+.ProseMirror table.theme-azure tr:nth-child(even) td {
+  background-color: #f0f7ff;
+}
+
+.ProseMirror table.theme-green th {
+  background-color: #10b981;
+  color: #ffffff;
+  border-color: #059669;
+}
+.ProseMirror table.theme-green tr:nth-child(even) td {
+  background-color: #ecfdf5;
+}
+
+.ProseMirror table.theme-red th {
+  background-color: #ef4444;
+  color: #ffffff;
+  border-color: #dc2626;
+}
+.ProseMirror table.theme-red tr:nth-child(even) td {
+  background-color: #fef2f2;
+}
+
+.ProseMirror table.theme-amber th {
+  background-color: #f59e0b;
+  color: #ffffff;
+  border-color: #d97706;
+}
+.ProseMirror table.theme-amber tr:nth-child(even) td {
+  background-color: #fffbeb;
+}
+
+.ProseMirror table.theme-light-slate th {
+  background-color: #cbd5e1;
+  color: #1e293b;
+  border-color: #94a3b8;
+}
+.ProseMirror table.theme-light-slate tr:nth-child(even) td {
+  background-color: #f1f5f9;
+}
+
+/* Border Variations */
+.ProseMirror table.theme-purple th {
+  background-color: #7e22ce;
+  color: #ffffff;
+  border-color: #6b21a8;
+}
+.ProseMirror table.theme-purple tr:nth-child(even) td {
+  background-color: #faf5ff;
+}
+
+.ProseMirror table.theme-teal th {
+  background-color: #0f766e;
+  color: #ffffff;
+  border-color: #115e59;
+}
+.ProseMirror table.theme-teal tr:nth-child(even) td {
+  background-color: #f0fdfa;
+}
+
+.ProseMirror table.borders-none td,
+.ProseMirror table.borders-none th {
+  border: 1px dashed transparent;
+}
+.ProseMirror table.borders-minimal td,
+.ProseMirror table.borders-minimal th {
+  border-left: none;
+  border-right: none;
+}
+
+.ProseMirror .selectedCell:after {
+  z-index: 2;
+  position: absolute;
+  content: "";
+  left: 0; right: 0; top: 0; bottom: 0;
+  background: rgba(24, 90, 189, 0.15);
+  pointer-events: none;
+}
+
+.ProseMirror .column-resize-handle {
+  position: absolute;
+  right: -2px;
+  top: 0;
+  bottom: -2px;
+  width: 4px;
+  background-color: #2563eb;
+  pointer-events: none;
+}
+
+.tableWrapper {
+  overflow-x: auto;
+}
+
+/* Task List */
+.ProseMirror ul[data-type="taskList"] {
+  list-style: none;
+  padding-left: 0;
+  margin: 0.75rem 0;
+}
+
+.ProseMirror ul[data-type="taskList"] li {
+  display: flex;
+  align-items: flex-start;
+  margin-bottom: 0.4rem;
+}
+
+.ProseMirror ul[data-type="taskList"] li > label {
+  flex: 0 0 auto;
+  margin-right: 0.5rem;
+  user-select: none;
+  margin-top: 3px;
+}
+
+.ProseMirror ul[data-type="taskList"] li > label input[type="checkbox"] {
+  cursor: pointer;
+  width: 16px;
+  height: 16px;
+  accent-color: #185abd;
+}
+
+.ProseMirror ul[data-type="taskList"] li > div {
+  flex: 1 1 auto;
+}
+
+.ProseMirror ul[data-type="taskList"] li > div > p {
+  margin: 0;
+}
+
+/* Selection */
+.ProseMirror ::selection {
+  background: #bfdbfe;
+  color: #1e3a8a;
+}
+
+/* Images in editor */
+.ProseMirror img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 4px;
+  margin: 0.5rem 0;
+  display: inline-block;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  cursor: pointer;
+  transition: outline 0.15s ease, border-color 0.15s ease;
+}
+
+/* Selected Image Outline in NEdit4 style (matching screenshot) */
+.ProseMirror img.selected-image-active,
+.ProseMirror img[data-selected="true"],
+.ProseMirror .ProseMirror-selectednode img,
+.ProseMirror img.ProseMirror-selectednode {
+  outline: 2.5px solid #185abd !important;
+  outline-offset: 1px !important;
+  border-radius: 6px !important;
+}
+
+/* Image Alignments */
+.ProseMirror img[data-alignment="left"] {
+  display: block;
+  margin-left: 0;
+  margin-right: auto;
+}
+
+.ProseMirror img[data-alignment="center"] {
+  display: block;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.ProseMirror img[data-alignment="right"] {
+  display: block;
+  margin-left: auto;
+  margin-right: 0;
+}
+
+/* Image Floats / Text Wrap */
+.ProseMirror img[data-float="left"] {
+  float: left !important;
+  margin: 0.5rem 1.25rem 0.75rem 0 !important;
+  display: inline-block !important;
+}
+
+.ProseMirror img[data-float="right"] {
+  float: right !important;
+  margin: 0.5rem 0 0.75rem 1.25rem !important;
+  display: inline-block !important;
+}
+
+.ProseMirror img[data-float="none"] {
+  float: none !important;
+}
+
+/* Print Optimization */
+@media print {
+  body {
+    background: transparent !important;
+  }
+  .no-print {
+    display: none !important;
+  }
+  .print-page {
+    box-shadow: none !important;
+    border: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+}
