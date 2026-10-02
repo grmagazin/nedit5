@@ -15,29 +15,40 @@ export interface PdfPrintOptions {
   printBackgrounds?: boolean;
   highContrast?: boolean;
   documentTitle?: string;
+  // Smart Table Print Formatting Options
+  tablePrintWidth?: '100%' | '90%' | 'auto';
+  tableBetterViewGrids?: boolean;
+  // Smart Headers & Footers
+  printHeadersFooters?: boolean;
+  headerLeft?: string;
+  headerRight?: string;
+  headerCenter?: string;
+  footerLeft?: string;
+  footerRight?: string;
+  footerCenter?: string;
 }
 
 const PAGE_SIZE_CSS: Record<PageSize, string> = {
-  a4: '210mm 297mm',
-  letter: '8.5in 11in',
-  legal: '8.5in 14in',
-  a3: '297mm 420mm',
-  a5: '148mm 210mm',
+  a4: 'A4',
+  letter: 'letter',
+  legal: 'legal',
+  a3: 'A3',
+  a5: 'A5',
   executive: '7.25in 10.5in',
   tabloid: '11in 17in',
-  b5: '176mm 250mm',
-  a6: '105mm 148mm',
+  b5: 'B5',
+  a6: 'A6',
   folio: '8.5in 13in',
   statement: '5.5in 8.5in',
   ledger: '17in 11in',
 };
 
 const MARGINS_CSS: Record<PageMargin, string> = {
-  normal: '25.4mm', // 1 inch
-  narrow: '12.7mm', // 0.5 inch
-  moderate: '25.4mm 19.05mm', // 1in top/bottom, 0.75in left/right
-  wide: '25.4mm 50.8mm', // 1in top/bottom, 2in left/right
-  custom: '20mm',
+  normal: '25.4mm 25.4mm 25.4mm 25.4mm', // 1 inch Top Right Bottom Left
+  narrow: '12.7mm 12.7mm 12.7mm 12.7mm', // 0.5 inch
+  moderate: '25.4mm 19.05mm 25.4mm 19.05mm', // 1in top/bottom, 0.75in left/right
+  wide: '25.4mm 50.8mm 25.4mm 50.8mm', // 1in top/bottom, 2in left/right
+  custom: '20mm 20mm 20mm 20mm',
 };
 
 /**
@@ -51,15 +62,15 @@ export function injectPdfPrintStyles(options: PdfPrintOptions = {}): () => void 
     customMargins,
     printBackgrounds = true,
     highContrast = false,
+    tablePrintWidth = '100%',
+    tableBetterViewGrids = true,
+    printHeadersFooters = true,
   } = options;
 
-  let sizeRule = PAGE_SIZE_CSS[pageSize] || 'auto';
-  if (orientation === 'landscape' && sizeRule !== 'auto') {
-    // If landscape, flip the dimensions or specify landscape keyword
-    sizeRule = `${sizeRule} landscape`;
-  }
+  const rawSize = PAGE_SIZE_CSS[pageSize] || 'A4';
+  const sizeRule = `${rawSize} ${orientation}`;
 
-  let marginRule = MARGINS_CSS[margins] || '20mm';
+  let marginRule = MARGINS_CSS[margins] || '25.4mm 25.4mm 25.4mm 25.4mm';
   if (margins === 'custom' && customMargins) {
     marginRule = `${customMargins.top}mm ${customMargins.right}mm ${customMargins.bottom}mm ${customMargins.left}mm`;
   }
@@ -72,11 +83,13 @@ export function injectPdfPrintStyles(options: PdfPrintOptions = {}): () => void 
     document.head.appendChild(styleEl);
   }
 
+  const targetTableWidth = tablePrintWidth === '90%' ? '90%' : '100%';
+
   styleEl.innerHTML = `
     @media print {
       @page {
-        size: ${sizeRule};
-        margin: ${marginRule};
+        size: ${sizeRule} !important;
+        margin: ${marginRule} !important;
       }
 
       * {
@@ -84,14 +97,12 @@ export function injectPdfPrintStyles(options: PdfPrintOptions = {}): () => void 
         print-color-adjust: ${printBackgrounds ? 'exact' : 'initial'} !important;
       }
 
-      ${highContrast ? `
-      .ProseMirror, .ProseMirror * {
+      html, body {
+        background: #ffffff !important;
         color: #000000 !important;
-        border-color: #333333 !important;
       }
-      ` : ''}
 
-      /* Protect tables, code blocks, images from ugly midway clipping */
+      /* Protect tables, code blocks, images from midway clipping */
       table, figure, img, pre, .equation-block, .card-block {
         break-inside: avoid !important;
         page-break-inside: avoid !important;
@@ -112,6 +123,133 @@ export function injectPdfPrintStyles(options: PdfPrintOptions = {}): () => void 
         border: none !important;
         margin: 0 !important;
         padding: 0 !important;
+      }
+
+      /* Smart Table Print Formatting: Enforces 100% or 90% and removes minimal cell widths */
+      .tableWrapper {
+        width: 100% !important;
+        max-width: 100% !important;
+        overflow: visible !important;
+        margin: 16px 0 !important;
+      }
+
+      .ProseMirror table,
+      .tiptap table,
+      .tableWrapper table,
+      table {
+        width: ${targetTableWidth} !important;
+        max-width: ${targetTableWidth} !important;
+        min-width: ${targetTableWidth} !important;
+        margin-left: ${tablePrintWidth === '90%' ? 'auto' : '0'} !important;
+        margin-right: ${tablePrintWidth === '90%' ? 'auto' : '0'} !important;
+        table-layout: auto !important;
+        border-collapse: collapse !important;
+        box-sizing: border-box !important;
+        border: 1.5px solid #111827 !important;
+      }
+
+      /* Clear TipTap col pixel restrictions so cells expand across full width */
+      .ProseMirror col,
+      .tiptap col,
+      .tableWrapper col,
+      col {
+        width: auto !important;
+        min-width: 0 !important;
+      }
+
+      .ProseMirror th,
+      .ProseMirror td,
+      .tiptap th,
+      .tiptap td,
+      th,
+      td {
+        min-width: 60px !important;
+        box-sizing: border-box !important;
+        overflow-wrap: anywhere !important;
+        word-break: normal !important;
+        white-space: normal !important;
+        border: 1px solid #111827 !important;
+        padding: 8px 12px !important;
+        vertical-align: top !important;
+      }
+
+      .ProseMirror th,
+      .tiptap th,
+      th {
+        background-color: #f1f5f9 !important;
+        color: #0f172a !important;
+        font-weight: 700 !important;
+        display: table-cell !important;
+      }
+
+      .ProseMirror thead,
+      .tiptap thead {
+        display: table-header-group !important;
+      }
+
+      .ProseMirror tr,
+      .tiptap tr {
+        break-inside: avoid !important;
+        page-break-inside: avoid !important;
+      }
+
+      /* Multi-Page Paginated Print Sheets (Headers, Footers, Page Numbers on every page) */
+      #dedicated-print-container {
+        display: block !important;
+        width: 100% !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        background: #ffffff !important;
+      }
+
+      .print-page-sheet {
+        page-break-after: always !important;
+        break-after: page !important;
+        page-break-inside: avoid !important;
+        break-inside: avoid !important;
+        display: flex !important;
+        flex-direction: column !important;
+        justify-content: space-between !important;
+        box-sizing: border-box !important;
+        width: 100% !important;
+        min-height: 98vh !important;
+        height: auto !important;
+        background: #ffffff !important;
+        color: #0f172a !important;
+      }
+
+      .print-page-sheet:last-child {
+        page-break-after: auto !important;
+        break-after: auto !important;
+      }
+
+      .print-page-header {
+        display: flex !important;
+        justify-content: space-between !important;
+        align-items: center !important;
+        border-bottom: 1px solid #cbd5e1 !important;
+        padding-bottom: 6px !important;
+        margin-bottom: 16px !important;
+        font-size: 11px !important;
+        color: #64748b !important;
+        flex-shrink: 0 !important;
+      }
+
+      .print-page-body {
+        flex: 1 1 auto !important;
+        overflow: visible !important;
+      }
+
+      .print-page-footer {
+        display: flex !important;
+        justify-content: space-between !important;
+        align-items: center !important;
+        border-top: 1px solid #cbd5e1 !important;
+        padding-top: 8px !important;
+        margin-top: 16px !important;
+        font-size: 11px !important;
+        color: #64748b !important;
+        flex-shrink: 0 !important;
       }
     }
   `;

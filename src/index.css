@@ -628,11 +628,75 @@ body.table-dragging * {
   margin-bottom: 0 !important;
 }
 
+/* Dedicated Print Container: Hidden on screen */
+#dedicated-print-container {
+  display: none;
+}
+
 /* Print Optimization & Multi-Page Pagination */
 @media print {
   @page {
-    margin: 15mm 20mm;
-    size: auto;
+    size: A4 portrait;
+    margin: 25.4mm 25.4mm 25.4mm 25.4mm;
+  }
+
+  /* Multi-Page Paginated Print Sheets */
+  #dedicated-print-container {
+    display: block !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #ffffff !important;
+  }
+
+  .print-page-sheet {
+    page-break-after: always !important;
+    break-after: page !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+    display: flex !important;
+    flex-direction: column !important;
+    justify-content: space-between !important;
+    box-sizing: border-box !important;
+    width: 100% !important;
+    min-height: 98vh !important;
+    height: auto !important;
+    background: #ffffff !important;
+    color: #0f172a !important;
+  }
+
+  .print-page-sheet:last-child {
+    page-break-after: auto !important;
+    break-after: auto !important;
+  }
+
+  .print-page-header {
+    display: flex !important;
+    justify-content: space-between !important;
+    align-items: center !important;
+    border-bottom: 1px solid #cbd5e1 !important;
+    padding-bottom: 6px !important;
+    margin-bottom: 16px !important;
+    font-size: 11px !important;
+    color: #64748b !important;
+    flex-shrink: 0 !important;
+  }
+
+  .print-page-body {
+    flex: 1 1 auto !important;
+    overflow: visible !important;
+  }
+
+  .print-page-footer {
+    display: flex !important;
+    justify-content: space-between !important;
+    align-items: center !important;
+    border-top: 1px solid #cbd5e1 !important;
+    padding-top: 8px !important;
+    margin-top: 16px !important;
+    font-size: 11px !important;
+    color: #64748b !important;
+    flex-shrink: 0 !important;
   }
 
   /* 1. Unclamp all parent containers to prevent 1-page clipping */
@@ -686,8 +750,7 @@ body.table-dragging * {
   .print-page {
     box-shadow: none !important;
     border: none !important;
-    margin: 0 !important;
-    padding: 0 !important;
+    margin: 0 auto !important;
     width: 100% !important;
     max-width: 100% !important;
     min-height: auto !important;
@@ -696,6 +759,7 @@ body.table-dragging * {
     background: #ffffff !important;
     color: #000000 !important;
     border-radius: 0 !important;
+    box-sizing: border-box !important;
   }
 
   /* 5. Clear dark theme backgrounds and ensure exact print color fidelity */
@@ -720,18 +784,71 @@ body.table-dragging * {
     box-shadow: none !important;
   }
 
-  .ProseMirror table {
-    border-color: #cbd5e1 !important;
+  /* Fit every table to printable width and clear minimal column widths */
+  .tableWrapper {
+    width: 100% !important;
+    max-width: 100% !important;
+    overflow: visible !important;
+    margin: 16px 0 !important;
+  }
+
+  .ProseMirror table,
+  .tiptap table,
+  .tableWrapper table,
+  table {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 100% !important;
+    table-layout: auto !important;
+    border-collapse: collapse !important;
+    box-sizing: border-box !important;
+    border: 1.5px solid #111827 !important;
+  }
+
+  /* Allow columns to stretch across 100% without minimal pixel bottlenecks */
+  .ProseMirror col,
+  .tiptap col,
+  .tableWrapper col,
+  col {
+    width: auto !important;
+    min-width: 0 !important;
   }
 
   .ProseMirror th,
-  .ProseMirror td {
-    border-color: #cbd5e1 !important;
+  .ProseMirror td,
+  .tiptap th,
+  .tiptap td,
+  th,
+  td {
+    min-width: 60px !important;
+    box-sizing: border-box !important;
+    overflow-wrap: anywhere !important;
+    word-break: normal !important;
+    white-space: normal !important;
+    border: 1px solid #111827 !important;
+    padding: 8px 12px !important;
+    vertical-align: top !important;
   }
 
-  .ProseMirror th {
+  /* Repeat table headings on subsequent pages where supported */
+  .ProseMirror thead,
+  .tiptap thead {
+    display: table-header-group !important;
+  }
+
+  /* Avoid splitting individual rows where possible */
+  .ProseMirror tr,
+  .tiptap tr {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
+  .ProseMirror th,
+  .tiptap th,
+  th {
     background-color: #f1f5f9 !important;
     color: #0f172a !important;
+    font-weight: 700 !important;
   }
 
   /* 6. Page Break Handling: Clean page breaks without UI dashes or badges */

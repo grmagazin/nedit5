@@ -1,12 +1,15 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Editor } from '@tiptap/react';
 import { DOMSerializer } from '@tiptap/pm/model';
+import { findTable } from '@tiptap/pm/tables';
+import { TextSelection } from '@tiptap/pm/state';
 import {
   CopiedWordFormat,
   copyFormatFromEditor,
   applyFormatToEditor,
   describeFormat,
 } from '../utils/formatPainter';
+import { cleanAllSpacing } from '../utils/spacingUtils';
 import {
   RibbonTab,
   PageMargin,
@@ -1464,6 +1467,110 @@ export const RibbonToolbar: React.FC<RibbonToolbarProps> = ({
     });
   };
 
+  // Table Full Width toggle
+  const handleToggleTableFullWidth = () => {
+    if (!editor) return;
+    const { state, view } = editor;
+    const table = findTable(state.selection.$from);
+    if (!table) return;
+
+    const currentStyle = (table.node.attrs.style || '') as string;
+    const isCurrentlyFull =
+      currentStyle.includes('width: 100%') ||
+      currentStyle.includes('width:100%') ||
+      table.node.attrs.fullWidth === true;
+
+    let newStyle = currentStyle
+      .replace(/width:\s*[^;]+;?/gi, '')
+      .replace(/table-layout:\s*[^;]+;?/gi, '')
+      .trim();
+    const nextFullWidth = !isCurrentlyFull;
+
+    if (nextFullWidth) {
+      newStyle = `${newStyle} width: 100%; table-layout: fixed;`.trim();
+    } else {
+      newStyle = `${newStyle} width: auto; table-layout: auto;`.trim();
+    }
+
+    const tr = state.tr;
+    tr.setNodeMarkup(table.pos, undefined, {
+      ...table.node.attrs,
+      style: newStyle,
+      fullWidth: nextFullWidth,
+    });
+
+    view.dispatch(tr);
+
+    // Sync active DOM table element
+    const domTables = view.dom.querySelectorAll('table');
+    domTables.forEach((t: HTMLTableElement) => {
+      if (t.contains(document.activeElement) || window.getSelection()?.containsNode(t, true)) {
+        if (nextFullWidth) {
+          t.style.width = '100%';
+          t.style.tableLayout = 'fixed';
+        } else {
+          t.style.width = 'auto';
+          t.style.tableLayout = 'auto';
+        }
+      }
+    });
+  };
+
+  // Insert Text Paragraph Above Active Table
+  const handleInsertParagraphAboveTable = () => {
+    if (!editor) return;
+    const { state, view } = editor;
+    const table = findTable(state.selection.$from);
+    if (!table) return;
+
+    const tablePos = table.pos;
+    const tr = state.tr;
+    const pNode = state.schema.nodes.paragraph.create();
+    tr.insert(tablePos, pNode);
+
+    // Position cursor inside newly inserted paragraph
+    const targetPos = Math.max(1, tablePos + 1);
+    const resolved = tr.doc.resolve(targetPos);
+    tr.setSelection(TextSelection.near(resolved));
+
+    view.dispatch(tr);
+    editor.commands.focus();
+  };
+
+  // Insert Text Paragraph Below Active Table
+  const handleInsertParagraphBelowTable = () => {
+    if (!editor) return;
+    const { state, view } = editor;
+    const table = findTable(state.selection.$from);
+    if (!table) return;
+
+    const insertPos = table.pos + table.node.nodeSize;
+    const tr = state.tr;
+    const pNode = state.schema.nodes.paragraph.create();
+    tr.insert(insertPos, pNode);
+
+    // Position cursor inside newly inserted paragraph
+    const targetPos = Math.min(tr.doc.content.size - 1, insertPos + 1);
+    const resolved = tr.doc.resolve(targetPos);
+    tr.setSelection(TextSelection.near(resolved));
+
+    view.dispatch(tr);
+    editor.commands.focus();
+  };
+
+  const isTableActive = editor?.isActive('table') ?? false;
+  let isTableFullWidth = false;
+  if (editor && isTableActive) {
+    const table = findTable(editor.state.selection.$from);
+    if (table) {
+      const s = (table.node.attrs.style || '') as string;
+      isTableFullWidth =
+        s.includes('width: 100%') ||
+        s.includes('width:100%') ||
+        table.node.attrs.fullWidth === true;
+    }
+  }
+
   const currentFontSize = editor?.getAttributes('textStyle')?.fontSize?.replace('px', '') || '11';
   const currentFontFamily = editor?.getAttributes('textStyle')?.fontFamily || 'Calibri, sans-serif';
 
@@ -2028,28 +2135,65 @@ export const RibbonToolbar: React.FC<RibbonToolbarProps> = ({
                             : 'border-transparent hover:bg-white hover:border-[#185abd] text-neutral-700'
                         }`}
                       >
-                        <span className="text-[11px] font-semibold">1.15</span>
+                        <span className="text-[11px] font-semibold">
+                          {(() => {
+                            const val = editor?.getAttributes('paragraph')?.lineHeight || editor?.getAttributes('heading')?.lineHeight;
+                            if (val === '0.5') return '0,5';
+                            return val || '1.15';
+                          })()}
+                        </span>
                         <ChevronDown size={9} />
                       </button>
 
                       {showLineHeightPicker && (
-                        <div className="absolute top-full left-0 mt-1 bg-white border border-neutral-300 rounded-md shadow-2xl py-1 z-50 w-28 text-xs">
-                          <div className="px-3 py-1 text-[10px] font-semibold text-neutral-400 uppercase tracking-wider border-b border-neutral-100 mb-1">
+                        <div className="absolute top-full left-0 mt-1 bg-white border border-neutral-300 rounded-md shadow-2xl py-1 z-50 w-36 text-xs select-none">
+                          <div className="px-3 py-1 text-[10px] font-semibold text-neutral-400 uppercase tracking-wider border-b border-neutral-100 mb-0.5">
                             Line Spacing
                           </div>
-                          {['1.0', '1.15', '1.5', '2.0', '2.5'].map((lh) => (
-                            <button
-                              key={lh}
-                              onClick={() => {
-                                editor?.chain().focus().setLineHeight(lh).run();
-                                setShowLineHeightPicker(false);
-                              }}
-                              className="w-full text-left px-3 py-1.5 hover:bg-blue-50 text-neutral-700 flex items-center justify-between cursor-pointer"
-                            >
-                              <span>{lh}</span>
-                              <span className="text-[10px] text-neutral-400">lines</span>
-                            </button>
-                          ))}
+                          {[
+                            { val: '0', label: '0' },
+                            { val: '0.5', label: '0,5' },
+                            { val: '1.0', label: '1.0' },
+                            { val: '1.15', label: '1.15' },
+                            { val: '1.5', label: '1.5' },
+                            { val: '2.0', label: '2.0' },
+                            { val: '2.5', label: '2.5' },
+                            { val: '3', label: '3' },
+                          ].map(({ val, label }) => {
+                            const isCurrent =
+                              editor?.getAttributes('paragraph')?.lineHeight === val ||
+                              editor?.getAttributes('heading')?.lineHeight === val;
+                            return (
+                              <button
+                                key={val}
+                                onClick={() => {
+                                  editor?.chain().focus().setLineHeight(val).run();
+                                  setShowLineHeightPicker(false);
+                                }}
+                                className={`w-full text-left px-3 py-1.5 hover:bg-blue-50 text-neutral-700 flex items-center justify-between cursor-pointer transition-colors ${
+                                  isCurrent ? 'bg-blue-50/80 font-bold text-[#185abd]' : ''
+                                }`}
+                              >
+                                <span>{label}</span>
+                                <span className="text-[10px] text-neutral-400">lines</span>
+                              </button>
+                            );
+                          })}
+
+                          <div className="border-t border-neutral-100 my-1" />
+
+                          {/* Clean (lines) - Cleans all spacing options to 'no spacing' in selected area, including table spacing */}
+                          <button
+                            onClick={() => {
+                              if (editor) cleanAllSpacing(editor);
+                              setShowLineHeightPicker(false);
+                            }}
+                            title="Clean all spacing (line, paragraph, and table spacing) to 'no spacing' in selected area"
+                            className="w-full text-left px-3 py-1.5 hover:bg-amber-50 text-neutral-800 flex items-center justify-between cursor-pointer transition-colors group"
+                          >
+                            <span className="font-semibold text-amber-700">Clean</span>
+                            <span className="text-[10px] text-neutral-400">lines</span>
+                          </button>
                         </div>
                       )}
                     </div>
@@ -2915,25 +3059,70 @@ export const RibbonToolbar: React.FC<RibbonToolbarProps> = ({
                 <span className="text-[10px] text-center text-neutral-400 font-medium tracking-wide">Columns</span>
               </div>
 
-              {/* Group 5: Table (Borders, Delete Table) */}
+              {/* Group 5: Table (Full width on/off, Paragraph Above, Paragraph Below, Delete Table) */}
               <div className="flex flex-col justify-between px-3">
-                <div className="flex items-start space-x-1.5">
-                  {/* Borders */}
+                <div className="flex items-start space-x-2">
+                  {/* Button 1: Table Full Width On/Off Toggle */}
                   <button
-                    onClick={() => onUpdateSettings({ showBorderEditPane: !settings.showBorderEditPane })}
-                    title="Borders — Open/Close Border Edit Right Toolbar"
+                    onClick={handleToggleTableFullWidth}
+                    disabled={!isTableActive}
+                    title={
+                      isTableFullWidth
+                        ? 'Table Full Width (Active: 100%) — Click to set to Auto / Normal width'
+                        : 'Set Active Table to Full Width (100%)'
+                    }
                     className={`flex flex-col items-center justify-start px-2 py-1 rounded cursor-pointer transition-all border ${
-                      settings.showBorderEditPane
-                        ? 'bg-[#cde4f7] border-[#185abd] text-[#185abd] font-semibold'
-                        : 'border-transparent hover:bg-white hover:shadow-xs text-neutral-700'
+                      isTableFullWidth
+                        ? 'bg-[#cde4f7] border-[#185abd] text-[#185abd]'
+                        : 'border-transparent hover:bg-white hover:shadow-xs text-neutral-700 disabled:opacity-40 disabled:cursor-not-allowed'
                     }`}
                   >
-                    <SquareDashed
-                      size={18}
-                      className={`mb-0.5 ${settings.showBorderEditPane ? 'text-[#185abd]' : 'text-neutral-700'}`}
-                    />
-                    <span className="text-[11px] font-medium leading-tight">Borders</span>
+                    <div className="flex items-center space-x-1.5 mb-0.5 mt-0.5">
+                      <Scan size={16} className={isTableFullWidth ? 'text-[#185abd]' : 'text-neutral-700'} />
+                      <div
+                        className={`w-6 h-3 rounded-full transition-colors relative flex items-center p-0.5 ${
+                          isTableFullWidth ? 'bg-[#185abd]' : 'bg-neutral-400'
+                        }`}
+                      >
+                        <div
+                          className={`w-2 h-2 rounded-full bg-white shadow-xs transform transition-transform ${
+                            isTableFullWidth ? 'translate-x-3' : 'translate-x-0'
+                          }`}
+                        />
+                      </div>
+                    </div>
+                    <span className="text-[11px] font-medium leading-tight select-none">
+                      Full width
+                    </span>
                   </button>
+
+                  {/* Vertical Divider */}
+                  <div className="h-8 w-px bg-[#dad9d8] self-center my-auto" />
+
+                  {/* Button 2: Add Paragraph Above Active Table */}
+                  <button
+                    onClick={handleInsertParagraphAboveTable}
+                    disabled={!isTableActive}
+                    title="Insert Text Paragraph Above Active Table"
+                    className="flex flex-col items-center justify-start px-2 py-1 rounded border border-transparent hover:bg-white hover:shadow-xs text-neutral-700 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                  >
+                    <Pilcrow size={18} className="text-neutral-700 mb-0.5" />
+                    <span className="text-[11px] font-medium leading-tight">above</span>
+                  </button>
+
+                  {/* Button 3: Add Paragraph Below Active Table */}
+                  <button
+                    onClick={handleInsertParagraphBelowTable}
+                    disabled={!isTableActive}
+                    title="Insert Text Paragraph Below Active Table"
+                    className="flex flex-col items-center justify-start px-2 py-1 rounded border border-transparent hover:bg-white hover:shadow-xs text-neutral-700 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                  >
+                    <Pilcrow size={18} className="text-neutral-700 mb-0.5" />
+                    <span className="text-[11px] font-medium leading-tight">below</span>
+                  </button>
+
+                  {/* Vertical Divider */}
+                  <div className="h-8 w-px bg-[#dad9d8] self-center my-auto" />
 
                   {/* Delete Table */}
                   <button
@@ -4385,8 +4574,8 @@ export const RibbonToolbar: React.FC<RibbonToolbarProps> = ({
               {/* DIVIDER */}
               <div className="h-12 w-px bg-[#dad9d8] mr-3 shrink-0 self-start mt-0.5" />
 
-              {/* GROUP 3: Clear Formatting */}
-              <div className="flex items-start pr-3">
+              {/* GROUP 3: Clear Formatting & No Spacing */}
+              <div className="flex items-start space-x-1 pr-3">
                 <button
                   onClick={() => editor?.chain().focus().unsetAllMarks().clearNodes().run()}
                   title="Clear All Formatting"
@@ -4395,6 +4584,22 @@ export const RibbonToolbar: React.FC<RibbonToolbarProps> = ({
                   <Eraser size={22} className="text-[#e11d48] mb-1" />
                   <span className="text-[11px] font-medium leading-tight text-center text-neutral-800">
                     Clear<br />Formatting
+                  </span>
+                </button>
+
+                {/* No Spacing */}
+                <button
+                  onClick={() => {
+                    if (editor) {
+                      cleanAllSpacing(editor);
+                    }
+                  }}
+                  title="No Spacing — Clean all spacing in selected area (line height 1.0, 0px paragraph margins, and table spacing)"
+                  className="flex flex-col items-center justify-start px-2.5 py-1 rounded-lg border border-transparent hover:bg-amber-50 hover:border-amber-300 text-neutral-700 cursor-pointer min-w-[62px] transition-all group"
+                >
+                  <Sparkles size={22} className="text-amber-600 mb-1 group-hover:scale-110 transition-transform" />
+                  <span className="text-[11px] font-medium leading-tight text-center text-neutral-800 group-hover:text-amber-800">
+                    No<br />Spacing
                   </span>
                 </button>
               </div>
@@ -4750,11 +4955,28 @@ export const RibbonToolbar: React.FC<RibbonToolbarProps> = ({
                     <Tag size={20} className="text-[#334155]" />
                   </button>
 
-                  {/* 13. Table to DIV converter */}
+                  {/* 13. No Spacing */}
+                  <button
+                    onClick={() => {
+                      if (editor) {
+                        cleanAllSpacing(editor);
+                      }
+                    }}
+                    title="no spacing — Clean all spacing in selected area (line height 1.0, 0px paragraph margins, and table spacing)"
+                    aria-label="no spacing"
+                    className="px-2 py-1.5 rounded-lg border border-transparent hover:bg-amber-50 hover:border-amber-300 text-neutral-700 hover:text-neutral-900 cursor-pointer transition-all flex items-center justify-center space-x-1 min-h-[34px] group"
+                  >
+                    <Sparkles size={14} className="text-amber-600 group-hover:scale-110 transition-transform shrink-0" />
+                    <span className="font-semibold text-[11px] text-neutral-800 group-hover:text-amber-800 leading-none whitespace-nowrap">
+                      no spacing
+                    </span>
+                  </button>
+
+                  {/* 14. Table to DIV converter */}
                   <button
                     onClick={handleTableToDiv}
-                    title="Table to DIV convetrer"
-                    aria-label="Table to DIV convetrer"
+                    title="Table to DIV converter"
+                    aria-label="Table to DIV converter"
                     className="p-2 rounded-lg border border-transparent hover:bg-white hover:border-neutral-300 text-neutral-700 hover:text-neutral-900 cursor-pointer transition-all flex items-center justify-center min-w-[34px] min-h-[34px]"
                   >
                     <span className="font-mono font-bold text-[11px] text-[#334155] leading-none tracking-tight select-none">

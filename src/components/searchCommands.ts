@@ -1,6 +1,7 @@
 import { Editor } from '@tiptap/react';
 import { DocumentSettings, PageMargin, PageOrientation, PageSize, ThemeMode } from '../types';
 import { BackstageTab } from './FileBackstage';
+import { cleanAllSpacing } from '../utils/spacingUtils';
 
 export interface CommandContext {
   editor: Editor | null;
@@ -291,6 +292,30 @@ export const SEARCH_COMMANDS: SearchCommand[] = [
     },
   },
   {
+    id: 'spacing-0',
+    label: 'Line Spacing: 0 (Zero)',
+    description: 'Set zero line spacing for collapsed vertical line height',
+    category: 'Paragraph',
+    keywords: ['line spacing', 'spacing', 'zero space', '0', '0.0'],
+    iconType: 'arrowUpDown',
+    action: ({ editor, notify }) => {
+      editor?.chain().focus().setLineHeight('0').run();
+      notify?.('Line spacing set to 0');
+    },
+  },
+  {
+    id: 'spacing-05',
+    label: 'Line Spacing: 0.5 (Half)',
+    description: 'Set half line spacing for ultra-compact text',
+    category: 'Paragraph',
+    keywords: ['line spacing', 'spacing', 'half space', '0.5', '0,5'],
+    iconType: 'arrowUpDown',
+    action: ({ editor, notify }) => {
+      editor?.chain().focus().setLineHeight('0.5').run();
+      notify?.('Line spacing set to 0.5');
+    },
+  },
+  {
     id: 'spacing-10',
     label: 'Line Spacing: 1.0 (Single)',
     description: 'Set single line spacing for compact text',
@@ -336,6 +361,42 @@ export const SEARCH_COMMANDS: SearchCommand[] = [
     action: ({ editor, notify }) => {
       editor?.chain().focus().setLineHeight('2.0').run();
       notify?.('Line spacing set to 2.0');
+    },
+  },
+  {
+    id: 'spacing-25',
+    label: 'Line Spacing: 2.5',
+    description: 'Set two-and-a-half line spacing',
+    category: 'Paragraph',
+    keywords: ['line spacing', 'spacing', '2.5 space', '2.5'],
+    iconType: 'arrowUpDown',
+    action: ({ editor, notify }) => {
+      editor?.chain().focus().setLineHeight('2.5').run();
+      notify?.('Line spacing set to 2.5');
+    },
+  },
+  {
+    id: 'spacing-30',
+    label: 'Line Spacing: 3.0 (Triple)',
+    description: 'Set triple line spacing for wide draft review',
+    category: 'Paragraph',
+    keywords: ['line spacing', 'spacing', 'triple space', '3.0', '3'],
+    iconType: 'arrowUpDown',
+    action: ({ editor, notify }) => {
+      editor?.chain().focus().setLineHeight('3').run();
+      notify?.('Line spacing set to 3');
+    },
+  },
+  {
+    id: 'spacing-clean',
+    label: 'Clean Spacing (No Spacing)',
+    description: 'Clean all spacing (line, paragraph, and table spacing) to no spacing in selected area',
+    category: 'Paragraph',
+    keywords: ['clean spacing', 'no spacing', 'remove spacing', 'clean tables spacing', 'clean', 'lines'],
+    iconType: 'sparkles',
+    action: ({ editor, notify }) => {
+      if (editor) cleanAllSpacing(editor);
+      notify?.('Cleaned all spacing in selected area to No Spacing');
     },
   },
   {

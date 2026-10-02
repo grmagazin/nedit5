@@ -978,6 +978,7 @@ export default function App() {
           <Suspense fallback={<SidebarLoadingFallback />}>
             <QuickBlocksSidebar
               editor={editor}
+              themeMode={effectiveThemeMode}
               onClose={() => handleUpdateSettings({ showQuickBlocksPane: false })}
             />
           </Suspense>

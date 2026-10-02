@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Editor } from '@tiptap/react';
+import { cleanAllSpacing } from '../utils/spacingUtils';
 import {
   Undo2,
   Redo2,
@@ -531,18 +532,40 @@ export const EditorContextMenu: React.FC<EditorContextMenuProps> = ({
 
             {activeSubmenu === 'spacing' && (
               <div className="absolute left-[95%] top-0 w-36 bg-white rounded-lg shadow-xl border border-neutral-200 p-1.5 z-50 flex flex-col space-y-0.5 animate-in fade-in duration-75">
-                {['1.0', '1.15', '1.5', '2.0', '2.5', '3.0'].map((val) => (
+                {[
+                  { val: '0', label: '0' },
+                  { val: '0.5', label: '0,5' },
+                  { val: '1.0', label: '1.0' },
+                  { val: '1.15', label: '1.15 (Default)' },
+                  { val: '1.5', label: '1.5' },
+                  { val: '2.0', label: '2.0' },
+                  { val: '2.5', label: '2.5' },
+                  { val: '3', label: '3' },
+                ].map(({ val, label }) => (
                   <button
                     key={val}
                     onClick={() => {
                       editor.chain().focus().setLineHeight(val).run();
                       onClose();
                     }}
-                    className="px-2 py-1 rounded text-left hover:bg-neutral-100 text-xs text-neutral-700"
+                    className="px-2 py-1 rounded text-left hover:bg-neutral-100 text-xs text-neutral-700 flex items-center justify-between"
                   >
-                    {val} {val === '1.15' ? '(Default)' : ''}
+                    <span>{label}</span>
+                    <span className="text-[10px] text-neutral-400">lines</span>
                   </button>
                 ))}
+                <div className="border-t border-neutral-100 my-0.5" />
+                <button
+                  onClick={() => {
+                    cleanAllSpacing(editor);
+                    onClose();
+                  }}
+                  className="px-2 py-1 rounded text-left hover:bg-amber-50 text-xs text-amber-700 font-semibold flex items-center justify-between"
+                  title="Clean all spacing (line, paragraph, and table spacing) to 'no spacing'"
+                >
+                  <span>Clean</span>
+                  <span className="text-[10px] text-neutral-400">lines</span>
+                </button>
               </div>
             )}
           </div>

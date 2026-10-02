@@ -93,6 +93,36 @@ export const CustomTableCell = TableCell.extend({
   addAttributes() {
     return {
       ...this.parent?.(),
+      borderTop: {
+        default: null,
+        parseHTML: (element: HTMLElement) => element.style.borderTop || null,
+        renderHTML: (attributes: Record<string, any>) =>
+          attributes.borderTop ? { style: `border-top: ${attributes.borderTop}` } : {},
+      },
+      borderRight: {
+        default: null,
+        parseHTML: (element: HTMLElement) => element.style.borderRight || null,
+        renderHTML: (attributes: Record<string, any>) =>
+          attributes.borderRight ? { style: `border-right: ${attributes.borderRight}` } : {},
+      },
+      borderBottom: {
+        default: null,
+        parseHTML: (element: HTMLElement) => element.style.borderBottom || null,
+        renderHTML: (attributes: Record<string, any>) =>
+          attributes.borderBottom ? { style: `border-bottom: ${attributes.borderBottom}` } : {},
+      },
+      borderLeft: {
+        default: null,
+        parseHTML: (element: HTMLElement) => element.style.borderLeft || null,
+        renderHTML: (attributes: Record<string, any>) =>
+          attributes.borderLeft ? { style: `border-left: ${attributes.borderLeft}` } : {},
+      },
+      backgroundColor: {
+        default: null,
+        parseHTML: (element: HTMLElement) => element.style.backgroundColor || null,
+        renderHTML: (attributes: Record<string, any>) =>
+          attributes.backgroundColor ? { style: `background-color: ${attributes.backgroundColor}` } : {},
+      },
       style: {
         default: null,
         parseHTML: (element: HTMLElement) => element.getAttribute('style') || null,
@@ -109,6 +139,36 @@ export const CustomTableHeader = TableHeader.extend({
   addAttributes() {
     return {
       ...this.parent?.(),
+      borderTop: {
+        default: null,
+        parseHTML: (element: HTMLElement) => element.style.borderTop || null,
+        renderHTML: (attributes: Record<string, any>) =>
+          attributes.borderTop ? { style: `border-top: ${attributes.borderTop}` } : {},
+      },
+      borderRight: {
+        default: null,
+        parseHTML: (element: HTMLElement) => element.style.borderRight || null,
+        renderHTML: (attributes: Record<string, any>) =>
+          attributes.borderRight ? { style: `border-right: ${attributes.borderRight}` } : {},
+      },
+      borderBottom: {
+        default: null,
+        parseHTML: (element: HTMLElement) => element.style.borderBottom || null,
+        renderHTML: (attributes: Record<string, any>) =>
+          attributes.borderBottom ? { style: `border-bottom: ${attributes.borderBottom}` } : {},
+      },
+      borderLeft: {
+        default: null,
+        parseHTML: (element: HTMLElement) => element.style.borderLeft || null,
+        renderHTML: (attributes: Record<string, any>) =>
+          attributes.borderLeft ? { style: `border-left: ${attributes.borderLeft}` } : {},
+      },
+      backgroundColor: {
+        default: null,
+        parseHTML: (element: HTMLElement) => element.style.backgroundColor || null,
+        renderHTML: (attributes: Record<string, any>) =>
+          attributes.backgroundColor ? { style: `background-color: ${attributes.backgroundColor}` } : {},
+      },
       style: {
         default: null,
         parseHTML: (element: HTMLElement) => element.getAttribute('style') || null,
@@ -284,7 +344,7 @@ export const LineHeight = Extension.create({
             default: null,
             parseHTML: (element: HTMLElement) => element.style.lineHeight || null,
             renderHTML: (attributes: Record<string, any>) => {
-              if (!attributes.lineHeight) {
+              if (attributes.lineHeight === null || attributes.lineHeight === undefined || attributes.lineHeight === '') {
                 return {};
               }
               return {
