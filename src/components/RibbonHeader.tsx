@@ -5,24 +5,36 @@ import {
   Undo, 
   Redo, 
   Printer, 
-  Search, 
   Share2, 
   Check, 
   Sun, 
   Moon,
-  ChevronDown
+  ChevronDown,
+  LayoutGrid,
+  Sparkles,
+  Maximize2,
+  MessageSquare
 } from 'lucide-react';
-import { DocumentSettings } from '../types';
+import { DocumentSettings, ThemeMode } from '../types';
+import { BackstageTab } from './FileBackstage';
+import { SearchCommandBar } from './SearchCommandBar';
 
 interface RibbonHeaderProps {
   editor: Editor | null;
   settings: DocumentSettings;
   onUpdateSettings: (settings: Partial<DocumentSettings>) => void;
-  onOpenBackstage: () => void;
+  onOpenBackstage: (tab?: BackstageTab) => void;
   onOpenFindReplace: () => void;
+  onOpenStats?: () => void;
+  onSelectTab?: (tab: any) => void;
   onSave: () => void;
   onPrint: () => void;
   isSaved: boolean;
+  autoSaveEnabled: boolean;
+  onToggleAutoSave: (enabled: boolean) => void;
+  onOpenThemes?: () => void;
+  commentsCount?: number;
+  onToggleComments?: () => void;
 }
 
 export const RibbonHeader: React.FC<RibbonHeaderProps> = ({
@@ -31,69 +43,47 @@ export const RibbonHeader: React.FC<RibbonHeaderProps> = ({
   onUpdateSettings,
   onOpenBackstage,
   onOpenFindReplace,
+  onOpenStats,
+  onSelectTab,
   onSave,
   onPrint,
   isSaved,
+  autoSaveEnabled,
+  onToggleAutoSave,
+  onOpenThemes,
+  commentsCount = 1,
+  onToggleComments,
 }) => {
   const [isEditingTitle, setIsEditingTitle] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [showSearchSuggestions, setShowSearchSuggestions] = useState(false);
+  const [manualSaveFeedback, setManualSaveFeedback] = useState<string | null>(null);
 
-  const handleCommandSearch = (command: string) => {
-    if (!editor) return;
-    switch (command) {
-      case 'bold':
-        editor.chain().focus().toggleBold().run();
-        break;
-      case 'italic':
-        editor.chain().focus().toggleItalic().run();
-        break;
-      case 'table':
-        editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run();
-        break;
-      case 'find':
-        onOpenFindReplace();
-        break;
-      case 'print':
-        onPrint();
-        break;
-      case 'save':
-        onSave();
-        break;
-      case 'h1':
-        editor.chain().focus().toggleHeading({ level: 1 }).run();
-        break;
-      case 'list':
-        editor.chain().focus().toggleBulletList().run();
-        break;
-    }
-    setSearchQuery('');
-    setShowSearchSuggestions(false);
-  };
+  const effectiveThemeMode = settings.themeMode || (settings.isDarkMode ? 'fullDark' : 'light');
+  const isDarkHeader = effectiveThemeMode === 'fullDark' || effectiveThemeMode === 'canvasDark';
+  const isSepiaHeader = effectiveThemeMode === 'sepia';
+
+  const headerBgClass = isDarkHeader
+    ? 'bg-[#1f1f1f] text-neutral-100 border-b border-[#2d2d2d]'
+    : isSepiaHeader
+    ? 'bg-[#3f2e22] text-[#fbf8ee] border-b border-[#302218]'
+    : 'bg-[#185abd] text-white shadow-sm';
 
   return (
-    <header id="word-ribbon-header" className="bg-[#185abd] text-white flex items-center justify-between px-3 py-1.5 select-none no-print shadow-sm z-30">
-      {/* Left side: Brand, Quick Access, Document Title */}
+    <header id="word-ribbon-header" className={`${headerBgClass} flex items-center justify-between px-3 py-1.5 select-none no-print z-30`}>
+      {/* Left side: Brand Logo, Quick Access, Document Title */}
       <div className="flex items-center space-x-2.5">
-        {/* Word App Icon */}
-        <button
-          onClick={onOpenBackstage}
-          className="flex items-center justify-center w-7 h-7 bg-white text-[#185abd] rounded font-bold text-sm shadow-sm hover:bg-neutral-100 transition-colors cursor-pointer"
-          title="File / Backstage Menu"
-          aria-label="File Menu"
+        {/* Official Nedit v5.1 Logo (Links to GR Magazin, Opens in New Tab) */}
+        <a
+          href="https://grmagazin.blogspot.com/"
+          target="_blank"
+          rel="noopener noreferrer"
+          title="Nedit v5.1 - GR Magazin (Opens in new tab)"
+          className="inline-flex items-center justify-center px-3.5 py-0.5 rounded-full bg-[#0062ff] hover:bg-[#0054db] border-2 border-blue-300 text-white font-black text-xs sm:text-[13px] tracking-tight shadow-xs hover:shadow-sm active:scale-95 transition-all cursor-pointer select-none no-underline"
         >
-          W
-        </button>
+          <span>Nedit v5.1</span>
+        </a>
 
-        {/* Quick Access Icons */}
+        {/* Quick Access Icons (Undo, Redo, Print) */}
         <div className="flex items-center space-x-1 pl-1 border-r border-blue-400/40 pr-2">
-          <button
-            onClick={onSave}
-            title="Save (Ctrl+S)"
-            className="p-1 rounded hover:bg-white/20 transition-colors text-white/90 hover:text-white cursor-pointer"
-          >
-            <Save size={15} />
-          </button>
           <button
             onClick={() => editor?.chain().focus().undo().run()}
             disabled={!editor?.can().undo()}
@@ -143,85 +133,184 @@ export const RibbonHeader: React.FC<RibbonHeaderProps> = ({
             </button>
           )}
 
-          {/* AutoSave & Saved Status Indicator */}
-          <div className="hidden sm:flex items-center space-x-1 text-xs text-blue-100/90 bg-white/10 px-2 py-0.5 rounded-full">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
-            <span>{isSaved ? 'Saved to Browser' : 'Saving...'}</span>
-          </div>
-        </div>
-      </div>
+          {/* Auto / Manual Save Locally Control (Matches user photo) */}
+          <div className="flex items-center space-x-1.5">
+            {/* Manual Save Locally Button (Floppy disk with green/amber badge) */}
+            <button
+              onClick={() => {
+                onSave();
+                setManualSaveFeedback('Saved locally!');
+                setTimeout(() => setManualSaveFeedback(null), 2200);
+              }}
+              title="Save manually to Local DB (Ctrl+S)"
+              className="relative p-1 rounded hover:bg-white/20 active:scale-95 transition-all text-white cursor-pointer group flex items-center justify-center"
+            >
+              <Save size={16} className="text-white drop-shadow-xs" />
+              {/* Status Dot: Green if saved, amber/yellow if unsaved */}
+              <span
+                className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-[#185abd] transition-colors ${
+                  isSaved ? 'bg-[#10b981]' : 'bg-amber-400 animate-pulse'
+                }`}
+                title={
+                  isSaved
+                    ? 'Document saved in Local DB'
+                    : 'Unsaved changes (Click to save manually)'
+                }
+              />
+            </button>
 
-      {/* Center Search / "Tell me what you want to do" */}
-      <div className="relative hidden md:block w-72 lg:w-96">
-        <div className="flex items-center bg-white/15 hover:bg-white/25 focus-within:bg-white focus-within:text-neutral-900 rounded-md px-2.5 py-1 text-xs transition-colors">
-          <Search size={14} className="opacity-70 mr-2 text-inherit" />
-          <input
-            type="text"
-            placeholder="Search commands (e.g. table, bold, find...)"
-            value={searchQuery}
-            onChange={(e) => {
-              setSearchQuery(e.target.value);
-              setShowSearchSuggestions(true);
-            }}
-            onFocus={() => setShowSearchSuggestions(true)}
-            onBlur={() => setTimeout(() => setShowSearchSuggestions(false), 200)}
-            className="w-full bg-transparent placeholder:text-blue-100 focus-within:placeholder:text-neutral-400 focus:outline-none text-xs text-inherit"
-          />
-        </div>
+            {/* AutoSave Switch Pill: AutoSave [Switch] Local DB */}
+            <div
+              className="flex items-center space-x-1.5 bg-[#0d346b] hover:bg-[#0c2f61] border border-blue-300/30 px-2.5 py-0.5 rounded-full select-none shadow-2xs transition-colors"
+              title={
+                autoSaveEnabled
+                  ? 'AutoSave: ON (Changes saved automatically to Local DB. Disable on untrusted/public networks)'
+                  : 'AutoSave: OFF (Safe for untrusted/public networks. Use manual save button)'
+              }
+            >
+              <span className="text-[11px] font-semibold text-white tracking-tight">
+                AutoSave
+              </span>
 
-        {/* Search command dropdown suggestions */}
-        {showSearchSuggestions && searchQuery.trim() && (
-          <div className="absolute top-full left-0 mt-1 w-full bg-white text-neutral-800 rounded-md shadow-lg border border-neutral-200 py-1.5 z-50 text-xs">
-            <div className="px-2.5 py-1 text-[11px] font-semibold text-neutral-400 uppercase tracking-wider">
-              Quick Actions
+              {/* The Toggle Switch */}
+              <button
+                type="button"
+                role="switch"
+                aria-checked={autoSaveEnabled}
+                onClick={() => onToggleAutoSave(!autoSaveEnabled)}
+                className={`w-7 h-4 flex items-center rounded-full p-0.5 cursor-pointer transition-colors duration-200 focus:outline-none ${
+                  autoSaveEnabled ? 'bg-[#10b981]' : 'bg-white/30 hover:bg-white/40'
+                }`}
+              >
+                <span
+                  className={`bg-white w-3 h-3 rounded-full shadow-xs transform transition-transform duration-200 ${
+                    autoSaveEnabled ? 'translate-x-3' : 'translate-x-0'
+                  }`}
+                />
+              </button>
+
+              <span className="text-[10px] font-mono text-blue-200 font-bold tracking-tight">
+                Local DB
+              </span>
             </div>
-            {[
-              { id: 'bold', label: 'Toggle Bold', action: 'bold' },
-              { id: 'italic', label: 'Toggle Italic', action: 'italic' },
-              { id: 'table', label: 'Insert 3x3 Table', action: 'table' },
-              { id: 'find', label: 'Find & Replace', action: 'find' },
-              { id: 'print', label: 'Print Document', action: 'print' },
-              { id: 'save', label: 'Save Document', action: 'save' },
-              { id: 'h1', label: 'Heading 1', action: 'h1' },
-              { id: 'list', label: 'Bullet List', action: 'list' },
-            ]
-              .filter((c) => c.label.toLowerCase().includes(searchQuery.toLowerCase()))
-              .map((cmd) => (
-                <button
-                  key={cmd.id}
-                  onClick={() => handleCommandSearch(cmd.action)}
-                  className="w-full text-left px-3 py-1.5 hover:bg-blue-50 text-neutral-700 flex items-center justify-between cursor-pointer"
-                >
-                  <span>{cmd.label}</span>
-                  <span className="text-[10px] text-neutral-400 font-mono">Word Action</span>
-                </button>
-              ))}
+
+            {/* Feedback tooltip if user clicks save */}
+            {manualSaveFeedback && (
+              <span className="hidden lg:inline-flex text-[10px] bg-emerald-600/90 text-white font-semibold px-2 py-0.5 rounded-full shadow-xs animate-in fade-in zoom-in-95 duration-150">
+                {manualSaveFeedback}
+              </span>
+            )}
           </div>
-        )}
+        </div>
       </div>
 
-      {/* Right side: Dark Mode toggle, Share button, Profile avatar */}
+      {/* Center Search / Smart "Tell me what you want to do" Command System */}
+      <SearchCommandBar
+        editor={editor}
+        settings={settings}
+        onUpdateSettings={onUpdateSettings}
+        onOpenBackstage={onOpenBackstage}
+        onOpenFindReplace={onOpenFindReplace}
+        onOpenStats={onOpenStats}
+        onSave={onSave}
+        onPrint={onPrint}
+        onOpenThemes={onOpenThemes}
+        onToggleComments={onToggleComments}
+        onSelectTab={onSelectTab}
+        isDarkHeader={isDarkHeader}
+        isSepiaHeader={isSepiaHeader}
+      />
+
+      {/* Right side: Themes, AI, Zen (Focus), Comments (with badge), Dark/Light Mode */}
       <div className="flex items-center space-x-2">
+        {/* 1. Themes (open the file new templates) */}
         <button
-          onClick={() => onUpdateSettings({ isDarkMode: !settings.isDarkMode })}
-          title={settings.isDarkMode ? 'Switch to Light Canvas' : 'Switch to Dark Canvas'}
-          className="p-1.5 rounded hover:bg-white/20 transition-colors text-white/90 hover:text-white cursor-pointer"
+          onClick={onOpenThemes ? onOpenThemes : () => onOpenBackstage()}
+          title="Themes & Templates (Open new templates)"
+          className="flex items-center space-x-1.5 px-3 py-1 rounded-md bg-white/20 hover:bg-white/30 active:scale-95 text-white font-medium text-xs transition-all shadow-2xs cursor-pointer border border-white/10"
         >
-          {settings.isDarkMode ? <Sun size={15} /> : <Moon size={15} />}
+          <LayoutGrid size={15} className="text-white shrink-0" />
+          <span className="font-semibold tracking-tight">Themes</span>
         </button>
 
+        {/* 2. AI (open the Right AI Toolbar) */}
         <button
-          onClick={onSave}
-          className="flex items-center space-x-1.5 bg-white text-[#185abd] hover:bg-blue-50 px-2.5 py-1 rounded text-xs font-semibold shadow-sm transition-colors cursor-pointer"
+          onClick={() => onUpdateSettings({ showAiAssistantPane: !settings.showAiAssistantPane })}
+          title={settings.showAiAssistantPane ? 'Close AI Assistant' : 'Open AI Assistant Toolbar'}
+          className={`flex items-center space-x-1 px-3 py-1 rounded-md text-xs font-bold transition-all shadow-xs cursor-pointer active:scale-95 ${
+            settings.showAiAssistantPane
+              ? 'bg-purple-700 ring-2 ring-purple-300 text-white'
+              : 'bg-[#8b32e6] hover:bg-[#9d44f5] text-white'
+          }`}
         >
-          <Share2 size={13} />
-          <span>Share</span>
+          <Sparkles size={14} className="text-amber-300 fill-amber-300 shrink-0" />
+          <span className="tracking-tight">AI</span>
         </button>
 
-        {/* User initials circle */}
-        <div className="w-6 h-6 rounded-full bg-blue-800 text-white border border-blue-300/40 flex items-center justify-center text-[11px] font-bold">
-          JD
-        </div>
+        {/* 3. Zen (call the focus mode) */}
+        <button
+          onClick={() => onUpdateSettings({ isFocusMode: true })}
+          title="Zen Mode (Focus Mode - hide distractions, Esc to exit)"
+          className="p-1.5 rounded-md hover:bg-white/20 active:scale-95 text-white/90 hover:text-white transition-all cursor-pointer flex items-center justify-center"
+        >
+          <Maximize2 size={16} />
+        </button>
+
+        {/* 4. Comments & (Comments number) */}
+        <button
+          onClick={onToggleComments}
+          title={`Comments (${commentsCount ?? 0} active)`}
+          className="relative p-1.5 rounded-md hover:bg-white/20 active:scale-95 text-white/90 hover:text-white transition-all cursor-pointer flex items-center justify-center"
+        >
+          <MessageSquare size={17} />
+          {(commentsCount ?? 0) > 0 && (
+            <span
+              className="absolute -top-1 -right-1 min-w-[17px] h-[17px] px-1 bg-[#f59e0b] text-neutral-950 font-black text-[10px] rounded-full flex items-center justify-center border-2 border-[#185abd] shadow-xs leading-none"
+            >
+              {commentsCount}
+            </span>
+          )}
+        </button>
+
+        {/* 5. Dark / Light / Sepia Mode Switcher */}
+        <button
+          onClick={() => {
+            const nextMode: ThemeMode =
+              effectiveThemeMode === 'light'
+                ? 'canvasDark'
+                : effectiveThemeMode === 'canvasDark'
+                ? 'fullDark'
+                : effectiveThemeMode === 'fullDark'
+                ? 'sepia'
+                : 'light';
+            onUpdateSettings({
+              themeMode: nextMode,
+              isDarkMode: nextMode === 'canvasDark' || nextMode === 'fullDark',
+            });
+          }}
+          title={`Theme: ${
+            effectiveThemeMode === 'light'
+              ? 'Light'
+              : effectiveThemeMode === 'canvasDark'
+              ? 'Canvas Dark'
+              : effectiveThemeMode === 'fullDark'
+              ? 'Full Dark'
+              : 'Sepia'
+          } (Click to switch theme)`}
+          className="p-1.5 rounded-md hover:bg-white/20 active:scale-95 text-white/90 hover:text-white transition-all cursor-pointer flex items-center justify-center"
+        >
+          {effectiveThemeMode === 'light' ? (
+            <Sun size={17} className="text-amber-300" />
+          ) : effectiveThemeMode === 'canvasDark' ? (
+            <div className="w-4 h-4 bg-[#111827] border border-white/70 rounded-xs flex items-center justify-center">
+              <div className="w-2 h-2.5 bg-white rounded-[1px]" />
+            </div>
+          ) : effectiveThemeMode === 'fullDark' ? (
+            <Moon size={17} className="text-blue-300" />
+          ) : (
+            <div className="w-3.5 h-3.5 rounded-full bg-[#fbf8ee] border-2 border-amber-300 shadow-2xs" />
+          )}
+        </button>
       </div>
     </header>
   );

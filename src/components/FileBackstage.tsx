@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Editor } from '@tiptap/react';
 import { DocumentSettings, DocumentStats } from '../types';
 import {
@@ -16,7 +16,46 @@ import {
   Clock,
   User,
 } from 'lucide-react';
-import { initialDocumentContent } from '../utils/initialContent';
+
+const InfoSetupSection = React.lazy(
+  () => import('./InfoSetupSection')
+);
+
+const NewDocumentSection = React.lazy(
+  () => import('./NewDocumentSection')
+);
+
+const DocxEngineBackstageSection = React.lazy(
+  () => import('./DocxEngineBackstageSection')
+);
+
+const HtmlZipEngineBackstageSection = React.lazy(
+  () => import('./HtmlZipEngineBackstageSection')
+);
+
+const OdfEngineBackstageSection = React.lazy(
+  () => import('./OdfEngineBackstageSection')
+);
+
+const JsonBackupEngineBackstageSection = React.lazy(
+  () => import('./JsonBackupEngineBackstageSection')
+);
+
+const MarkdownEngineBackstageSection = React.lazy(
+  () => import('./MarkdownEngineBackstageSection')
+);
+
+const PdfEngineBackstageSection = React.lazy(
+  () => import('./PdfEngineBackstageSection')
+);
+
+const PrintBackstageSection = React.lazy(
+  () => import('./PrintBackstageSection')
+);
+
+const OpenDocumentSmartPanel = React.lazy(
+  () => import('./OpenDocumentSmartPanel')
+);
 
 interface FileBackstageProps {
   editor: Editor | null;
@@ -26,9 +65,13 @@ interface FileBackstageProps {
   onClose: () => void;
   onSaveToLocalStorage: () => void;
   onPrint: () => void;
+  autoSaveEnabled?: boolean;
+  onToggleAutoSave?: (enabled: boolean) => void;
+  onCleanLocalStorage?: () => void;
+  initialTab?: BackstageTab;
 }
 
-type BackstageTab = 'info' | 'new' | 'open' | 'save' | 'print';
+export type BackstageTab = 'info' | 'new' | 'open' | 'backup' | 'docx' | 'htmlzip' | 'odf' | 'markdown' | 'pdf' | 'save' | 'print';
 
 export const FileBackstage: React.FC<FileBackstageProps> = ({
   editor,
@@ -38,9 +81,19 @@ export const FileBackstage: React.FC<FileBackstageProps> = ({
   onClose,
   onSaveToLocalStorage,
   onPrint,
+  autoSaveEnabled = true,
+  onToggleAutoSave,
+  onCleanLocalStorage,
+  initialTab = 'info',
 }) => {
-  const [activeTab, setActiveTab] = useState<BackstageTab>('info');
+  const [activeTab, setActiveTab] = useState<BackstageTab>(initialTab);
   const [saveSuccessMsg, setSaveSuccessMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (initialTab) {
+      setActiveTab(initialTab);
+    }
+  }, [initialTab]);
 
   const handleExportHtml = () => {
     if (!editor) return;
@@ -103,31 +156,6 @@ ${editor.getHTML()}
     reader.readAsText(file);
   };
 
-  const handleNewDocument = (type: 'blank' | 'report' | 'memo') => {
-    if (!editor) return;
-    if (type === 'blank') {
-      editor.commands.setContent('<p></p>');
-      onUpdateSettings({ title: 'New Document' });
-    } else if (type === 'report') {
-      editor.commands.setContent(initialDocumentContent);
-      onUpdateSettings({ title: 'Executive Report' });
-    } else if (type === 'memo') {
-      editor.commands.setContent(`
-        <h1 style="color: #185abd;">MEMORANDUM</h1>
-        <p><strong>TO:</strong> All Team Members<br /><strong>FROM:</strong> Project Lead<br /><strong>DATE:</strong> ${new Date().toLocaleDateString()}<br /><strong>SUBJECT:</strong> Project Status &amp; Deliverables</p>
-        <hr />
-        <h2>Overview</h2>
-        <p>Please review the milestones outlined below for this sprint.</p>
-        <ul data-type="taskList">
-          <li data-type="taskItem" data-checked="false"><label><input type="checkbox"><span></span></label><div><p>Complete project scoping review</p></div></li>
-          <li data-type="taskItem" data-checked="false"><label><input type="checkbox"><span></span></label><div><p>Update deployment pipeline</p></div></li>
-        </ul>
-      `);
-      onUpdateSettings({ title: 'Internal Memorandum' });
-    }
-    onClose();
-  };
-
   return (
     <div className="fixed inset-0 bg-[#f3f2f1] z-50 flex select-none no-print animate-in fade-in duration-150">
       {/* Left Backstage Navigation (Microsoft Word deep blue) */}
@@ -151,7 +179,7 @@ ${editor.getHTML()}
               }`}
             >
               <Info size={16} />
-              <span>Info</span>
+              <span>Info &amp; Setup</span>
             </button>
 
             <button
@@ -175,15 +203,75 @@ ${editor.getHTML()}
             </button>
 
             <button
-              onClick={() => {
-                onSaveToLocalStorage();
-                setSaveSuccessMsg('Document successfully saved to local storage!');
-                setTimeout(() => setSaveSuccessMsg(null), 3000);
-              }}
-              className="w-full flex items-center space-x-2.5 px-3 py-2 rounded hover:bg-white/10 text-white/90 cursor-pointer transition-colors"
+              onClick={() => setActiveTab('backup')}
+              className={`w-full flex items-center space-x-2.5 px-3 py-2 rounded cursor-pointer transition-colors ${
+                activeTab === 'backup' ? 'bg-white/25 text-white font-bold shadow-xs' : 'hover:bg-white/10 text-white/90'
+              }`}
             >
-              <Save size={16} />
-              <span>Save</span>
+              <div className="w-4 h-4 rounded bg-[#f59e0b] text-white flex items-center justify-center font-bold text-[10px] leading-none shrink-0 shadow-2xs">
+                J
+              </div>
+              <span>Backup (.json)</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('docx')}
+              className={`w-full flex items-center space-x-2.5 px-3 py-2 rounded cursor-pointer transition-colors ${
+                activeTab === 'docx' ? 'bg-white/25 text-white font-bold shadow-xs' : 'hover:bg-white/10 text-white/90'
+              }`}
+            >
+              <div className="w-4 h-4 rounded bg-white text-[#185abd] flex items-center justify-center font-bold text-[10px] leading-none shrink-0 shadow-2xs">
+                W
+              </div>
+              <span>Microsoft Word (.docx)</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('htmlzip')}
+              className={`w-full flex items-center space-x-2.5 px-3 py-2 rounded cursor-pointer transition-colors ${
+                activeTab === 'htmlzip' ? 'bg-white/25 text-white font-bold shadow-xs' : 'hover:bg-white/10 text-white/90'
+              }`}
+            >
+              <div className="w-4 h-4 rounded bg-[#e34f26] text-white flex items-center justify-center font-bold text-[10px] leading-none shrink-0 shadow-2xs">
+                H
+              </div>
+              <span>Html + Images (ZIP)</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('odf')}
+              className={`w-full flex items-center space-x-2.5 px-3 py-2 rounded cursor-pointer transition-colors ${
+                activeTab === 'odf' ? 'bg-white/25 text-white font-bold shadow-xs' : 'hover:bg-white/10 text-white/90'
+              }`}
+            >
+              <div className="w-4 h-4 rounded bg-[#0e7490] text-white flex items-center justify-center font-bold text-[10px] leading-none shrink-0 shadow-2xs">
+                O
+              </div>
+              <span>OpenDocument (.ODF)</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('markdown')}
+              className={`w-full flex items-center space-x-2.5 px-3 py-2 rounded cursor-pointer transition-colors ${
+                activeTab === 'markdown' ? 'bg-white/25 text-white font-bold shadow-xs' : 'hover:bg-white/10 text-white/90'
+              }`}
+            >
+              <div className="w-4 h-4 rounded bg-[#6366f1] text-white flex items-center justify-center font-bold text-[10px] leading-none shrink-0 shadow-2xs">
+                M
+              </div>
+              <span>Markdown (.md)</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('pdf')}
+              className={`w-full flex items-center space-x-2.5 px-3 py-2 rounded cursor-pointer transition-colors ${
+                activeTab === 'pdf' ? 'bg-white/25 text-white font-bold shadow-xs' : 'hover:bg-white/10 text-white/90'
+              }`}
+            >
+              <div className="w-4 h-4 rounded bg-[#dc2626] text-white flex items-center justify-center font-bold text-[10px] leading-none shrink-0 shadow-2xs">
+                P
+              </div>
+              <span>PDF Document (.pdf)</span>
             </button>
 
             <button
@@ -215,166 +303,89 @@ ${editor.getHTML()}
       </div>
 
       {/* Main Content Area */}
-      <div className="flex-1 overflow-y-auto p-8 bg-white">
-        {saveSuccessMsg && (
+      <div className={`flex-1 overflow-y-auto ${(activeTab === 'docx' || activeTab === 'htmlzip' || activeTab === 'odf' || activeTab === 'backup' || activeTab === 'markdown') ? 'p-0' : 'p-8'} bg-white flex flex-col`}>
+        {saveSuccessMsg && activeTab !== 'docx' && activeTab !== 'htmlzip' && activeTab !== 'odf' && activeTab !== 'backup' && activeTab !== 'markdown' && (
           <div className="mb-6 p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs rounded-md flex items-center space-x-2">
             <CheckCircle2 size={16} className="text-emerald-600" />
             <span>{saveSuccessMsg}</span>
           </div>
         )}
 
-        {/* INFO TAB */}
+        {/* INFO & SETUP TAB */}
         {activeTab === 'info' && (
-          <div className="max-w-3xl">
-            <h1 className="text-2xl font-semibold text-neutral-800 mb-6">Document Information</h1>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-              {/* Left col: Actions */}
-              <div className="md:col-span-2 space-y-4">
-                <div className="border border-neutral-200 rounded-lg p-4 bg-neutral-50/50 flex items-start space-x-3">
-                  <div className="p-2 bg-blue-100 text-[#185abd] rounded">
-                    <FileText size={20} />
-                  </div>
-                  <div>
-                    <h3 className="text-sm font-semibold text-neutral-800">Protect Document</h3>
-                    <p className="text-xs text-neutral-500 mt-0.5">
-                      Control what types of changes people can make to this document.
-                    </p>
-                    <button
-                      onClick={() => onUpdateSettings({ viewMode: settings.viewMode === 'read' ? 'print' : 'read' })}
-                      className="mt-2 text-xs text-[#185abd] hover:underline font-medium cursor-pointer"
-                    >
-                      {settings.viewMode === 'read' ? 'Switch to Edit Mode' : 'Switch to Read-Only Mode'}
-                    </button>
-                  </div>
-                </div>
-
-                <div className="border border-neutral-200 rounded-lg p-4 bg-neutral-50/50 flex items-start space-x-3">
-                  <div className="p-2 bg-emerald-100 text-emerald-700 rounded">
-                    <CheckCircle2 size={20} />
-                  </div>
-                  <div>
-                    <h3 className="text-sm font-semibold text-neutral-800">Inspect Document</h3>
-                    <p className="text-xs text-neutral-500 mt-0.5">
-                      Before sharing, be aware that this document contains {stats.words} words and {stats.paragraphs} paragraphs.
-                    </p>
-                  </div>
+          <React.Suspense
+            fallback={
+              <div className="flex-1 flex items-center justify-center p-12 text-xs text-neutral-500">
+                <div className="flex flex-col items-center space-y-3">
+                  <div className="w-8 h-8 border-2 border-[#185abd] border-t-transparent rounded-full animate-spin" />
+                  <span>Loading Document Properties &amp; Setup...</span>
                 </div>
               </div>
-
-              {/* Right col: Document Properties */}
-              <div className="border border-neutral-200 rounded-lg p-4 bg-white text-xs space-y-3">
-                <h3 className="font-semibold text-neutral-800 border-b border-neutral-200 pb-2">Properties</h3>
-                <div className="space-y-2 text-neutral-600">
-                  <div className="flex justify-between">
-                    <span>Title:</span>
-                    <span className="font-medium text-neutral-900 truncate max-w-[120px]">{settings.title}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Words:</span>
-                    <span className="font-medium text-neutral-900">{stats.words}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Characters:</span>
-                    <span className="font-medium text-neutral-900">{stats.characters}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Reading time:</span>
-                    <span className="font-medium text-neutral-900">~{stats.readingTimeMinutes} min</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Orientation:</span>
-                    <span className="font-medium text-neutral-900 capitalize">{settings.orientation}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Margins:</span>
-                    <span className="font-medium text-neutral-900 capitalize">{settings.margins}</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
+            }
+          >
+            <InfoSetupSection
+              editor={editor}
+              settings={settings}
+              stats={stats}
+              onUpdateSettings={onUpdateSettings}
+              onSaveToLocalStorage={onSaveToLocalStorage}
+              autoSaveEnabled={autoSaveEnabled}
+              onToggleAutoSave={onToggleAutoSave}
+              onCleanLocalStorage={onCleanLocalStorage}
+              onShowMessage={(msg) => {
+                setSaveSuccessMsg(msg);
+                setTimeout(() => setSaveSuccessMsg(null), 3000);
+              }}
+            />
+          </React.Suspense>
         )}
 
-        {/* NEW TAB */}
+        {/* NEW TAB (TEMPLATES CATALOG) */}
         {activeTab === 'new' && (
-          <div className="max-w-3xl">
-            <h1 className="text-2xl font-semibold text-neutral-800 mb-6">New Document</h1>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
-              {/* Blank Document Template */}
-              <div
-                onClick={() => handleNewDocument('blank')}
-                className="group border border-neutral-200 hover:border-[#185abd] rounded-lg p-4 cursor-pointer hover:shadow-md transition-all flex flex-col items-center text-center bg-white"
-              >
-                <div className="w-28 h-36 bg-white border border-neutral-300 group-hover:border-[#185abd] shadow-xs rounded flex items-center justify-center mb-3">
-                  <FilePlus size={28} className="text-neutral-300 group-hover:text-[#185abd]" />
+          <React.Suspense
+            fallback={
+              <div className="flex-1 flex items-center justify-center p-12 text-xs text-neutral-500">
+                <div className="flex flex-col items-center space-y-3">
+                  <div className="w-8 h-8 border-2 border-[#185abd] border-t-transparent rounded-full animate-spin" />
+                  <span>Loading Document Templates Catalog...</span>
                 </div>
-                <span className="font-semibold text-sm text-neutral-800 group-hover:text-[#185abd]">
-                  Blank Document
-                </span>
-                <span className="text-xs text-neutral-400 mt-1">Start from a clean slate</span>
               </div>
-
-              {/* Strategic Report Template */}
-              <div
-                onClick={() => handleNewDocument('report')}
-                className="group border border-neutral-200 hover:border-[#185abd] rounded-lg p-4 cursor-pointer hover:shadow-md transition-all flex flex-col items-center text-center bg-white"
-              >
-                <div className="w-28 h-36 bg-neutral-50 border border-neutral-300 group-hover:border-[#185abd] shadow-xs rounded p-2 text-left mb-3 overflow-hidden">
-                  <div className="h-2 w-16 bg-[#185abd] rounded-xs mb-1.5" />
-                  <div className="h-1.5 w-20 bg-neutral-300 rounded-xs mb-1" />
-                  <div className="h-1.5 w-24 bg-neutral-300 rounded-xs mb-2" />
-                  <div className="h-1 w-full bg-neutral-200 rounded-xs mb-1" />
-                  <div className="h-1 w-full bg-neutral-200 rounded-xs mb-1" />
-                  <div className="h-1 w-16 bg-neutral-200 rounded-xs" />
-                </div>
-                <span className="font-semibold text-sm text-neutral-800 group-hover:text-[#185abd]">
-                  Executive Report
-                </span>
-                <span className="text-xs text-neutral-400 mt-1">Complete with tables &amp; KPIs</span>
-              </div>
-
-              {/* Team Memorandum Template */}
-              <div
-                onClick={() => handleNewDocument('memo')}
-                className="group border border-neutral-200 hover:border-[#185abd] rounded-lg p-4 cursor-pointer hover:shadow-md transition-all flex flex-col items-center text-center bg-white"
-              >
-                <div className="w-28 h-36 bg-neutral-50 border border-neutral-300 group-hover:border-[#185abd] shadow-xs rounded p-2 text-left mb-3 overflow-hidden">
-                  <div className="text-[8px] font-bold text-[#185abd] mb-1">MEMORANDUM</div>
-                  <div className="h-1 w-full bg-neutral-300 rounded-xs mb-1" />
-                  <div className="h-1 w-20 bg-neutral-300 rounded-xs mb-2" />
-                  <div className="h-1 w-full bg-neutral-200 rounded-xs mb-1" />
-                  <div className="h-1 w-full bg-neutral-200 rounded-xs" />
-                </div>
-                <span className="font-semibold text-sm text-neutral-800 group-hover:text-[#185abd]">
-                  Internal Memo
-                </span>
-                <span className="text-xs text-neutral-400 mt-1">Action items and checklists</span>
-              </div>
-            </div>
-          </div>
+            }
+          >
+            <NewDocumentSection
+              editor={editor}
+              settings={settings}
+              onClose={onClose}
+              onUpdateSettings={onUpdateSettings}
+              onSaveToLocalStorage={onSaveToLocalStorage}
+            />
+          </React.Suspense>
         )}
 
-        {/* OPEN TAB */}
+        {/* OPEN TAB (SMART 3x3 FORMAT HUB) */}
         {activeTab === 'open' && (
-          <div className="max-w-2xl">
-            <h1 className="text-2xl font-semibold text-neutral-800 mb-6">Open Document</h1>
-            <div className="border-2 border-dashed border-neutral-300 hover:border-[#185abd] rounded-xl p-8 text-center bg-neutral-50/50">
-              <FolderOpen size={36} className="text-[#185abd] mx-auto mb-3" />
-              <h3 className="font-semibold text-sm text-neutral-800">Open file from computer</h3>
-              <p className="text-xs text-neutral-500 mt-1 mb-4">
-                Supports HTML documents, Rich Text, and plain text files.
-              </p>
-              <label className="inline-block px-4 py-2 bg-[#185abd] hover:bg-[#114b9c] text-white rounded text-xs font-semibold cursor-pointer shadow-xs">
-                Browse Files
-                <input
-                  type="file"
-                  accept=".html,.txt,.json,.docx"
-                  onChange={handleOpenFile}
-                  className="hidden"
-                />
-              </label>
-            </div>
-          </div>
+          <React.Suspense
+            fallback={
+              <div className="flex-1 flex items-center justify-center p-12 text-xs text-neutral-500">
+                <div className="flex flex-col items-center space-y-3">
+                  <div className="w-8 h-8 border-2 border-[#185abd] border-t-transparent rounded-full animate-spin" />
+                  <span>Loading Open Document Hub...</span>
+                </div>
+              </div>
+            }
+          >
+            <OpenDocumentSmartPanel
+              editor={editor}
+              settings={settings}
+              onClose={onClose}
+              onUpdateSettings={onUpdateSettings}
+              onSwitchTab={(tab) => setActiveTab(tab)}
+              onShowMessage={(msg) => {
+                setSaveSuccessMsg(msg);
+                setTimeout(() => setSaveSuccessMsg(null), 3500);
+              }}
+            />
+          </React.Suspense>
         )}
 
         {/* SAVE AS & EXPORT TAB */}
@@ -417,33 +428,290 @@ ${editor.getHTML()}
                   Download Text (.txt)
                 </button>
               </div>
+
+              {/* Microsoft Word (.docx) Card */}
+              <div className="border border-blue-200 bg-blue-50/20 rounded-lg p-4 hover:shadow-md transition-shadow sm:col-span-2">
+                <div className="flex items-center space-x-3 mb-2">
+                  <div className="p-2 bg-blue-100 text-[#185abd] rounded font-black text-sm">
+                    W
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-sm text-neutral-800">Microsoft Word (.docx) Document</h3>
+                    <p className="text-[11px] text-neutral-500">
+                      Standard ECMA-376 OpenXML document with formatted headings, preserved tables, inline images, and native desktop Word styling.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setActiveTab('docx')}
+                  className="mt-2 w-full py-2 bg-[#185abd] hover:bg-[#114b9c] text-white rounded text-xs font-semibold flex items-center justify-center space-x-2 cursor-pointer shadow-xs"
+                >
+                  <span>Open Microsoft Word (.docx) Engine</span>
+                </button>
+              </div>
+
+              {/* HTML + Images ZIP Package Card */}
+              <div className="border border-orange-200 bg-orange-50/20 rounded-lg p-4 hover:shadow-md transition-shadow sm:col-span-2">
+                <div className="flex items-center space-x-3 mb-2">
+                  <div className="p-2 bg-orange-100 text-[#e34f26] rounded font-black text-sm">
+                    H
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-sm text-neutral-800">HTML + Images Web Package (.zip)</h3>
+                    <p className="text-[11px] text-neutral-500">
+                      High-compression GZIP archive with <code className="bg-neutral-100 px-1 rounded font-mono">projectname.html</code> and <code className="bg-neutral-100 px-1 rounded font-mono">/images/</code> folder. 100% offline compatible across all browsers.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setActiveTab('htmlzip')}
+                  className="mt-2 w-full py-2 bg-[#e34f26] hover:bg-[#c93d16] text-white rounded text-xs font-semibold flex items-center justify-center space-x-2 cursor-pointer shadow-xs"
+                >
+                  <span>Open HTML + Images (ZIP) Web Engine</span>
+                </button>
+              </div>
+
+              {/* OASIS OpenDocument (.odf / .odt) Card */}
+              <div className="border border-cyan-200 bg-cyan-50/20 rounded-lg p-4 hover:shadow-md transition-shadow sm:col-span-2">
+                <div className="flex items-center space-x-3 mb-2">
+                  <div className="p-2 bg-cyan-100 text-[#0e7490] rounded font-black text-sm">
+                    O
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-sm text-neutral-800">OpenDocument Text (.odt / .odf)</h3>
+                    <p className="text-[11px] text-neutral-500">
+                      ISO/IEC 26300 standard package with <code className="bg-neutral-100 px-1 rounded font-mono">content.xml</code>, <code className="bg-neutral-100 px-1 rounded font-mono">Pictures/</code> media folder, and uncompressed <code className="bg-neutral-100 px-1 rounded font-mono">mimetype</code>. Native format for LibreOffice, Google Docs, and Word.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setActiveTab('odf')}
+                  className="mt-2 w-full py-2 bg-[#0e7490] hover:bg-[#155e75] text-white rounded text-xs font-semibold flex items-center justify-center space-x-2 cursor-pointer shadow-xs"
+                >
+                  <span>Open OpenDocument (.ODF) Engine</span>
+                </button>
+              </div>
+
+              {/* Markdown (.md) Card */}
+              <div className="border border-indigo-200 bg-indigo-50/20 rounded-lg p-4 hover:shadow-md transition-shadow sm:col-span-2">
+                <div className="flex items-center space-x-3 mb-2">
+                  <div className="p-2 bg-indigo-100 text-[#6366f1] rounded font-black text-sm">
+                    M
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-sm text-neutral-800">Markdown (.md) Document</h3>
+                    <p className="text-[11px] text-neutral-500">
+                      GitHub-Flavored Markdown (GFM) with YAML Frontmatter headers, table preservation, interactive task lists, and syntax highlights.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setActiveTab('markdown')}
+                  className="mt-2 w-full py-2 bg-[#6366f1] hover:bg-[#4f46e5] text-white rounded text-xs font-semibold flex items-center justify-center space-x-2 cursor-pointer shadow-xs"
+                >
+                  <span>Open Markdown (.md) Engine</span>
+                </button>
+              </div>
+
+              {/* PDF Document (.pdf) Card */}
+              <div className="border border-red-200 bg-red-50/20 rounded-lg p-4 hover:shadow-md transition-shadow sm:col-span-2">
+                <div className="flex items-center space-x-3 mb-2">
+                  <div className="p-2 bg-red-100 text-[#dc2626] rounded font-black text-sm">
+                    P
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-sm text-neutral-800">PDF Document (.pdf) Vector Export</h3>
+                    <p className="text-[11px] text-neutral-500">
+                      High-fidelity ISO 32000 vector print engine with custom margins, paper geometry, zero-loss typography, and clean multi-page pagination.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setActiveTab('pdf')}
+                  className="mt-2 w-full py-2 bg-[#dc2626] hover:bg-[#b91c1c] text-white rounded text-xs font-semibold flex items-center justify-center space-x-2 cursor-pointer shadow-xs"
+                >
+                  <span>Open PDF Document (.pdf) Engine</span>
+                </button>
+              </div>
+
+              {/* JSON Backup (.json) Card */}
+              <div className="border border-amber-200 bg-amber-50/20 rounded-lg p-4 hover:shadow-md transition-shadow sm:col-span-2">
+                <div className="flex items-center space-x-3 mb-2">
+                  <div className="p-2 bg-amber-100 text-[#d97706] rounded font-black text-sm">
+                    J
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-sm text-neutral-800">JSON Document Backup (.json)</h3>
+                    <p className="text-[11px] text-neutral-500">
+                      Complete state serialization with embedded base64 images, document settings, and metadata. 100% self-contained and offline portable.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setActiveTab('backup')}
+                  className="mt-2 w-full py-2 bg-[#f59e0b] hover:bg-[#d97706] text-white rounded text-xs font-semibold flex items-center justify-center space-x-2 cursor-pointer shadow-xs"
+                >
+                  <span>Open Backup (.json) Engine</span>
+                </button>
+              </div>
             </div>
           </div>
         )}
 
-        {/* PRINT TAB */}
-        {activeTab === 'print' && (
-          <div className="max-w-2xl space-y-6">
-            <h1 className="text-2xl font-semibold text-neutral-800">Print Document</h1>
-            <div className="flex items-start space-x-6">
-              <button
-                onClick={() => {
-                  onClose();
-                  setTimeout(() => onPrint(), 200);
-                }}
-                className="flex items-center space-x-2 px-6 py-3 bg-[#185abd] hover:bg-[#114b9c] text-white rounded-md font-semibold text-sm shadow-sm cursor-pointer"
-              >
-                <Printer size={18} />
-                <span>Print Document</span>
-              </button>
-
-              <div className="text-xs text-neutral-600 space-y-1.5 pt-1">
-                <p>&bull; Set printer destination to <strong>Save as PDF</strong> for instant digital output.</p>
-                <p>&bull; Ribbon controls and rulers are automatically hidden on print.</p>
-                <p>&bull; Paper size configured as <strong>{settings.pageSize.toUpperCase()}</strong> with <strong>{settings.margins}</strong> margins.</p>
+        {/* JSON BACKUP (.JSON) ENGINE TAB */}
+        {activeTab === 'backup' && (
+          <React.Suspense
+            fallback={
+              <div className="flex-1 flex items-center justify-center p-12 text-xs text-neutral-500">
+                <div className="flex flex-col items-center space-y-3">
+                  <div className="w-8 h-8 border-2 border-[#f59e0b] border-t-transparent rounded-full animate-spin" />
+                  <span>Loading JSON Backup (.json) Engine...</span>
+                </div>
               </div>
-            </div>
-          </div>
+            }
+          >
+            <JsonBackupEngineBackstageSection
+              editor={editor}
+              settings={settings}
+              stats={stats}
+              onClose={onClose}
+              onUpdateSettings={onUpdateSettings}
+              onSaveToLocalStorage={onSaveToLocalStorage}
+            />
+          </React.Suspense>
+        )}
+
+        {/* MICROSOFT WORD (.DOCX) ENGINE TAB */}
+        {activeTab === 'docx' && (
+          <React.Suspense
+            fallback={
+              <div className="flex-1 flex items-center justify-center p-12 text-xs text-neutral-500">
+                <div className="flex flex-col items-center space-y-3">
+                  <div className="w-8 h-8 border-2 border-[#185abd] border-t-transparent rounded-full animate-spin" />
+                  <span>Loading Microsoft Word (.docx) Engine...</span>
+                </div>
+              </div>
+            }
+          >
+            <DocxEngineBackstageSection
+              editor={editor}
+              settings={settings}
+              onClose={onClose}
+              onUpdateSettings={onUpdateSettings}
+            />
+          </React.Suspense>
+        )}
+
+        {/* HTML + IMAGES (ZIP) ENGINE TAB */}
+        {activeTab === 'htmlzip' && (
+          <React.Suspense
+            fallback={
+              <div className="flex-1 flex items-center justify-center p-12 text-xs text-neutral-500">
+                <div className="flex flex-col items-center space-y-3">
+                  <div className="w-8 h-8 border-2 border-[#e34f26] border-t-transparent rounded-full animate-spin" />
+                  <span>Loading HTML + Images (ZIP) Web Package Engine...</span>
+                </div>
+              </div>
+            }
+          >
+            <HtmlZipEngineBackstageSection
+              editor={editor}
+              settings={settings}
+              onClose={onClose}
+              onUpdateSettings={onUpdateSettings}
+            />
+          </React.Suspense>
+        )}
+
+        {/* OPENDOCUMENT (.ODF) ENGINE TAB */}
+        {activeTab === 'odf' && (
+          <React.Suspense
+            fallback={
+              <div className="flex-1 flex items-center justify-center p-12 text-xs text-neutral-500">
+                <div className="flex flex-col items-center space-y-3">
+                  <div className="w-8 h-8 border-2 border-[#0e7490] border-t-transparent rounded-full animate-spin" />
+                  <span>Loading OpenDocument (.ODF) Engine...</span>
+                </div>
+              </div>
+            }
+          >
+            <OdfEngineBackstageSection
+              editor={editor}
+              settings={settings}
+              onClose={onClose}
+              onUpdateSettings={onUpdateSettings}
+            />
+          </React.Suspense>
+        )}
+
+        {/* MARKDOWN (.MD) ENGINE TAB */}
+        {activeTab === 'markdown' && (
+          <React.Suspense
+            fallback={
+              <div className="flex-1 flex items-center justify-center p-12 text-xs text-neutral-500">
+                <div className="flex flex-col items-center space-y-3">
+                  <div className="w-8 h-8 border-2 border-[#6366f1] border-t-transparent rounded-full animate-spin" />
+                  <span>Loading Markdown (.md) Engine...</span>
+                </div>
+              </div>
+            }
+          >
+            <MarkdownEngineBackstageSection
+              editor={editor}
+              settings={settings}
+              stats={stats}
+              onClose={onClose}
+              onUpdateSettings={onUpdateSettings}
+              onSaveToLocalStorage={onSaveToLocalStorage}
+            />
+          </React.Suspense>
+        )}
+
+        {/* PDF EXPORT & PRINT ENGINE TAB */}
+        {activeTab === 'pdf' && (
+          <React.Suspense
+            fallback={
+              <div className="flex-1 flex items-center justify-center p-12 text-xs text-neutral-500">
+                <div className="flex flex-col items-center space-y-3">
+                  <div className="w-8 h-8 border-2 border-[#dc2626] border-t-transparent rounded-full animate-spin" />
+                  <span>Loading PDF Export &amp; Print Engine...</span>
+                </div>
+              </div>
+            }
+          >
+            <PdfEngineBackstageSection
+              editor={editor}
+              settings={settings}
+              stats={stats}
+              onClose={onClose}
+              onUpdateSettings={onUpdateSettings}
+              onPrint={onPrint}
+            />
+          </React.Suspense>
+        )}
+
+        {/* PRINT TAB (SMART PRINT WORKSTATION) */}
+        {activeTab === 'print' && (
+          <React.Suspense
+            fallback={
+              <div className="flex-1 flex items-center justify-center p-12 text-xs text-neutral-500">
+                <div className="flex flex-col items-center space-y-3">
+                  <div className="w-8 h-8 border-2 border-[#185abd] border-t-transparent rounded-full animate-spin" />
+                  <span>Loading Print Workstation...</span>
+                </div>
+              </div>
+            }
+          >
+            <PrintBackstageSection
+              editor={editor}
+              settings={settings}
+              stats={stats}
+              onClose={onClose}
+              onUpdateSettings={onUpdateSettings}
+              onPrint={onPrint}
+              onSwitchToPdfTab={() => setActiveTab('pdf')}
+            />
+          </React.Suspense>
         )}
       </div>
     </div>

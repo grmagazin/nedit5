@@ -108,36 +108,68 @@
 
 .ProseMirror hr {
   border: none;
-  border-top: 1px solid #cbd5e1;
+  border-top: 2px solid #e2e8f0;
   margin: 1.5rem 0;
+  clear: both;
 }
 
-/* Microsoft Word Page Break Visual Separator */
+/* 1. Page Break (Top line in reference image): dashed line with centered PAGE BREAK pill badge */
+.ProseMirror hr.word-page-break,
 .ProseMirror .word-page-break {
   display: block;
-  margin: 2.5rem 0;
+  margin: 2.25rem 0;
   border: none;
-  border-top: 2px dashed #94a3b8;
+  border-top: 1.5px dashed #94a3b8;
   position: relative;
   page-break-after: always;
   break-after: page;
+  overflow: visible;
+  height: 0;
+  clear: both;
 }
 
+.ProseMirror hr.word-page-break::after,
 .ProseMirror .word-page-break::after {
-  content: 'Page Break';
+  content: 'PAGE BREAK';
   position: absolute;
-  top: -10px;
-  right: 16px;
-  background: #f1f5f9;
-  color: #64748b;
+  top: -11px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #f0f4f9;
+  color: #475569;
   font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.05em;
+  font-weight: 700;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
-  padding: 0 8px;
-  border-radius: 4px;
+  padding: 1px 14px;
+  border-radius: 9999px;
   border: 1px solid #cbd5e1;
   user-select: none;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  white-space: nowrap;
+}
+
+/* 2. Solid Line (Middle line in reference image): crisp solid dark line */
+.ProseMirror hr.word-solid-line,
+.ProseMirror .word-solid-line {
+  display: block;
+  border: none;
+  border-top: 1.5px solid #111827;
+  margin: 1.5rem 0;
+  height: 0;
+  clear: both;
+}
+
+/* 3. Divider (Bottom line in reference image): soft subtle line */
+.ProseMirror hr.word-divider,
+.ProseMirror .word-divider,
+.ProseMirror hr:not(.word-page-break):not(.word-solid-line) {
+  display: block;
+  border: none;
+  border-top: 2px solid #e2e8f0;
+  margin: 1.5rem 0;
+  height: 0;
+  clear: both;
 }
 
 .ProseMirror .word-blank-page {
@@ -192,10 +224,48 @@
   padding: 0;
 }
 
+/* Hyperlink styling & state modes: Navigate (Blue) vs Edit (Green) */
 .ProseMirror a {
   color: #1a73e8;
   text-decoration: underline;
-  cursor: pointer;
+  transition: color 0.15s ease, background-color 0.15s ease;
+}
+
+/* Navigate Mode (Blue): Links are interactive navigation elements with pointer cursor */
+[data-hyperlink-mode="navigate"] .ProseMirror a {
+  cursor: pointer !important;
+  color: #1d4ed8;
+}
+
+[data-hyperlink-mode="navigate"] .ProseMirror a:hover {
+  cursor: pointer !important;
+  color: #1e40af;
+  background-color: rgba(29, 78, 216, 0.08);
+  border-radius: 2px;
+}
+
+/* Edit Mode (Green): Links behave like editable text with text caret and edit affordance */
+[data-hyperlink-mode="edit"] .ProseMirror a {
+  cursor: text !important;
+  color: #047857;
+  text-decoration-style: dashed;
+  text-underline-offset: 3px;
+  background-color: rgba(16, 185, 129, 0.07);
+  border-radius: 2px;
+  padding: 0 1px;
+  outline: 1px dashed rgba(16, 185, 129, 0.35);
+  outline-offset: 1px;
+}
+
+[data-hyperlink-mode="edit"] .ProseMirror a:hover {
+  cursor: text !important;
+  background-color: rgba(16, 185, 129, 0.15);
+  outline: 1px solid rgba(16, 185, 129, 0.8);
+}
+
+[data-hyperlink-mode="edit"] .ProseMirror a:focus-within {
+  cursor: text !important;
+  outline: 1.5px solid #059669;
 }
 
 /* Tiptap Table Styling */
@@ -363,6 +433,46 @@
   pointer-events: none;
 }
 
+/* Tiptap Table Drag / Column Resizing State: Left-Right Arrows Cursor (only active during Tiptap table drag/resize) */
+.ProseMirror.resize-cursor,
+.ProseMirror.resize-cursor *,
+.ProseMirror.resize-cursor td,
+.ProseMirror.resize-cursor th,
+.ProseMirror.resize-cursor p,
+.ProseMirror.resize-cursor span,
+body.table-col-resizing,
+body.table-col-resizing *,
+.table-col-resizing #word-document-page,
+.table-col-resizing .ProseMirror,
+.table-col-resizing .ProseMirror * {
+  cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%230f172a' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M18 12H6' stroke='%230f172a'/%3E%3Cpath d='m14 8 4 4-4 4' fill='%232563eb' stroke='%230f172a'/%3E%3Cpath d='m10 8-4 4 4 4' fill='%232563eb' stroke='%230f172a'/%3E%3Cline x1='12' y1='4' x2='12' y2='20' stroke='%232563eb' stroke-width='1.5' stroke-dasharray='2 2'/%3E%3C/svg%3E") 12 12, col-resize, ew-resize !important;
+  user-select: none;
+}
+
+/* Normal table interaction */
+.ProseMirror table,
+.tiptap table {
+  cursor: text;
+}
+
+/* Table dragging or drag handle active: Standard Arrow cursor instead of I-beam */
+.ProseMirror table.dragging,
+.ProseMirror table.dragging *,
+.tiptap table.dragging,
+.tiptap table.dragging *,
+.ProseMirror .table-drag-handle:active,
+.tiptap .table-drag-handle:active,
+body.table-dragging,
+body.table-dragging * {
+  cursor: default !important;
+}
+
+/* Table drag handles */
+.ProseMirror .table-drag-handle,
+.tiptap .table-drag-handle {
+  cursor: default;
+}
+
 .tableWrapper {
   overflow-x: auto;
 }
@@ -466,14 +576,113 @@
   float: none !important;
 }
 
-/* Print Optimization */
+/* Table to DIV Converted Layout */
+.ProseMirror .divTable,
+.divTable {
+  display: flex !important;
+  flex-direction: column !important;
+  width: 100% !important;
+  margin: 1.25rem 0 !important;
+  border: 1px solid #cbd5e1 !important;
+  border-radius: 6px !important;
+  overflow: hidden !important;
+  background-color: #ffffff !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05) !important;
+}
+
+.ProseMirror .divTableHeading,
+.divTableHeading {
+  background-color: #f1f5f9 !important;
+  font-weight: 600 !important;
+  border-bottom: 2px solid #cbd5e1 !important;
+}
+
+.ProseMirror .divTableRow,
+.divTableRow {
+  display: flex !important;
+  width: 100% !important;
+  border-bottom: 1px solid #e2e8f0 !important;
+}
+
+.ProseMirror .divTableRow:last-child,
+.divTableRow:last-child {
+  border-bottom: none !important;
+}
+
+.ProseMirror .divTableCell,
+.divTableCell {
+  flex: 1 !important;
+  min-width: 0 !important;
+  padding: 10px 14px !important;
+  border-right: 1px solid #e2e8f0 !important;
+  word-break: break-word !important;
+}
+
+.ProseMirror .divTableCell:last-child,
+.divTableCell:last-child {
+  border-right: none !important;
+}
+
+.ProseMirror .divTableCell p,
+.divTableCell p {
+  margin-bottom: 0 !important;
+}
+
+/* Print Optimization & Multi-Page Pagination */
 @media print {
-  body {
-    background: transparent !important;
+  @page {
+    margin: 15mm 20mm;
+    size: auto;
   }
-  .no-print {
+
+  /* 1. Unclamp all parent containers to prevent 1-page clipping */
+  html,
+  body,
+  #root,
+  #root > div,
+  [class*="theme-"] {
+    height: auto !important;
+    min-height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    position: static !important;
+    display: block !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
+
+  /* 2. Workspace and Canvas: Disable scrolling & zoom transforms */
+  #word-canvas-workspace,
+  #word-canvas-workspace > div {
+    height: auto !important;
+    min-height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    position: static !important;
+    display: block !important;
+    transform: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+  }
+
+  /* 3. Hide all UI chrome, toolbars, sidebars, context menus, and rulers */
+  .no-print,
+  #word-ribbon-header,
+  #word-ribbon-toolbar,
+  #word-status-bar,
+  #word-navigation-pane,
+  aside,
+  header,
+  footer,
+  .floating-format-painter,
+  .interactive-ruler {
     display: none !important;
   }
+
+  /* 4. Document Page: Full width, transparent margins for printer margins */
+  #word-document-page,
   .print-page {
     box-shadow: none !important;
     border: none !important;
@@ -481,5 +690,421 @@
     padding: 0 !important;
     width: 100% !important;
     max-width: 100% !important;
+    min-height: auto !important;
+    height: auto !important;
+    overflow: visible !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    border-radius: 0 !important;
+  }
+
+  /* 5. Clear dark theme backgrounds and ensure exact print color fidelity */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  .dark-page,
+  .theme-fullDark .dark-page,
+  .sepia-page,
+  .theme-canvasDark #word-document-page {
+    background-color: #ffffff !important;
+    color: #0f172a !important;
+    box-shadow: none !important;
+  }
+
+  .ProseMirror {
+    color: #0f172a;
+    background-color: transparent !important;
+    text-shadow: none !important;
+    box-shadow: none !important;
+  }
+
+  .ProseMirror table {
+    border-color: #cbd5e1 !important;
+  }
+
+  .ProseMirror th,
+  .ProseMirror td {
+    border-color: #cbd5e1 !important;
+  }
+
+  .ProseMirror th {
+    background-color: #f1f5f9 !important;
+    color: #0f172a !important;
+  }
+
+  /* 6. Page Break Handling: Clean page breaks without UI dashes or badges */
+  .ProseMirror hr.word-page-break,
+  .ProseMirror .word-page-break {
+    border: none !important;
+    height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    page-break-after: always !important;
+    break-after: page !important;
+    visibility: hidden !important;
+    display: block !important;
+    clear: both !important;
+  }
+
+  .ProseMirror hr.word-page-break::after,
+  .ProseMirror .word-page-break::after {
+    display: none !important;
+    content: none !important;
+  }
+
+  .ProseMirror .word-blank-page {
+    border: none !important;
+    background: transparent !important;
+    min-height: 80vh !important;
+    page-break-after: always !important;
+    break-after: page !important;
+  }
+
+  .ProseMirror .word-blank-page::before {
+    display: none !important;
+  }
+
+  /* 7. Orphan & Widow Prevention for tables, headings, and images */
+  h1, h2, h3, h4, h5, h6 {
+    page-break-after: avoid !important;
+    break-after: avoid !important;
+  }
+
+  tr, img, figure, table {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
   }
 }
+
+/* ==========================================================================
+   4 Real Dark / Light / Sepia Themes Support (Photos 1, 2, 3, 4)
+   ========================================================================== */
+
+/* Full Dark Mode document typography & contrast (Photo 2) */
+.dark-page .ProseMirror,
+.theme-fullDark .dark-page .ProseMirror {
+  color: #f3f4f6 !important;
+}
+
+.dark-page .ProseMirror h1,
+.dark-page .ProseMirror h2,
+.dark-page .ProseMirror h3,
+.dark-page .ProseMirror h4,
+.dark-page .ProseMirror h5,
+.dark-page .ProseMirror h6,
+.dark-page .ProseMirror strong,
+.dark-page .ProseMirror b {
+  color: #ffffff !important;
+}
+
+.dark-page .ProseMirror table {
+  border-color: #4b5563 !important;
+}
+
+.dark-page .ProseMirror th {
+  background-color: #374151 !important;
+  color: #f9fafb !important;
+  border-color: #4b5563 !important;
+}
+
+.dark-page .ProseMirror td {
+  border-color: #4b5563 !important;
+  color: #f3f4f6 !important;
+}
+
+.dark-page .ProseMirror blockquote {
+  border-left-color: #3b82f6 !important;
+  color: #d1d5db !important;
+}
+
+.dark-page .ProseMirror hr {
+  border-color: #4b5563 !important;
+}
+
+/* Universal Dark Mode Template Compatibility: ensures all templates adapt seamlessly */
+.dark-page .ProseMirror [style*="color: #0f172a"],
+.dark-page .ProseMirror [style*="color: #1e293b"],
+.dark-page .ProseMirror [style*="color: #334155"],
+.dark-page .ProseMirror [style*="color: #475569"],
+.dark-page .ProseMirror [style*="color: #1f2937"],
+.dark-page .ProseMirror [style*="color: #111827"],
+.dark-page .ProseMirror [style*="color: #4c0519"],
+.dark-page .ProseMirror [style*="color: #064e3b"],
+.dark-page .ProseMirror [style*="color: #451a03"],
+.dark-page .ProseMirror [style*="color: #2c231c"] {
+  color: #f1f5f9 !important;
+}
+
+.dark-page .ProseMirror [style*="color: #64748b"],
+.dark-page .ProseMirror [style*="color: #4b5563"],
+.dark-page .ProseMirror [style*="color: #78350f"],
+.dark-page .ProseMirror [style*="color: #047857"],
+.dark-page .ProseMirror [style*="color: #881337"],
+.dark-page .ProseMirror [style*="color: #8b5cf6"] {
+  color: #94a3b8 !important;
+}
+
+.dark-page .ProseMirror [style*="background-color: #f1f5f9"],
+.dark-page .ProseMirror [style*="background-color: #f8fafc"],
+.dark-page .ProseMirror [style*="background-color: #f9fafb"],
+.dark-page .ProseMirror [style*="background-color: #ffffff"],
+.dark-page .ProseMirror [style*="background-color: #fff1f2"],
+.dark-page .ProseMirror [style*="background-color: #fbf0d9"],
+.dark-page .ProseMirror [style*="background-color: #f0fdf4"],
+.dark-page .ProseMirror [style*="background-color: #faf5ff"],
+.dark-page .ProseMirror [style*="background-color: #f0f9ff"],
+.dark-page .ProseMirror [style*="background-color: #f3e8ff"],
+.dark-page .ProseMirror [style*="background-color: #dbeafe"] {
+  background-color: #1e293b !important;
+}
+
+.dark-page .ProseMirror [style*="border-color: #cbd5e1"],
+.dark-page .ProseMirror [style*="border-color: #e2e8f0"],
+.dark-page .ProseMirror [style*="border-color: #d1d5db"],
+.dark-page .ProseMirror [style*="border-color: #fecdd3"],
+.dark-page .ProseMirror [style*="border-color: #d8b4fe"],
+.dark-page .ProseMirror [style*="border-color: #bbf7d0"] {
+  border-color: #374151 !important;
+}
+
+.dark-page .ProseMirror pre,
+.dark-page .ProseMirror code {
+  background-color: #18181b !important;
+  color: #34d399 !important;
+  border-color: #27272a !important;
+}
+
+/* Universal Light Mode Template Compatibility: ensures dark templates adapt to light canvas */
+#word-document-page:not(.dark-page) .ProseMirror [style*="color: #cbd5e1"],
+#word-document-page:not(.dark-page) .ProseMirror [style*="color: #d4d4d8"],
+#word-document-page:not(.dark-page) .ProseMirror [style*="color: #e4e4e7"],
+#word-document-page:not(.dark-page) .ProseMirror [style*="color: #e7e5e4"],
+#word-document-page:not(.dark-page) .ProseMirror [style*="color: #f8fafc"] {
+  color: #1e293b !important;
+}
+
+#word-document-page:not(.dark-page) .ProseMirror [style*="color: #94a3b8"],
+#word-document-page:not(.dark-page) .ProseMirror [style*="color: #a1a1aa"],
+#word-document-page:not(.dark-page) .ProseMirror [style*="color: #a8a29e"],
+#word-document-page:not(.dark-page) .ProseMirror [style*="color: #71717a"] {
+  color: #64748b !important;
+}
+
+#word-document-page:not(.dark-page) .ProseMirror [style*="background-color: #18181b"],
+#word-document-page:not(.dark-page) .ProseMirror [style*="background-color: #1e293b"],
+#word-document-page:not(.dark-page) .ProseMirror [style*="background-color: #27272a"],
+#word-document-page:not(.dark-page) .ProseMirror [style*="background-color: #09090b"] {
+  background-color: #f1f5f9 !important;
+}
+
+#word-document-page:not(.dark-page) .ProseMirror [style*="border-color: #27272a"],
+#word-document-page:not(.dark-page) .ProseMirror [style*="border-color: #3f3f46"] {
+  border-color: #e2e8f0 !important;
+}
+
+/* Sepia Warm Eye Comfort Mode typography & contrast (Photo 4) */
+.sepia-page .ProseMirror,
+.theme-sepia .sepia-page .ProseMirror {
+  color: #2c231c !important;
+}
+
+.sepia-page .ProseMirror h1,
+.sepia-page .ProseMirror h2,
+.sepia-page .ProseMirror h3,
+.sepia-page .ProseMirror h4,
+.sepia-page .ProseMirror h5,
+.sepia-page .ProseMirror h6,
+.sepia-page .ProseMirror strong,
+.sepia-page .ProseMirror b {
+  color: #1a140f !important;
+}
+
+.sepia-page .ProseMirror table {
+  border-color: #c9bea8 !important;
+}
+
+.sepia-page .ProseMirror th {
+  background-color: #eee4d1 !important;
+  color: #2b2118 !important;
+  border-color: #c9bea8 !important;
+}
+
+.sepia-page .ProseMirror td {
+  border-color: #d8cdba !important;
+  color: #2c231c !important;
+}
+
+.sepia-page .ProseMirror blockquote {
+  border-left-color: #a07a4a !important;
+  background-color: #f4ece0 !important;
+  color: #463729 !important;
+}
+
+.sepia-page .ProseMirror hr {
+  border-color: #d4c8b3 !important;
+}
+
+/* Canvas Dark: Crisp white document page with standard dark text (Photo 3) */
+.theme-canvasDark #word-document-page:not(.dark-page) .ProseMirror {
+  color: #1f2937 !important;
+}
+
+/* ==========================================================================
+   Dark Mode Ribbon Toolbar & Controls (Photos 1 & 2)
+   Applies to both 'Canvas Dark' and 'Full Dark' modes
+   ========================================================================== */
+.dark #word-ribbon-toolbar,
+.theme-fullDark #word-ribbon-toolbar,
+.theme-canvasDark #word-ribbon-toolbar {
+  background-color: #202020 !important;
+  color: #e5e7eb !important;
+  border-bottom-color: #2e2e2e !important;
+}
+
+/* Dropdowns in ribbon (Font Family, Font Size, Margins, Heading, Color Picker, etc.) */
+.dark #word-ribbon-toolbar select,
+.theme-fullDark #word-ribbon-toolbar select,
+.theme-canvasDark #word-ribbon-toolbar select,
+.dark #word-ribbon-toolbar input[type="text"],
+.theme-fullDark #word-ribbon-toolbar input[type="text"],
+.theme-canvasDark #word-ribbon-toolbar input[type="text"],
+.dark #word-ribbon-toolbar input[type="number"],
+.theme-fullDark #word-ribbon-toolbar input[type="number"],
+.theme-canvasDark #word-ribbon-toolbar input[type="number"] {
+  background-color: #282828 !important;
+  color: #f3f4f6 !important;
+  border-color: #404040 !important;
+}
+
+.dark #word-ribbon-toolbar select option,
+.theme-fullDark #word-ribbon-toolbar select option,
+.theme-canvasDark #word-ribbon-toolbar select option {
+  background-color: #282828 !important;
+  color: #f3f4f6 !important;
+}
+
+/* Ribbon Button icons & typography */
+.dark #word-ribbon-toolbar button,
+.theme-fullDark #word-ribbon-toolbar button,
+.theme-canvasDark #word-ribbon-toolbar button {
+  color: #e5e7eb;
+}
+
+.dark #word-ribbon-toolbar button:hover,
+.theme-fullDark #word-ribbon-toolbar button:hover,
+.theme-canvasDark #word-ribbon-toolbar button:hover {
+  background-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+.dark #word-ribbon-toolbar button span,
+.theme-fullDark #word-ribbon-toolbar button span,
+.theme-canvasDark #word-ribbon-toolbar button span {
+  color: #e5e7eb;
+}
+
+.dark #word-ribbon-toolbar svg:not(.text-blue-500):not(.text-emerald-500):not(.text-amber-500):not(.text-rose-500):not(.text-purple-500),
+.theme-fullDark #word-ribbon-toolbar svg:not(.text-blue-500):not(.text-emerald-500):not(.text-amber-500):not(.text-rose-500):not(.text-purple-500),
+.theme-canvasDark #word-ribbon-toolbar svg:not(.text-blue-500):not(.text-emerald-500):not(.text-amber-500):not(.text-rose-500):not(.text-purple-500) {
+  color: #e5e7eb;
+}
+
+/* Active ribbon buttons (e.g. Bold 'B', Alignment in Photo 2) */
+.dark #word-ribbon-toolbar button.bg-blue-50,
+.dark #word-ribbon-toolbar button.bg-blue-100,
+.theme-fullDark #word-ribbon-toolbar button.bg-blue-50,
+.theme-fullDark #word-ribbon-toolbar button.bg-blue-100,
+.theme-canvasDark #word-ribbon-toolbar button.bg-blue-50,
+.theme-canvasDark #word-ribbon-toolbar button.bg-blue-100 {
+  background-color: #0e3a64 !important;
+  border-color: #0078d4 !important;
+  color: #60a5fa !important;
+}
+
+.dark #word-ribbon-toolbar button.bg-blue-50 svg,
+.dark #word-ribbon-toolbar button.bg-blue-100 svg,
+.theme-fullDark #word-ribbon-toolbar button.bg-blue-50 svg,
+.theme-fullDark #word-ribbon-toolbar button.bg-blue-100 svg,
+.theme-canvasDark #word-ribbon-toolbar button.bg-blue-50 svg,
+.theme-canvasDark #word-ribbon-toolbar button.bg-blue-100 svg {
+  color: #60a5fa !important;
+}
+
+/* Dividers in ribbon */
+.dark #word-ribbon-toolbar [class*="border-r"],
+.theme-fullDark #word-ribbon-toolbar [class*="border-r"],
+.theme-canvasDark #word-ribbon-toolbar [class*="border-r"] {
+  border-right-color: #383838 !important;
+}
+
+.dark #word-ribbon-toolbar div.bg-\[\#dad9d8\],
+.theme-fullDark #word-ribbon-toolbar div.bg-\[\#dad9d8\],
+.theme-canvasDark #word-ribbon-toolbar div.bg-\[\#dad9d8\] {
+  background-color: #383838 !important;
+}
+
+/* Group titles at bottom of groups ("Clipboard", "Font", "Paragraph" in Photo 2) */
+.dark #word-ribbon-toolbar span.text-neutral-400,
+.dark #word-ribbon-toolbar span.text-neutral-500,
+.dark #word-ribbon-toolbar span.text-neutral-600,
+.theme-fullDark #word-ribbon-toolbar span.text-neutral-400,
+.theme-fullDark #word-ribbon-toolbar span.text-neutral-500,
+.theme-fullDark #word-ribbon-toolbar span.text-neutral-600,
+.theme-canvasDark #word-ribbon-toolbar span.text-neutral-400,
+.theme-canvasDark #word-ribbon-toolbar span.text-neutral-500,
+.theme-canvasDark #word-ribbon-toolbar span.text-neutral-600 {
+  color: #9ca3af !important;
+}
+
+/* White dropdown containers inside panels/popups */
+.dark #word-ribbon-toolbar div.bg-white,
+.theme-fullDark #word-ribbon-toolbar div.bg-white,
+.theme-canvasDark #word-ribbon-toolbar div.bg-white {
+  background-color: #282828 !important;
+  border-color: #383838 !important;
+  color: #e5e7eb !important;
+}
+
+/* Dark mode dropdown panels (Margins, Orientation, Size, Color, Watermark, Table Themes, Proofing Languages, etc.) */
+.dark #word-ribbon-toolbar div[class*="shadow-2xl"],
+.theme-fullDark #word-ribbon-toolbar div[class*="shadow-2xl"],
+.theme-canvasDark #word-ribbon-toolbar div[class*="shadow-2xl"] {
+  background-color: #242424 !important;
+  border-color: #404040 !important;
+  color: #f3f4f6 !important;
+}
+
+.dark #word-ribbon-toolbar div[class*="shadow-2xl"] button:hover,
+.theme-fullDark #word-ribbon-toolbar div[class*="shadow-2xl"] button:hover,
+.theme-canvasDark #word-ribbon-toolbar div[class*="shadow-2xl"] button:hover {
+  background-color: #333333 !important;
+  color: #ffffff !important;
+}
+
+.dark #word-ribbon-toolbar div[class*="shadow-2xl"] [class*="border-b"],
+.theme-fullDark #word-ribbon-toolbar div[class*="shadow-2xl"] [class*="border-b"],
+.theme-canvasDark #word-ribbon-toolbar div[class*="shadow-2xl"] [class*="border-b"] {
+  border-bottom-color: #383838 !important;
+}
+
+/* Sepia Mode Ribbon refinement */
+.theme-sepia #word-ribbon-toolbar select {
+  background-color: #fbf8ee !important;
+  color: #2c231c !important;
+  border-color: #cfc4b0 !important;
+}
+
+.theme-sepia #word-ribbon-toolbar span.text-neutral-400,
+.theme-sepia #word-ribbon-toolbar span.text-neutral-500 {
+  color: #8c7966 !important;
+}
+
+/* Word-style Format Painter active cursor */
+.format-painter-active,
+.format-painter-active #word-document-page,
+.format-painter-active .ProseMirror,
+.format-painter-active .ProseMirror * {
+  cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%23185abd' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m14.6 2.6 6.8 6.8-9.8 9.8H4.8v-6.8z' fill='%23bfdbfe'/%3E%3Cpath d='m18 6 2-2' stroke='%23ea580c'/%3E%3Cpath d='m15 9 2-2' stroke='%23ea580c'/%3E%3C/svg%3E") 3 22, copy !important;
+}
+

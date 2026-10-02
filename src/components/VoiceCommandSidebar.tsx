@@ -413,11 +413,23 @@ export const VoiceCommandSidebar: React.FC<VoiceCommandSidebarProps> = ({ editor
         break;
 
       case 'indent':
-        editor.chain().focus().insertContent('    ').run();
+        if (editor.isActive('taskList') && editor.can().sinkListItem('taskItem')) {
+          editor.chain().focus().sinkListItem('taskItem').run();
+        } else if ((editor.isActive('bulletList') || editor.isActive('orderedList')) && editor.can().sinkListItem('listItem')) {
+          editor.chain().focus().sinkListItem('listItem').run();
+        } else {
+          editor.chain().focus().increaseParagraphIndent().run();
+        }
         break;
 
       case 'outdent':
-        editor.chain().focus().liftEmptyBlock().run();
+        if (editor.isActive('taskList') && editor.can().liftListItem('taskItem')) {
+          editor.chain().focus().liftListItem('taskItem').run();
+        } else if ((editor.isActive('bulletList') || editor.isActive('orderedList')) && editor.can().liftListItem('listItem')) {
+          editor.chain().focus().liftListItem('listItem').run();
+        } else {
+          editor.chain().focus().decreaseParagraphIndent().run();
+        }
         break;
 
       case 'bullet':

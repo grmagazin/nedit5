@@ -10,7 +10,12 @@ import {
   RotateCcw,
   Trash2,
   Check,
+  Camera,
+  Download,
 } from 'lucide-react';
+import { ScreenCaptureTool } from './ScreenCaptureTool';
+import { snapshotStore } from '../utils/snapshotStore';
+import { captureDocumentScreenSnapshot } from '../utils/screenSnapshot';
 
 interface ImageWizardSidebarProps {
   editor: Editor | null;
@@ -140,9 +145,18 @@ const DEFAULT_HVAC_SAMPLE = `data:image/svg+xml;utf8,${encodeURIComponent(`
 `)}`;
 
 export const ImageWizardSidebar: React.FC<ImageWizardSidebarProps> = ({ editor, onClose }) => {
-  // Current active image source
-  const [imageSrc, setImageSrc] = useState<string>(DEFAULT_HVAC_SAMPLE);
+  // Current active image source (prioritizes pending snapshot delivered to this lazy component)
+  const [imageSrc, setImageSrc] = useState<string>(() => {
+    const pending = snapshotStore.consumePendingForWizard();
+    if (pending && pending.length > 50) return pending;
+    const latest = snapshotStore.getLatestSnapshot();
+    if (latest && latest.length > 50) return latest;
+    return DEFAULT_HVAC_SAMPLE;
+  });
   const [urlInput, setUrlInput] = useState<string>('');
+  const [isCapturing, setIsCapturing] = useState(false);
+  const [showScreenCaptureTool, setShowScreenCaptureTool] = useState(false);
+  const [screenCaptureBaseImage, setScreenCaptureBaseImage] = useState<string | null>(null);
   
   // Dimensions & sizes
   const [naturalWidth, setNaturalWidth] = useState<number>(1536);
@@ -165,6 +179,84 @@ export const ImageWizardSidebar: React.FC<ImageWizardSidebarProps> = ({ editor, 
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const replaceInputRef = useRef<HTMLInputElement>(null);
+
+  // Hook into snapshotStore and CustomEvent to receive snapshots across lazy-loading boundaries
+  useEffect(() => {
+    // 1. Mark that wizard is now mounted and ready
+    snapshotStore.markWizardReady();
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('word_image_wizard_ready'));
+    }
+
+    // 2. Check for any pending snapshot that arrived during lazy load chunk fetch
+    const pending = snapshotStore.consumePendingForWizard();
+    if (pending && pending.length > 50) {
+      setImageSrc(pending);
+      setTargetWidth(null);
+      setAppliedMessage('📸 Loaded snapshot! Ready to resize & paste.');
+      setTimeout(() => setAppliedMessage(null), 3500);
+    }
+
+    // 3. Subscribe to reactive snapshotStore
+    const unsubscribe = snapshotStore.subscribe((newSrc: string) => {
+      if (newSrc && newSrc.length > 50) {
+        setImageSrc(newSrc);
+        setTargetWidth(null);
+        setAppliedMessage('📸 Loaded snapshot! Ready to resize & paste.');
+        setTimeout(() => setAppliedMessage(null), 3500);
+      }
+    });
+
+    // 4. Also listen for custom event as backup
+    const handleWizardLoad = (e: Event) => {
+      const customEvent = e as CustomEvent<{ src: string }>;
+      if (customEvent.detail?.src) {
+        setImageSrc(customEvent.detail.src);
+        setTargetWidth(null);
+        setAppliedMessage('📸 Loaded snapshot! Ready to resize & paste.');
+        setTimeout(() => setAppliedMessage(null), 3500);
+      }
+    };
+    window.addEventListener('word_image_wizard_load', handleWizardLoad);
+
+    return () => {
+      unsubscribe();
+      window.removeEventListener('word_image_wizard_load', handleWizardLoad);
+    };
+  }, []);
+
+  // Screen capture tool function directly available in Image Wizard
+  const handleCaptureScreenSnapshot = async () => {
+    setIsCapturing(true);
+    setAppliedMessage('📸 Capturing document screen...');
+    try {
+      const result = await captureDocumentScreenSnapshot({ pixelRatio: 1.5 });
+      if (!result.success || !result.dataUrl) {
+        throw new Error(result.error || 'Failed to generate document screenshot');
+      }
+
+      setScreenCaptureBaseImage(result.dataUrl);
+      setShowScreenCaptureTool(true);
+      setAppliedMessage('✂️ Screen Capture Tool ready! Drag to select an area.');
+      setTimeout(() => setAppliedMessage(null), 3000);
+    } catch (err: any) {
+      console.error('Failed to capture snapshot in Image Wizard:', err);
+      const failMsg = err?.message || 'Screen capture failed. Check document visibility.';
+      setAppliedMessage(`❌ ${failMsg}`);
+      setTimeout(() => setAppliedMessage(null), 4500);
+    } finally {
+      setIsCapturing(false);
+    }
+  };
+
+  const handleConfirmAreaCapture = (capturedAreaUrl: string) => {
+    setShowScreenCaptureTool(false);
+    setImageSrc(capturedAreaUrl);
+    setTargetWidth(null);
+    snapshotStore.setLatestSnapshot(capturedAreaUrl, 'snip');
+    setAppliedMessage('📸 Snipped area loaded into Image Wizard!');
+    setTimeout(() => setAppliedMessage(null), 3000);
+  };
 
   // Check if an image is currently selected in the editor
   useEffect(() => {
@@ -463,18 +555,31 @@ export const ImageWizardSidebar: React.FC<ImageWizardSidebarProps> = ({ editor, 
             className="hidden"
             onChange={handleFileUpload}
           />
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            className="w-full bg-[#253468] hover:bg-[#1a254c] text-white font-medium py-2.5 px-4 rounded-lg flex items-center justify-center space-x-2 text-xs cursor-pointer shadow-xs transition-colors"
-          >
-            <Upload size={16} />
-            <span>Upload Local Image</span>
-          </button>
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="w-full bg-[#253468] hover:bg-[#1a254c] text-white font-medium py-2 px-2.5 rounded-lg flex items-center justify-center space-x-1.5 text-xs cursor-pointer shadow-xs transition-colors"
+            >
+              <Upload size={14} />
+              <span>Upload Image</span>
+            </button>
+            <button
+              onClick={handleCaptureScreenSnapshot}
+              disabled={isCapturing}
+              className="w-full bg-[#059669] hover:bg-[#047857] text-white font-medium py-2 px-2.5 rounded-lg flex items-center justify-center space-x-1.5 text-xs cursor-pointer shadow-xs transition-colors disabled:opacity-50"
+              title="Capture screen snapshot of the document"
+            >
+              <Camera size={14} className={isCapturing ? 'animate-pulse' : ''} />
+              <span>{isCapturing ? 'Capturing...' : 'Screen Snapshot'}</span>
+            </button>
+          </div>
 
           {/* Helper tip */}
-          <div className="text-[11px] text-slate-500 flex items-center space-x-1.5 pt-0.5">
-            <span>💡</span>
-            <span>Tip: paste images directly with Ctrl+V</span>
+          <div className="text-[11px] text-slate-500 flex items-center justify-between pt-0.5">
+            <span className="flex items-center space-x-1">
+              <span>💡</span>
+              <span>Paste with Ctrl+V or capture snapshot</span>
+            </span>
           </div>
         </div>
 
@@ -624,14 +729,24 @@ export const ImageWizardSidebar: React.FC<ImageWizardSidebarProps> = ({ editor, 
       </div>
 
       {/* Sticky Bottom Actions */}
-      <div className="p-4 border-t border-slate-200 bg-white space-y-2.5">
-        {/* Primary Apply Optimization Button */}
+      <div className="p-4 border-t border-slate-200 bg-white space-y-2">
+        {/* Primary Paste to Document Button */}
         <button
           onClick={handleApplyOptimization}
-          className="w-full bg-[#253468] hover:bg-[#1a254c] text-white font-semibold py-2.5 px-4 rounded-lg flex items-center justify-center space-x-2 text-sm shadow-sm cursor-pointer transition-colors"
+          className="w-full bg-[#185abd] hover:bg-[#134896] text-white font-semibold py-2.5 px-4 rounded-lg flex items-center justify-center space-x-2 text-sm shadow-sm cursor-pointer transition-colors"
+          title="Resize, optimize and paste/insert this image into the document at cursor position"
         >
-          <Wand2 size={16} />
-          <span>Apply Optimization</span>
+          <Check size={16} />
+          <span>Paste / Insert to Document</span>
+        </button>
+
+        {/* Secondary Apply Optimization Button */}
+        <button
+          onClick={handleApplyOptimization}
+          className="w-full bg-[#253468] hover:bg-[#1a254c] text-white font-semibold py-2 px-4 rounded-lg flex items-center justify-center space-x-2 text-xs shadow-xs cursor-pointer transition-colors"
+        >
+          <Wand2 size={14} />
+          <span>Apply Optimization ({format} {qualityPercent}%)</span>
         </button>
 
         {/* Secondary Actions: Replace, Reset, Delete */}
@@ -674,6 +789,16 @@ export const ImageWizardSidebar: React.FC<ImageWizardSidebarProps> = ({ editor, 
           </button>
         </div>
       </div>
+
+      {/* Lightweight Interactive Screen Capture Tool */}
+      {showScreenCaptureTool && screenCaptureBaseImage && (
+        <ScreenCaptureTool
+          isOpen={showScreenCaptureTool}
+          baseImageUrl={screenCaptureBaseImage}
+          onClose={() => setShowScreenCaptureTool(false)}
+          onConfirmCapture={handleConfirmAreaCapture}
+        />
+      )}
     </aside>
   );
 };

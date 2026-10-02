@@ -21,11 +21,13 @@ import {
   Bookmark,
   Info,
   ChevronsUpDown,
-  FileText,
-  Volume2,
-  VolumeX,
   Eraser,
   ChevronRight,
+  Bold,
+  Italic,
+  Underline as UnderlineIcon,
+  Strikethrough,
+  Link2,
 } from 'lucide-react';
 
 interface EditorContextMenuProps {
@@ -33,6 +35,7 @@ interface EditorContextMenuProps {
   isOpen: boolean;
   position: { x: number; y: number };
   onClose: () => void;
+  onOpenLinkModal?: () => void;
 }
 
 type SubmenuType = 'format' | 'list' | 'spacing' | 'fontSize' | 'typography' | null;
@@ -42,34 +45,10 @@ export const EditorContextMenu: React.FC<EditorContextMenuProps> = ({
   isOpen,
   position,
   onClose,
+  onOpenLinkModal,
 }) => {
   const menuRef = useRef<HTMLDivElement>(null);
   const [activeSubmenu, setActiveSubmenu] = useState<SubmenuType>(null);
-  const [menuCoords, setMenuCoords] = useState({ top: 0, left: 0 });
-
-  // Compute position clamped inside screen viewport
-  useEffect(() => {
-    if (!isOpen) {
-      setActiveSubmenu(null);
-      return;
-    }
-
-    const estimatedWidth = 470;
-    const estimatedHeight = 520;
-    const padding = 8;
-
-    let x = position.x;
-    let y = position.y;
-
-    if (x + estimatedWidth > window.innerWidth - padding) {
-      x = Math.max(padding, window.innerWidth - estimatedWidth - padding);
-    }
-    if (y + estimatedHeight > window.innerHeight - padding) {
-      y = Math.max(padding, window.innerHeight - estimatedHeight - padding);
-    }
-
-    setMenuCoords({ top: y, left: x });
-  }, [isOpen, position]);
 
   // Click outside and escape key handling
   useEffect(() => {
@@ -97,6 +76,19 @@ export const EditorContextMenu: React.FC<EditorContextMenuProps> = ({
   }, [isOpen, onClose]);
 
   if (!isOpen || !editor) return null;
+
+  // Immediate clamp calculation for zero-latency, instant display
+  const estimatedWidth = 470;
+  const estimatedHeight = 440;
+  const padding = 8;
+  const left = Math.min(
+    position.x,
+    Math.max(padding, window.innerWidth - estimatedWidth - padding)
+  );
+  const top = Math.min(
+    position.y,
+    Math.max(padding, window.innerHeight - estimatedHeight - padding)
+  );
 
   // Actions
   const handleCut = () => {
@@ -135,15 +127,6 @@ export const EditorContextMenu: React.FC<EditorContextMenuProps> = ({
 
   const handleSelectAll = () => {
     editor.chain().focus().selectAll().run();
-    onClose();
-  };
-
-  const handleDuplicateBlock = () => {
-    const { $from } = editor.state.selection;
-    const text = $from.parent.textContent;
-    if (text) {
-      editor.chain().focus().splitBlock().insertContent(text).run();
-    }
     onClose();
   };
 
@@ -209,42 +192,6 @@ export const EditorContextMenu: React.FC<EditorContextMenuProps> = ({
     onClose();
   };
 
-  const handleInsertLorem = () => {
-    editor
-      .chain()
-      .focus()
-      .insertContent(
-        'Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.'
-      )
-      .run();
-    onClose();
-  };
-
-  const handleReadAloud = () => {
-    if ('speechSynthesis' in window) {
-      window.speechSynthesis.cancel();
-      const selected = editor.state.doc.textBetween(
-        editor.state.selection.from,
-        editor.state.selection.to,
-        ' '
-      );
-      const text = selected.trim() || editor.getText();
-      if (text.trim()) {
-        const utter = new SpeechSynthesisUtterance(text);
-        utter.rate = 1.0;
-        window.speechSynthesis.speak(utter);
-      }
-    }
-    onClose();
-  };
-
-  const handleStopReading = () => {
-    if ('speechSynthesis' in window) {
-      window.speechSynthesis.cancel();
-    }
-    onClose();
-  };
-
   const handleClearFormatting = () => {
     editor.chain().focus().unsetAllMarks().clearNodes().run();
     onClose();
@@ -275,10 +222,10 @@ export const EditorContextMenu: React.FC<EditorContextMenuProps> = ({
   return (
     <div
       ref={menuRef}
-      className="fixed z-[9999] flex flex-row bg-white rounded-xl shadow-[0_16px_48px_rgba(0,0,0,0.18)] border border-neutral-200/90 text-[#374151] select-none no-print divide-x divide-neutral-100 font-sans text-[13px] animate-in fade-in zoom-in-95 duration-100"
+      className="fixed z-[9999] flex flex-row bg-white rounded-xl shadow-[0_16px_48px_rgba(0,0,0,0.18)] border border-neutral-200/90 text-[#374151] select-none no-print divide-x divide-neutral-100 font-sans text-[13px] animate-in fade-in zoom-in-95 duration-75"
       style={{
-        top: `${menuCoords.top}px`,
-        left: `${menuCoords.left}px`,
+        top: `${top}px`,
+        left: `${left}px`,
         width: '470px',
       }}
       onContextMenu={(e) => e.preventDefault()}
@@ -637,25 +584,6 @@ export const EditorContextMenu: React.FC<EditorContextMenuProps> = ({
             )}
           </div>
         </div>
-
-        {/* Duplicate / Delete Block */}
-        <div className="border-t border-neutral-100 pt-1.5 mt-1">
-          <button
-            onClick={handleDuplicateBlock}
-            className="flex items-center space-x-2.5 w-full px-2 py-1.5 rounded hover:bg-neutral-100/80 transition-colors text-left group cursor-pointer"
-          >
-            <Copy size={14} className="text-neutral-500 group-hover:text-neutral-800" />
-            <span className="text-neutral-700">Duplicate Block</span>
-          </button>
-
-          <button
-            onClick={handleDeleteBlock}
-            className="flex items-center space-x-2.5 w-full px-2 py-1.5 rounded hover:bg-red-50 text-red-500 transition-colors text-left group cursor-pointer"
-          >
-            <Trash2 size={14} className="text-red-500" />
-            <span className="font-normal text-red-500">Delete Block</span>
-          </button>
-        </div>
       </div>
 
       {/* ========================================================= */}
@@ -755,40 +683,94 @@ export const EditorContextMenu: React.FC<EditorContextMenuProps> = ({
           )}
         </div>
 
-        {/* Lorem Ipsum */}
-        <button
-          onClick={handleInsertLorem}
-          className="flex items-center space-x-2.5 w-full px-2 py-1.5 rounded hover:bg-neutral-100/80 transition-colors text-left group cursor-pointer"
-        >
-          <FileText size={14} className="text-neutral-500 group-hover:text-neutral-800" />
-          <span className="text-neutral-700">Lorem Ipsum</span>
-        </button>
-
-        {/* READ Header */}
+        {/* FORMAT Header & Fast Inline Actions (B, I, U, S) on the next line */}
         <div className="border-t border-neutral-100 pt-1.5 mt-1">
           <div className="px-2 pt-0.5 pb-1 text-[10px] font-bold text-neutral-400 tracking-wider uppercase">
-            Read
+            Format
           </div>
-
-          <button
-            onClick={handleReadAloud}
-            className="flex items-center space-x-2.5 w-full px-2 py-1.5 rounded hover:bg-neutral-100/80 transition-colors text-left group cursor-pointer"
-          >
-            <Volume2 size={14} className="text-neutral-500 group-hover:text-neutral-800" />
-            <span className="text-neutral-700">Read Document Aloud</span>
-          </button>
-
-          <button
-            onClick={handleStopReading}
-            className="flex items-center space-x-2.5 w-full px-2 py-1.5 rounded hover:bg-neutral-100/80 transition-colors text-left group cursor-pointer"
-          >
-            <VolumeX size={14} className="text-neutral-500 group-hover:text-neutral-800" />
-            <span className="text-neutral-700">Stop Reading</span>
-          </button>
+          <div className="flex items-center space-x-1 px-1 pb-1">
+            {/* Bold */}
+            <button
+              type="button"
+              onClick={() => {
+                editor.chain().focus().toggleBold().run();
+                onClose();
+              }}
+              className={`flex-1 h-7 rounded border flex items-center justify-center font-bold text-xs transition-colors cursor-pointer ${
+                editor.isActive('bold')
+                  ? 'border-[#185abd] bg-[#185abd] text-white shadow-2xs'
+                  : 'border-neutral-200 hover:border-[#185abd] hover:bg-neutral-50 text-neutral-800'
+              }`}
+              title="Bold (Ctrl+B)"
+            >
+              <Bold size={13} strokeWidth={2.8} />
+            </button>
+            {/* Italic */}
+            <button
+              type="button"
+              onClick={() => {
+                editor.chain().focus().toggleItalic().run();
+                onClose();
+              }}
+              className={`flex-1 h-7 rounded border flex items-center justify-center text-xs transition-colors cursor-pointer ${
+                editor.isActive('italic')
+                  ? 'border-[#185abd] bg-[#185abd] text-white shadow-2xs'
+                  : 'border-neutral-200 hover:border-[#185abd] hover:bg-neutral-50 text-neutral-800'
+              }`}
+              title="Italic (Ctrl+I)"
+            >
+              <Italic size={13} strokeWidth={2.8} />
+            </button>
+            {/* Underline */}
+            <button
+              type="button"
+              onClick={() => {
+                editor.chain().focus().toggleUnderline().run();
+                onClose();
+              }}
+              className={`flex-1 h-7 rounded border flex items-center justify-center text-xs transition-colors cursor-pointer ${
+                editor.isActive('underline')
+                  ? 'border-[#185abd] bg-[#185abd] text-white shadow-2xs'
+                  : 'border-neutral-200 hover:border-[#185abd] hover:bg-neutral-50 text-neutral-800'
+              }`}
+              title="Underline (Ctrl+U)"
+            >
+              <UnderlineIcon size={13} strokeWidth={2.8} />
+            </button>
+            {/* Strike */}
+            <button
+              type="button"
+              onClick={() => {
+                editor.chain().focus().toggleStrike().run();
+                onClose();
+              }}
+              className={`flex-1 h-7 rounded border flex items-center justify-center text-xs transition-colors cursor-pointer ${
+                editor.isActive('strike')
+                  ? 'border-[#185abd] bg-[#185abd] text-white shadow-2xs'
+                  : 'border-neutral-200 hover:border-[#185abd] hover:bg-neutral-50 text-neutral-800'
+              }`}
+              title="Strikethrough"
+            >
+              <Strikethrough size={13} strokeWidth={2.8} />
+            </button>
+          </div>
         </div>
 
         {/* CLEAR & RESET Header */}
         <div className="border-t border-neutral-100 pt-1.5 mt-1">
+          {/* Link button to trigger Link popup */}
+          <button
+            onClick={() => {
+              onClose();
+              onOpenLinkModal?.();
+            }}
+            className="flex items-center space-x-2.5 w-full px-2 py-1.5 rounded hover:bg-neutral-100/80 transition-colors text-left group cursor-pointer"
+            title="Insert or Edit Hyperlink"
+          >
+            <Link2 size={14} className="text-[#185abd] group-hover:text-blue-700" />
+            <span className="text-neutral-700 font-normal">Link</span>
+          </button>
+
           <button
             onClick={handleClearFormatting}
             className="flex items-center space-x-2.5 w-full px-2 py-1.5 rounded hover:bg-neutral-100/80 transition-colors text-left group cursor-pointer"
@@ -803,6 +785,15 @@ export const EditorContextMenu: React.FC<EditorContextMenuProps> = ({
           >
             <Trash2 size={14} className="text-red-500" />
             <span className="font-normal text-red-500">Reset to Empty</span>
+          </button>
+
+          {/* Delete Block (Last in list on right side) */}
+          <button
+            onClick={handleDeleteBlock}
+            className="flex items-center space-x-2.5 w-full px-2 py-1.5 rounded hover:bg-red-50 text-red-500 transition-colors text-left group cursor-pointer"
+          >
+            <Trash2 size={14} className="text-red-500" />
+            <span className="font-normal text-red-500">Delete Block</span>
           </button>
         </div>
       </div>

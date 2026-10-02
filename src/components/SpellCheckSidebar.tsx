@@ -6,6 +6,8 @@ import {
   X,
   Eraser,
   Check,
+  CheckCheck,
+  Shield,
   ChevronDown,
   AlertCircle,
   CheckCircle2,
@@ -24,6 +26,83 @@ interface SpellIssue {
 interface SpellCheckSidebarProps {
   editor: Editor | null;
   onClose: () => void;
+}
+
+const LOCAL_STORAGE_KEY_IGNORE_SYMBOLS = 'word_spell_ignore_symbols';
+const LOCAL_STORAGE_KEY_IGNORE_UPPERCASE = 'word_spell_ignore_uppercase';
+const LOCAL_STORAGE_KEY_IGNORED_WORDS = 'word_spell_ignored_words';
+
+/**
+ * Retrieve persistent ignored words Set from localStorage
+ */
+export function getStoredIgnoredWords(): Set<string> {
+  try {
+    const raw = localStorage.getItem(LOCAL_STORAGE_KEY_IGNORED_WORDS);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        return new Set(
+          parsed.map((item: string) => String(item).toLowerCase().trim()).filter(Boolean)
+        );
+      }
+    }
+  } catch (err) {
+    console.warn('Failed to load ignored words from localStorage', err);
+  }
+  return new Set<string>();
+}
+
+/**
+ * Persist ignored words Set to localStorage
+ */
+export function saveStoredIgnoredWords(words: Set<string>): void {
+  try {
+    const arr = Array.from(words);
+    localStorage.setItem(LOCAL_STORAGE_KEY_IGNORED_WORDS, JSON.stringify(arr));
+  } catch (err) {
+    console.warn('Failed to persist ignored words to localStorage', err);
+  }
+}
+
+/**
+ * Filter 1 Helper:
+ * Determines if a token should be ignored:
+ * Single characters, isolated symbols, punctuation-only, numeric-only,
+ * or tokens primarily consisting of special characters/numbers.
+ */
+export function isSingleCharOrSymbolToken(token: string): boolean {
+  const trimmed = token.trim();
+  if (!trimmed) return true;
+
+  // 1. Single character token (or single emoji/symbol)
+  if ([...trimmed].length <= 1) return true;
+
+  // 2. Contains no Unicode alphabetic letters at all (punctuation, symbols, or numbers only)
+  if (!/\p{L}/u.test(trimmed)) return true;
+
+  // 3. Tokens consisting primarily of special characters or numbers
+  const letters = (trimmed.match(/\p{L}/gu) || []).length;
+  const nonLetters = trimmed.length - letters;
+  // If non-letters >= letters, or only 1 letter in a token with digits/symbols (e.g. "v1.2", "4K", "#1", "$50")
+  if (letters <= 1 || nonLetters >= letters) return true;
+
+  return false;
+}
+
+/**
+ * Filter 2 Helper:
+ * Determines if a word is written entirely in uppercase letters.
+ * E.g. "API", "NASA", "DOCX", "HTML", "GRMAGAZIN", "ISO"
+ */
+export function isAllUppercaseWord(token: string): boolean {
+  const trimmed = token.trim();
+  // Strip leading and trailing punctuation (e.g. "(NASA)" -> "NASA", "HTML," -> "HTML")
+  const clean = trimmed.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, '');
+  const letters = clean.match(/\p{L}/gu);
+  if (!letters || letters.length === 0) return false;
+
+  // Must have at least 2 letters and all letters must be uppercase
+  return letters.every((ch) => ch === ch.toUpperCase() && ch !== ch.toLowerCase());
 }
 
 const LANGUAGES = [
@@ -82,6 +161,28 @@ export const SpellCheckSidebar: React.FC<SpellCheckSidebarProps> = ({ editor, on
   const [hasChecked, setHasChecked] = useState(false);
   const [statusNotification, setStatusNotification] = useState<string | null>(null);
 
+  // Filter 1 & Filter 2 toggles: Defaults both ON (true), persisted in localStorage
+  const [ignoreSymbols, setIgnoreSymbols] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem(LOCAL_STORAGE_KEY_IGNORE_SYMBOLS);
+      return saved !== null ? saved === 'true' : true;
+    } catch {
+      return true;
+    }
+  });
+
+  const [ignoreUppercase, setIgnoreUppercase] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem(LOCAL_STORAGE_KEY_IGNORE_UPPERCASE);
+      return saved !== null ? saved === 'true' : true;
+    } catch {
+      return true;
+    }
+  });
+
+  // Persistent ignore list loaded from localStorage
+  const [ignoredWords, setIgnoredWords] = useState<Set<string>>(() => getStoredIgnoredWords());
+
   const langDropdownRef = useRef<HTMLDivElement>(null);
 
   // Close dropdown on click outside
@@ -107,9 +208,20 @@ export const SpellCheckSidebar: React.FC<SpellCheckSidebarProps> = ({ editor, on
   };
 
   // Perform Spell Check using LanguageTool Public Free API with smart offline fallback
-  const runSpellCheck = async () => {
+  const runSpellCheck = async (
+    overrideIgnoreSymbols?: boolean,
+    overrideIgnoreUppercase?: boolean,
+    overrideIgnoredWords?: Set<string>
+  ) => {
     if (!editor) return;
     const docText = editor.getText();
+
+    const filterSymbols =
+      overrideIgnoreSymbols !== undefined ? overrideIgnoreSymbols : ignoreSymbols;
+    const filterUppercase =
+      overrideIgnoreUppercase !== undefined ? overrideIgnoreUppercase : ignoreUppercase;
+    const activeIgnoredWords =
+      overrideIgnoredWords !== undefined ? overrideIgnoredWords : ignoredWords;
 
     if (!docText.trim()) {
       setIssues([]);
@@ -152,6 +264,22 @@ export const SpellCheckSidebar: React.FC<SpellCheckSidebarProps> = ({ editor, on
           const match = matches[i];
           const rawWord = docText.substring(match.offset, match.offset + match.length).trim();
           if (!rawWord || seenWords.has(rawWord.toLowerCase())) continue;
+
+          // Check 0: Persistent local ignore list (prevents flagging in future sessions)
+          if (activeIgnoredWords.has(rawWord.toLowerCase())) {
+            continue;
+          }
+
+          // Check 1: Ignore single characters & symbols
+          if (filterSymbols && isSingleCharOrSymbolToken(rawWord)) {
+            continue;
+          }
+
+          // Check 2: Ignore uppercase words (e.g. API, NASA, DOCX, HTML)
+          if (filterUppercase && isAllUppercaseWord(rawWord)) {
+            continue;
+          }
+
           seenWords.add(rawWord.toLowerCase());
 
           const suggestions = (match.replacements || [])
@@ -193,6 +321,22 @@ export const SpellCheckSidebar: React.FC<SpellCheckSidebarProps> = ({ editor, on
     for (let i = 0; i < words.length; i++) {
       const w = words[i];
       const lower = w.toLowerCase();
+
+      // Check 0: Persistent local ignore list (prevents flagging in future sessions)
+      if (activeIgnoredWords.has(lower)) {
+        continue;
+      }
+
+      // Check 1: Ignore single characters & symbols
+      if (filterSymbols && isSingleCharOrSymbolToken(w)) {
+        continue;
+      }
+
+      // Check 2: Ignore uppercase words (e.g. API, NASA, DOCX, HTML)
+      if (filterUppercase && isAllUppercaseWord(w)) {
+        continue;
+      }
+
       if (seenLocal.has(lower)) continue;
 
       if (FALLBACK_DICTIONARY[lower]) {
@@ -216,6 +360,30 @@ export const SpellCheckSidebar: React.FC<SpellCheckSidebarProps> = ({ editor, on
         : `Found ${localIssues.length} spelling issue${localIssues.length > 1 ? 's' : ''}`
     );
     setIsChecking(false);
+  };
+
+  // Toggle Check 1: Ignore Single Characters & Symbols
+  const handleToggleIgnoreSymbols = () => {
+    const nextVal = !ignoreSymbols;
+    setIgnoreSymbols(nextVal);
+    try {
+      localStorage.setItem(LOCAL_STORAGE_KEY_IGNORE_SYMBOLS, String(nextVal));
+    } catch (e) {
+      console.warn('LocalStorage quota or access error saving spell settings', e);
+    }
+    runSpellCheck(nextVal, ignoreUppercase);
+  };
+
+  // Toggle Check 2: Ignore UPPERCASE Words
+  const handleToggleIgnoreUppercase = () => {
+    const nextVal = !ignoreUppercase;
+    setIgnoreUppercase(nextVal);
+    try {
+      localStorage.setItem(LOCAL_STORAGE_KEY_IGNORE_UPPERCASE, String(nextVal));
+    } catch (e) {
+      console.warn('LocalStorage quota or access error saving spell settings', e);
+    }
+    runSpellCheck(ignoreSymbols, nextVal);
   };
 
   // Run on mount
@@ -269,15 +437,61 @@ export const SpellCheckSidebar: React.FC<SpellCheckSidebarProps> = ({ editor, on
     setIssues((prev) => prev.filter((i) => i.id !== issue.id));
   };
 
-  // Ignore word and dismiss card
+  // Ignore word and dismiss card (persists word to localStorage ignore list)
   const handleIgnoreAll = (issueId: string) => {
+    const targetIssue = issues.find((i) => i.id === issueId);
+    if (targetIssue) {
+      const w = targetIssue.word.toLowerCase().trim();
+      if (w) {
+        const updated = new Set(ignoredWords);
+        updated.add(w);
+        saveStoredIgnoredWords(updated);
+        setIgnoredWords(updated);
+        showNotification(`Ignored "${targetIssue.word}" (saved to ignore list)`);
+      }
+    }
     setIssues((prev) => prev.filter((i) => i.id !== issueId));
   };
 
-  // Clear all issues
+  // Batch Ignore All: Adds all currently flagged words to the persistent local ignore list in localStorage
+  const handleBatchIgnoreAll = () => {
+    if (issues.length === 0) return;
+
+    const updated = new Set(ignoredWords);
+    let newlyAdded = 0;
+
+    issues.forEach((iss) => {
+      const w = iss.word.toLowerCase().trim();
+      if (w) {
+        if (!updated.has(w)) newlyAdded++;
+        updated.add(w);
+      }
+    });
+
+    saveStoredIgnoredWords(updated);
+    setIgnoredWords(updated);
+    const count = issues.length;
+    setIssues([]);
+
+    showNotification(
+      `Batch ignored ${count} word${count > 1 ? 's' : ''} (saved to persistent ignore list)`
+    );
+  };
+
+  // Clear all issues from current view
   const handleClearAll = () => {
     setIssues([]);
-    showNotification('Cleared all proofing issues');
+    showNotification('Cleared all proofing issues from view');
+  };
+
+  // Clear all persistent ignored words from localStorage
+  const handleClearIgnoredWordsList = () => {
+    const count = ignoredWords.size;
+    const emptySet = new Set<string>();
+    saveStoredIgnoredWords(emptySet);
+    setIgnoredWords(emptySet);
+    showNotification(`Reset ${count} word${count > 1 ? 's' : ''} from persistent ignore list`);
+    runSpellCheck(ignoreSymbols, ignoreUppercase, emptySet);
   };
 
   // Focus and select word in document
@@ -378,7 +592,7 @@ export const SpellCheckSidebar: React.FC<SpellCheckSidebarProps> = ({ editor, on
 
           {/* Check Button */}
           <button
-            onClick={runSpellCheck}
+            onClick={() => runSpellCheck()}
             disabled={isChecking}
             className="bg-[#1e295d] hover:bg-[#151f46] active:bg-[#0f1633] text-white px-4 py-2 rounded-lg text-xs font-bold flex items-center space-x-1.5 transition-all shadow-xs cursor-pointer shrink-0 disabled:opacity-75"
           >
@@ -393,7 +607,97 @@ export const SpellCheckSidebar: React.FC<SpellCheckSidebarProps> = ({ editor, on
             {statusNotification}
           </div>
         )}
+
+        {/* Lightweight Proofing Filters (Check 1 & Check 2) */}
+        <div className="mt-2.5 pt-2.5 border-t border-slate-200/80 space-y-2 text-[11px]">
+          {/* check 1. Ignore Single Characters & Symbols */}
+          <div className="flex items-center justify-between group">
+            <div
+              onClick={handleToggleIgnoreSymbols}
+              className="flex flex-col cursor-pointer select-none pr-2 group-hover:text-slate-900 transition-colors"
+            >
+              <span className="font-semibold text-slate-800 text-[11.5px]">
+                Ignore Single Characters &amp; Symbols
+              </span>
+              <span className="text-[10px] text-slate-500">
+                Ignore single chars, symbols, numbers (#, 12, &amp;)
+              </span>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={ignoreSymbols}
+              onClick={handleToggleIgnoreSymbols}
+              title={
+                ignoreSymbols
+                  ? 'ON: Ignore single-character tokens, isolated symbols, punctuation-only, and numeric-only tokens'
+                  : 'OFF: Check single characters and symbols normally'
+              }
+              className={`relative inline-flex h-4.5 w-8 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                ignoreSymbols ? 'bg-[#185abd]' : 'bg-slate-300'
+              }`}
+            >
+              <span
+                className={`pointer-events-none inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow-xs transition duration-200 ease-in-out ${
+                  ignoreSymbols ? 'translate-x-3.5' : 'translate-x-0'
+                }`}
+              />
+            </button>
+          </div>
+
+          {/* check 2. Ignore UPPERCASE Words */}
+          <div className="flex items-center justify-between group">
+            <div
+              onClick={handleToggleIgnoreUppercase}
+              className="flex flex-col cursor-pointer select-none pr-2 group-hover:text-slate-900 transition-colors"
+            >
+              <span className="font-semibold text-slate-800 text-[11.5px]">
+                Ignore UPPERCASE Words
+              </span>
+              <span className="text-[10px] text-slate-500">
+                Ignore all-caps words (API, NASA, DOCX, HTML)
+              </span>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={ignoreUppercase}
+              onClick={handleToggleIgnoreUppercase}
+              title={
+                ignoreUppercase
+                  ? 'ON: Ignore words written entirely in uppercase letters'
+                  : 'OFF: Check uppercase words normally'
+              }
+              className={`relative inline-flex h-4.5 w-8 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                ignoreUppercase ? 'bg-[#185abd]' : 'bg-slate-300'
+              }`}
+            >
+              <span
+                className={`pointer-events-none inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow-xs transition duration-200 ease-in-out ${
+                  ignoreUppercase ? 'translate-x-3.5' : 'translate-x-0'
+                }`}
+              />
+            </button>
+          </div>
+        </div>
       </div>
+
+      {/* Issues Count & Batch Ignore All Toolbar */}
+      {issues.length > 0 && (
+        <div className="px-3.5 py-2 bg-slate-100/90 border-b border-slate-200 flex items-center justify-between text-xs shrink-0">
+          <span className="font-bold text-slate-700">
+            {issues.length} {issues.length === 1 ? 'issue flagged' : 'issues flagged'}
+          </span>
+          <button
+            onClick={handleBatchIgnoreAll}
+            title="Add all currently flagged misspelled words to persistent ignore list in localStorage"
+            className="flex items-center space-x-1.5 px-3 py-1 bg-[#185abd] hover:bg-[#114b9c] active:bg-[#0f3c80] text-white rounded-md text-[11.5px] font-bold transition-all shadow-2xs cursor-pointer active:scale-98"
+          >
+            <CheckCheck size={13} className="text-white" />
+            <span>Batch Ignore All ({issues.length})</span>
+          </button>
+        </div>
+      )}
 
       {/* Main Issue Cards Scrollable List */}
       <div className="flex-1 overflow-y-auto p-3.5 space-y-3">
@@ -459,6 +763,7 @@ export const SpellCheckSidebar: React.FC<SpellCheckSidebarProps> = ({ editor, on
               <div className="flex items-center space-x-2 pt-1">
                 <button
                   onClick={() => handleIgnoreAll(issue.id)}
+                  title="Add this word to persistent ignore list"
                   className="flex-1 py-1.5 px-3 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 rounded-lg text-xs font-semibold cursor-pointer transition-colors text-center"
                 >
                   Ignore all
@@ -475,11 +780,30 @@ export const SpellCheckSidebar: React.FC<SpellCheckSidebarProps> = ({ editor, on
         )}
       </div>
 
-      {/* Footer Notice */}
-      <div className="px-4 py-2.5 border-t border-slate-200 text-center bg-[#fafafa]">
-        <p className="text-[11px] text-slate-400 font-medium">
-          Powered by LanguageTool · Free API
-        </p>
+      {/* Footer Notice & Persistent Ignored Words Info */}
+      <div className="border-t border-slate-200 text-center bg-[#fafafa] shrink-0">
+        {ignoredWords.size > 0 && (
+          <div className="px-3.5 py-1.5 bg-slate-100/70 border-b border-slate-200/80 flex items-center justify-between text-[11px] text-slate-600">
+            <span className="flex items-center space-x-1.5 truncate pr-2">
+              <Shield size={12} className="text-[#185abd] shrink-0" />
+              <span>
+                <strong>{ignoredWords.size}</strong> {ignoredWords.size === 1 ? 'word' : 'words'} in ignore list
+              </span>
+            </span>
+            <button
+              onClick={handleClearIgnoredWordsList}
+              className="text-[10px] text-[#185abd] hover:text-red-600 hover:underline font-semibold cursor-pointer shrink-0"
+              title="Clear all stored ignored words from localStorage"
+            >
+              Reset List
+            </button>
+          </div>
+        )}
+        <div className="px-4 py-2">
+          <p className="text-[11px] text-slate-400 font-medium">
+            Powered by LanguageTool · Free API
+          </p>
+        </div>
       </div>
     </aside>
   );

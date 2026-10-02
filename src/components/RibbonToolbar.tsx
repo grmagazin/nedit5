@@ -1,5 +1,12 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Editor } from '@tiptap/react';
+import { DOMSerializer } from '@tiptap/pm/model';
+import {
+  CopiedWordFormat,
+  copyFormatFromEditor,
+  applyFormatToEditor,
+  describeFormat,
+} from '../utils/formatPainter';
 import {
   RibbonTab,
   PageMargin,
@@ -8,6 +15,8 @@ import {
   DocumentSettings,
   DocumentComment,
   DocumentSnapshot,
+  ThemeMode,
+  PageBorderStyle,
 } from '../types';
 import {
   Bold,
@@ -30,6 +39,7 @@ import {
   Table as TableIcon,
   Image as ImageIcon,
   Link as LinkIcon,
+  Link2,
   Minus,
   Quote,
   Code,
@@ -51,6 +61,7 @@ import {
   RemoveFormatting,
   Globe,
   BookOpen,
+  Files,
   Combine,
   Unlink,
   ImageOff,
@@ -102,7 +113,49 @@ import {
   Zap,
   Heading,
   Replace,
+  Keyboard,
+  Info,
+  AlertCircle,
+  Sun,
+  Play,
+  Pause,
+  Volume2,
+  Gauge,
+  Headphones,
 } from 'lucide-react';
+
+const InsertPictureModal = React.lazy(() => import('./InsertPictureModal'));
+const SymbolsPickerModal = React.lazy(() => import('./SymbolsPickerModal'));
+const InsertLinkModal = React.lazy(() =>
+  import('./InsertLinkModal').then((m) => ({ default: m.InsertLinkModal }))
+);
+const EquationWizardPopup = React.lazy(() =>
+  import('./EquationWizardPopup').then((m) => ({ default: m.EquationWizardPopup }))
+);
+const AboutSuiteModal = React.lazy(() => import('./AboutSuiteModal'));
+import { ScreenCaptureTool } from './ScreenCaptureTool';
+import { snapshotStore } from '../utils/snapshotStore';
+import { captureDocumentScreenSnapshot } from '../utils/screenSnapshot';
+
+export const DOCUMENT_PAGE_SIZES: {
+  id: PageSize;
+  name: string;
+  inches: string;
+  metric: string;
+}[] = [
+  { id: 'a4', name: 'A4', inches: '8.27 × 11.69"', metric: '210 × 297 mm' },
+  { id: 'letter', name: 'Letter', inches: '8.5 × 11"', metric: '216 × 279 mm' },
+  { id: 'legal', name: 'Legal', inches: '8.5 × 14"', metric: '216 × 356 mm' },
+  { id: 'a3', name: 'A3', inches: '11.69 × 16.54"', metric: '297 × 420 mm' },
+  { id: 'a5', name: 'A5', inches: '5.83 × 8.27"', metric: '148 × 210 mm' },
+  { id: 'executive', name: 'Executive', inches: '7.25 × 10.5"', metric: '184 × 267 mm' },
+  { id: 'tabloid', name: 'Tabloid', inches: '11 × 17"', metric: '279 × 432 mm' },
+  { id: 'b5', name: 'B5', inches: '6.93 × 9.84"', metric: '176 × 250 mm' },
+  { id: 'a6', name: 'A6', inches: '4.13 × 5.83"', metric: '105 × 148 mm' },
+  { id: 'folio', name: 'Folio', inches: '8.5 × 13"', metric: '216 × 330 mm' },
+  { id: 'statement', name: 'Statement', inches: '5.5 × 8.5"', metric: '140 × 216 mm' },
+  { id: 'ledger', name: 'Ledger', inches: '17 × 11"', metric: '432 × 279 mm' },
+];
 
 interface RibbonToolbarProps {
   editor: Editor | null;
@@ -113,6 +166,16 @@ interface RibbonToolbarProps {
   onOpenBackstage: () => void;
   onOpenFindReplace: () => void;
   onOpenStats: () => void;
+  comments?: DocumentComment[];
+  onSetComments?: React.Dispatch<React.SetStateAction<DocumentComment[]>>;
+  showCommentsPanel?: boolean;
+  onToggleCommentsPanel?: (show?: boolean) => void;
+  formatPainter?: CopiedWordFormat | null;
+  onToggleFormatPainter?: (mode?: 'single' | 'persistent') => void;
+  onClearFormatPainter?: () => void;
+  onApplyFormatPainter?: () => void;
+  autoCorrectEnabled?: boolean;
+  onToggleAutoCorrect?: () => void;
 }
 
 export const RibbonToolbar: React.FC<RibbonToolbarProps> = ({
@@ -124,8 +187,62 @@ export const RibbonToolbar: React.FC<RibbonToolbarProps> = ({
   onOpenBackstage,
   onOpenFindReplace,
   onOpenStats,
+  comments: propComments,
+  onSetComments,
+  showCommentsPanel: propShowCommentsPanel,
+  onToggleCommentsPanel,
+  formatPainter: propFormatPainter,
+  onToggleFormatPainter,
+  onClearFormatPainter,
+  onApplyFormatPainter,
+  autoCorrectEnabled = false,
+  onToggleAutoCorrect,
 }) => {
   const [isRibbonCollapsed, setIsRibbonCollapsed] = useState(false);
+
+  // 3-second popups right of Copy (green), Cut (orange), Paste (blue), Painter (purple)
+  const [copyPopupVisible, setCopyPopupVisible] = useState(false);
+  const [cutPopupVisible, setCutPopupVisible] = useState(false);
+  const [pastePopupVisible, setPastePopupVisible] = useState(false);
+  const [painterPopupVisible, setPainterPopupVisible] = useState(false);
+
+  const copyPopupTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const cutPopupTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const pastePopupTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const painterPopupTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  const triggerCopyPopup = useCallback(() => {
+    setCopyPopupVisible(true);
+    if (copyPopupTimerRef.current) clearTimeout(copyPopupTimerRef.current);
+    copyPopupTimerRef.current = setTimeout(() => setCopyPopupVisible(false), 3000);
+  }, []);
+
+  const triggerCutPopup = useCallback(() => {
+    setCutPopupVisible(true);
+    if (cutPopupTimerRef.current) clearTimeout(cutPopupTimerRef.current);
+    cutPopupTimerRef.current = setTimeout(() => setCutPopupVisible(false), 3000);
+  }, []);
+
+  const triggerPastePopup = useCallback(() => {
+    setPastePopupVisible(true);
+    if (pastePopupTimerRef.current) clearTimeout(pastePopupTimerRef.current);
+    pastePopupTimerRef.current = setTimeout(() => setPastePopupVisible(false), 3000);
+  }, []);
+
+  const triggerPainterPopup = useCallback(() => {
+    setPainterPopupVisible(true);
+    if (painterPopupTimerRef.current) clearTimeout(painterPopupTimerRef.current);
+    painterPopupTimerRef.current = setTimeout(() => setPainterPopupVisible(false), 3000);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (copyPopupTimerRef.current) clearTimeout(copyPopupTimerRef.current);
+      if (cutPopupTimerRef.current) clearTimeout(cutPopupTimerRef.current);
+      if (pastePopupTimerRef.current) clearTimeout(pastePopupTimerRef.current);
+      if (painterPopupTimerRef.current) clearTimeout(painterPopupTimerRef.current);
+    };
+  }, []);
   const [showTablePicker, setShowTablePicker] = useState(false);
   const [tableHoverRows, setTableHoverRows] = useState(3);
   const [tableHoverCols, setTableHoverCols] = useState(3);
@@ -158,6 +275,8 @@ export const RibbonToolbar: React.FC<RibbonToolbarProps> = ({
   const [showSizeDropdown, setShowSizeDropdown] = useState(false);
   const [showColorDropdown, setShowColorDropdown] = useState(false);
   const [showWatermarkDropdown, setShowWatermarkDropdown] = useState(false);
+  const [showShadowDropdown, setShowShadowDropdown] = useState(false);
+  const shadowDropdownRef = useRef<HTMLDivElement>(null);
 
   // Review Tab specific states matching photo
   const [selectedLanguage, setSelectedLanguage] = useState('Greek (Ελληνικά)');
@@ -165,7 +284,7 @@ export const RibbonToolbar: React.FC<RibbonToolbarProps> = ({
   const languageDropdownRef = useRef<HTMLDivElement>(null);
 
   // Comments state (initial 1 comment matches the orange "1" badge in photo)
-  const [comments, setComments] = useState<DocumentComment[]>([
+  const [internalComments, setInternalComments] = useState<DocumentComment[]>([
     {
       id: 'comment-1',
       author: 'Editorial Review',
@@ -175,11 +294,204 @@ export const RibbonToolbar: React.FC<RibbonToolbarProps> = ({
       resolved: false,
     },
   ]);
-  const [showCommentsPanel, setShowCommentsPanel] = useState(false);
+  const comments = propComments ?? internalComments;
+  const setComments = onSetComments ?? setInternalComments;
+
+  const [internalShowCommentsPanel, setInternalShowCommentsPanel] = useState(false);
+  const showCommentsPanel = propShowCommentsPanel ?? internalShowCommentsPanel;
+  const setShowCommentsPanel = (val: boolean | ((prev: boolean) => boolean)) => {
+    if (onToggleCommentsPanel) {
+      if (typeof val === 'function') {
+        onToggleCommentsPanel(val(showCommentsPanel));
+      } else {
+        onToggleCommentsPanel(val);
+      }
+    } else {
+      setInternalShowCommentsPanel(val);
+    }
+  };
   const [showNewCommentModal, setShowNewCommentModal] = useState(false);
   const [newCommentAuthor, setNewCommentAuthor] = useState('Reviewer');
   const [newCommentText, setNewCommentText] = useState('');
   const [commentTargetSelection, setCommentTargetSelection] = useState('');
+
+  // Help tab modal states
+  const [showShortcutsModal, setShowShortcutsModal] = useState(false);
+  const [showQuickGuideModal, setShowQuickGuideModal] = useState(false);
+  const [showAboutModal, setShowAboutModal] = useState(false);
+
+  // Document Read (Text-to-Speech) System & Browser Voices State
+  const [speechVoices, setSpeechVoices] = useState<SpeechSynthesisVoice[]>([]);
+  const [selectedSpeechVoice, setSelectedSpeechVoice] = useState<string>('');
+  const [speechRate, setSpeechRate] = useState<number>(1.0);
+  const [isSpeaking, setIsSpeaking] = useState<boolean>(false);
+  const [isSpeechPaused, setIsSpeechPaused] = useState<boolean>(false);
+  const [currentSpeechSentence, setCurrentSpeechSentence] = useState<string>('');
+  const speechChunksRef = useRef<string[]>([]);
+  const currentSpeechIndexRef = useRef<number>(0);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
+
+    const loadVoices = () => {
+      try {
+        const available = window.speechSynthesis.getVoices();
+        if (available && available.length > 0) {
+          setSpeechVoices(available);
+          setSelectedSpeechVoice((curr) => {
+            if (curr && available.some((v) => v.name === curr)) return curr;
+            const def = available.find((v) => v.default) || available[0];
+            return def ? def.name : '';
+          });
+        }
+      } catch (err) {
+        console.warn('Voice loading error:', err);
+      }
+    };
+
+    loadVoices();
+    if (window.speechSynthesis.onvoiceschanged !== undefined) {
+      window.speechSynthesis.onvoiceschanged = loadVoices;
+    }
+
+    return () => {
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+      }
+    };
+  }, []);
+
+  const stopDocumentReading = useCallback(() => {
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+    }
+    setIsSpeaking(false);
+    setIsSpeechPaused(false);
+    setCurrentSpeechSentence('');
+    speechChunksRef.current = [];
+    currentSpeechIndexRef.current = 0;
+  }, []);
+
+  const pauseDocumentReading = useCallback(() => {
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
+    if (window.speechSynthesis.speaking) {
+      if (window.speechSynthesis.paused) {
+        window.speechSynthesis.resume();
+        setIsSpeechPaused(false);
+      } else {
+        window.speechSynthesis.pause();
+        setIsSpeechPaused(true);
+      }
+    }
+  }, []);
+
+  const speakSpeechChunk = useCallback(
+    (index: number) => {
+      if (
+        typeof window === 'undefined' ||
+        !('speechSynthesis' in window) ||
+        index >= speechChunksRef.current.length
+      ) {
+        setIsSpeaking(false);
+        setIsSpeechPaused(false);
+        setCurrentSpeechSentence('');
+        return;
+      }
+
+      currentSpeechIndexRef.current = index;
+      const chunk = speechChunksRef.current[index];
+      setCurrentSpeechSentence(chunk);
+
+      const utterance = new SpeechSynthesisUtterance(chunk);
+      if (selectedSpeechVoice && speechVoices.length > 0) {
+        const voiceObj = speechVoices.find((v) => v.name === selectedSpeechVoice);
+        if (voiceObj) utterance.voice = voiceObj;
+      }
+      utterance.rate = speechRate;
+
+      utterance.onend = () => {
+        if (currentSpeechIndexRef.current + 1 < speechChunksRef.current.length) {
+          speakSpeechChunk(currentSpeechIndexRef.current + 1);
+        } else {
+          setIsSpeaking(false);
+          setIsSpeechPaused(false);
+          setCurrentSpeechSentence('');
+          speechChunksRef.current = [];
+          currentSpeechIndexRef.current = 0;
+        }
+      };
+
+      utterance.onerror = (e) => {
+        if (e.error !== 'interrupted' && e.error !== 'canceled') {
+          console.warn('Speech error:', e.error);
+        }
+        setIsSpeaking(false);
+        setIsSpeechPaused(false);
+        setCurrentSpeechSentence('');
+      };
+
+      window.speechSynthesis.speak(utterance);
+    },
+    [speechVoices, selectedSpeechVoice, speechRate]
+  );
+
+  const startDocumentReading = useCallback(() => {
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
+      setReviewNotification('Text-to-Speech is not supported in this browser.');
+      setTimeout(() => setReviewNotification(null), 3000);
+      return;
+    }
+
+    if (isSpeaking && isSpeechPaused) {
+      window.speechSynthesis.resume();
+      setIsSpeechPaused(false);
+      return;
+    }
+
+    window.speechSynthesis.cancel();
+
+    let textToRead = '';
+    if (editor) {
+      const { from, to } = editor.state.selection;
+      if (from !== to) {
+        textToRead = editor.state.doc.textBetween(from, to, ' ');
+      }
+      if (!textToRead.trim()) {
+        textToRead = editor.getText();
+      }
+    }
+
+    const clean = textToRead.trim();
+    if (!clean) {
+      setReviewNotification('No text in document or selection to read.');
+      setTimeout(() => setReviewNotification(null), 3000);
+      return;
+    }
+
+    const rawChunks = clean.match(/[^.!?\n\r]+[.!?\n\r]+|[^.!?\n\r]+$/g) || [clean];
+    const chunks: string[] = [];
+    rawChunks.forEach((c) => {
+      const trimmed = c.trim();
+      if (!trimmed) return;
+      if (trimmed.length > 200) {
+        const parts = trimmed.match(/.{1,180}(\s|$)/g) || [trimmed];
+        parts.forEach((p) => {
+          if (p.trim()) chunks.push(p.trim());
+        });
+      } else {
+        chunks.push(trimmed);
+      }
+    });
+
+    if (chunks.length === 0) return;
+
+    speechChunksRef.current = chunks;
+    currentSpeechIndexRef.current = 0;
+    setIsSpeaking(true);
+    setIsSpeechPaused(false);
+
+    speakSpeechChunk(0);
+  }, [editor, isSpeaking, isSpeechPaused, speakSpeechChunk]);
 
   // Force re-render on any editor selection or content update so formatting buttons reflect active states immediately
   const [, setEditorUpdateTrigger] = useState(0);
@@ -220,16 +532,132 @@ export const RibbonToolbar: React.FC<RibbonToolbarProps> = ({
   const [snapshotTitle, setSnapshotTitle] = useState('');
   const [showVersionHistoryModal, setShowVersionHistoryModal] = useState(false);
   const [selectedSnapshotPreview, setSelectedSnapshotPreview] = useState<DocumentSnapshot | null>(null);
+  const [isCapturingSnapshot, setIsCapturingSnapshot] = useState(false);
+  const [capturedSnapshotImage, setCapturedSnapshotImage] = useState<string | null>(null);
+  const [showScreenCaptureTool, setShowScreenCaptureTool] = useState(false);
+  const [screenCaptureBaseImage, setScreenCaptureBaseImage] = useState<string | null>(null);
 
-  // Spelling & Grammar / Spell API / AI Rewrite / Translate modals
-  const [showSpellingModal, setShowSpellingModal] = useState(false);
+  // Robust Indent & Outdent handlers supporting lists AND standard paragraphs/headings
+  const handleIncreaseIndent = useCallback(() => {
+    if (!editor) return;
+    if (editor.isActive('taskList') && editor.can().sinkListItem('taskItem')) {
+      editor.chain().focus().sinkListItem('taskItem').run();
+      return;
+    }
+    if ((editor.isActive('bulletList') || editor.isActive('orderedList')) && editor.can().sinkListItem('listItem')) {
+      editor.chain().focus().sinkListItem('listItem').run();
+      return;
+    }
+    editor.chain().focus().increaseParagraphIndent().run();
+  }, [editor]);
+
+  const handleDecreaseIndent = useCallback(() => {
+    if (!editor) return;
+    if (editor.isActive('taskList') && editor.can().liftListItem('taskItem')) {
+      editor.chain().focus().liftListItem('taskItem').run();
+      return;
+    }
+    if ((editor.isActive('bulletList') || editor.isActive('orderedList')) && editor.can().liftListItem('listItem')) {
+      editor.chain().focus().liftListItem('listItem').run();
+      return;
+    }
+    editor.chain().focus().decreaseParagraphIndent().run();
+  }, [editor]);
+
+  // Lazy-load free screen capture library and open lightweight screen capture tool
+  const handleCaptureScreenSnapshot = useCallback(async () => {
+    setIsCapturingSnapshot(true);
+    setReviewNotification('📸 Initializing Screen Capture Tool...');
+    try {
+      const result = await captureDocumentScreenSnapshot({ pixelRatio: 1.5 });
+      if (!result.success || !result.dataUrl) {
+        throw new Error(result.error || 'Failed to capture document screen snapshot');
+      }
+
+      setScreenCaptureBaseImage(result.dataUrl);
+      setShowScreenCaptureTool(true);
+      setReviewNotification('✂️ Screen Capture Tool ready! Drag to select an area.');
+      setTimeout(() => setReviewNotification(null), 3000);
+    } catch (err: any) {
+      console.error('Snapshot capture error:', err);
+      const failMsg = err?.message || 'Screen capture failed. Check document visibility.';
+      setReviewNotification(`❌ ${failMsg}`);
+      setTimeout(() => setReviewNotification(null), 4500);
+    } finally {
+      setIsCapturingSnapshot(false);
+    }
+  }, []);
+
+  // When the user captures an area in the screen capture tool:
+  // Send it to Image Wizard and save it in resilient multi-tier snapshotStore!
+  const handleConfirmAreaCapture = useCallback(
+    (capturedAreaUrl: string) => {
+      // 1. Close screen capture overlay
+      setShowScreenCaptureTool(false);
+      setCapturedSnapshotImage(capturedAreaUrl);
+
+      // 2. Save in snapshotStore (in-memory + safe storage)
+      snapshotStore.setLatestSnapshot(capturedAreaUrl, 'snip');
+
+      // 3. Open Image Wizard & send captured area
+      onUpdateSettings({ showImageWizardPane: true });
+
+      // 4. Save to document snapshots history
+      if (editor) {
+        const text = editor.getText();
+        const wordCount = text.trim() ? text.trim().split(/\s+/).length : 0;
+        const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        const newSnap: DocumentSnapshot = {
+          id: `snap-${Date.now()}`,
+          name: `Snip - ${now}`,
+          timestamp: new Date().toLocaleString([], {
+            month: 'short',
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+          }),
+          htmlContent: editor.getHTML(),
+          wordCount,
+          previewImage: capturedAreaUrl,
+        };
+        const updated = [newSnap, ...snapshots];
+        setSnapshots(updated);
+        try {
+          localStorage.setItem('word_doc_snapshots', JSON.stringify(updated.slice(0, 20)));
+        } catch {}
+      }
+
+      setReviewNotification('📸 Area captured & sent to Image Wizard! Ready to resize & paste.');
+      setTimeout(() => setReviewNotification(null), 4000);
+    },
+    [editor, onUpdateSettings, snapshots]
+  );
+
+  // Spelling & Grammar / Spell API / AI Rewrite modals
   const [showAiRewriteModal, setShowAiRewriteModal] = useState(false);
   const [aiRewriteTone, setAiRewriteTone] = useState<'professional' | 'concise' | 'creative' | 'formal' | 'greek'>('professional');
   const [aiRewriteOutput, setAiRewriteOutput] = useState('');
-  const [showTranslateModal, setShowTranslateModal] = useState(false);
-  const [targetTranslateLang, setTargetTranslateLang] = useState('Greek (Ελληνικά)');
-  const [translatedContent, setTranslatedContent] = useState('');
   const [reviewNotification, setReviewNotification] = useState<string | null>(null);
+
+  // Fx Equation Wizard state (Lazy loaded only when Fx is clicked)
+  const [showEquationPopup, setShowEquationPopup] = useState(false);
+  const [equationEditingLatex, setEquationEditingLatex] = useState('');
+  const [equationIsBlock, setEquationIsBlock] = useState(false);
+
+  useEffect(() => {
+    const handleOpenFx = (e: any) => {
+      if (e.detail?.latex) {
+        setEquationEditingLatex(e.detail.latex);
+        setEquationIsBlock(!!e.detail.isBlock);
+      } else {
+        setEquationEditingLatex('');
+        setEquationIsBlock(false);
+      }
+      setShowEquationPopup(true);
+    };
+    window.addEventListener('open-fx-wizard', handleOpenFx);
+    return () => window.removeEventListener('open-fx-wizard', handleOpenFx);
+  }, []);
 
   // SEO Modals & State
   const [showKeywordModal, setShowKeywordModal] = useState(false);
@@ -265,9 +693,6 @@ export const RibbonToolbar: React.FC<RibbonToolbarProps> = ({
       if (showTablePicker && tablePickerRef.current && !tablePickerRef.current.contains(target)) {
         setShowTablePicker(false);
       }
-      if (showSymbolsPicker && symbolsPickerRef.current && !symbolsPickerRef.current.contains(target)) {
-        setShowSymbolsPicker(false);
-      }
       if (showQuickBlocksPicker && quickBlocksPickerRef.current && !quickBlocksPickerRef.current.contains(target)) {
         setShowQuickBlocksPicker(false);
       }
@@ -292,6 +717,9 @@ export const RibbonToolbar: React.FC<RibbonToolbarProps> = ({
       if (showWatermarkDropdown && watermarkDropdownRef.current && !watermarkDropdownRef.current.contains(target)) {
         setShowWatermarkDropdown(false);
       }
+      if (showShadowDropdown && shadowDropdownRef.current && !shadowDropdownRef.current.contains(target)) {
+        setShowShadowDropdown(false);
+      }
       if (showLanguageDropdown && languageDropdownRef.current && !languageDropdownRef.current.contains(target)) {
         setShowLanguageDropdown(false);
       }
@@ -315,18 +743,51 @@ export const RibbonToolbar: React.FC<RibbonToolbarProps> = ({
     showSizeDropdown,
     showColorDropdown,
     showWatermarkDropdown,
+    showShadowDropdown,
     showLanguageDropdown,
   ]);
 
-  // Format painter state
-  const [copiedFormat, setCopiedFormat] = useState<{
-    bold?: boolean;
-    italic?: boolean;
-    underline?: boolean;
-    color?: string;
-    fontSize?: string;
-    fontFamily?: string;
-  } | null>(null);
+  // Format painter state (in-memory, strictly avoiding clipboard)
+  const [internalFormatPainter, setInternalFormatPainter] = useState<CopiedWordFormat | null>(null);
+  const activeFormatPainter = propFormatPainter !== undefined ? propFormatPainter : internalFormatPainter;
+
+  const handleFormatPainterAction = useCallback(
+    (mode: 'single' | 'persistent' = 'single') => {
+      if (!editor) return;
+      if (activeFormatPainter) {
+        if (onClearFormatPainter) {
+          onClearFormatPainter();
+        } else {
+          setInternalFormatPainter(null);
+        }
+      } else {
+        if (onToggleFormatPainter) {
+          onToggleFormatPainter(mode);
+        } else {
+          const copied = copyFormatFromEditor(editor, mode);
+          setInternalFormatPainter(copied);
+        }
+        triggerPainterPopup();
+      }
+    },
+    [editor, activeFormatPainter, onClearFormatPainter, onToggleFormatPainter, triggerPainterPopup]
+  );
+
+  const handlePasteFormatAction = useCallback(() => {
+    if (!editor) return;
+    if (activeFormatPainter) {
+      if (onApplyFormatPainter) {
+        onApplyFormatPainter();
+      } else {
+        applyFormatToEditor(editor, activeFormatPainter);
+        if (activeFormatPainter.mode === 'single') {
+          setInternalFormatPainter(null);
+        }
+      }
+    } else {
+      editor.chain().focus().setColor('#1f2937').setFontSize('11pt').run();
+    }
+  }, [editor, activeFormatPainter, onApplyFormatPainter]);
 
   const fonts = [
     { label: 'Calibri', value: 'Calibri, sans-serif' },
@@ -364,33 +825,6 @@ export const RibbonToolbar: React.FC<RibbonToolbarProps> = ({
     { name: 'Slate Gray', color: '#64748b' },
     { name: 'Deep Teal', color: '#0f766e' },
   ];
-
-  const handleFormatPainter = () => {
-    if (!editor) return;
-    if (!copiedFormat) {
-      // Copy current selection formatting
-      const attrs = editor.getAttributes('textStyle');
-      setCopiedFormat({
-        bold: editor.isActive('bold'),
-        italic: editor.isActive('italic'),
-        underline: editor.isActive('underline'),
-        color: attrs.color,
-        fontSize: attrs.fontSize,
-        fontFamily: attrs.fontFamily,
-      });
-    } else {
-      // Apply copied formatting
-      let chain = editor.chain().focus();
-      if (copiedFormat.bold) chain = chain.setBold();
-      if (copiedFormat.italic) chain = chain.setItalic();
-      if (copiedFormat.underline) chain = chain.setUnderline();
-      if (copiedFormat.color) chain = chain.setColor(copiedFormat.color);
-      if (copiedFormat.fontSize) chain = chain.setFontSize(copiedFormat.fontSize);
-      if (copiedFormat.fontFamily) chain = chain.setFontFamily(copiedFormat.fontFamily);
-      chain.run();
-      setCopiedFormat(null);
-    }
-  };
 
   // Convert Tab Operations
   const handleFixSpaces = () => {
@@ -563,6 +997,133 @@ export const RibbonToolbar: React.FC<RibbonToolbarProps> = ({
     editor.commands.setContent(html);
     setReviewNotification('HTML: Cleaned wrapper tags (span, div, font, center).');
     setTimeout(() => setReviewNotification(null), 3000);
+  };
+
+  const handleTableToDiv = () => {
+    if (!editor) return;
+
+    const { state } = editor;
+    const { selection } = state;
+
+    // 1. Locate selected table or table containing cursor
+    let targetTablePos: number | null = null;
+    let targetTableNode: any = null;
+
+    for (let d = selection.$from.depth; d > 0; d--) {
+      const node = selection.$from.node(d);
+      if (node.type.name === 'table') {
+        targetTablePos = selection.$from.before(d);
+        targetTableNode = node;
+        break;
+      }
+    }
+
+    // 2. If cursor not directly inside a table, check selection range or document
+    if (!targetTableNode) {
+      if (!selection.empty) {
+        state.doc.nodesBetween(selection.from, selection.to, (node, pos) => {
+          if (node.type.name === 'table' && targetTableNode === null) {
+            targetTablePos = pos;
+            targetTableNode = node;
+            return false;
+          }
+        });
+      }
+
+      // If still not found, search the document for the first table
+      if (!targetTableNode) {
+        state.doc.descendants((node, pos) => {
+          if (node.type.name === 'table' && targetTableNode === null) {
+            targetTablePos = pos;
+            targetTableNode = node;
+            return false;
+          }
+        });
+      }
+    }
+
+    if (!targetTableNode || targetTablePos === null) {
+      setReviewNotification('Table to DIV: No table found to convert.');
+      setTimeout(() => setReviewNotification(null), 3000);
+      return;
+    }
+
+    // 3. Serialize table to HTML DOM
+    let tableEl: HTMLTableElement | null = null;
+    try {
+      const dom = DOMSerializer.fromSchema(editor.schema).serializeNode(targetTableNode);
+      const tempContainer = document.createElement('div');
+      tempContainer.appendChild(dom);
+      tableEl = tempContainer.querySelector('table');
+    } catch {
+      // Fallback
+    }
+
+    if (!tableEl) {
+      setReviewNotification('Table to DIV: Could not parse table contents.');
+      setTimeout(() => setReviewNotification(null), 3000);
+      return;
+    }
+
+    const rows = Array.from(tableEl.querySelectorAll('tr'));
+    if (rows.length === 0) {
+      setReviewNotification('Table to DIV: Selected table has no rows.');
+      setTimeout(() => setReviewNotification(null), 3000);
+      return;
+    }
+
+    // 4. Smartly transform table rows and cells into divTable / divTableRow / divTableCell with <p>
+    let convertedRowsHtml = '';
+
+    rows.forEach((row, rowIndex) => {
+      const cells = Array.from(row.children) as HTMLElement[];
+      const isHeaderRow =
+        rowIndex === 0 &&
+        (row.querySelector('th') !== null || cells.some((c) => c.tagName.toLowerCase() === 'th'));
+
+      let cellsHtml = '';
+      cells.forEach((cell, cellIndex) => {
+        let innerHtml = cell.innerHTML.trim();
+        // Ensure content is wrapped in paragraph
+        if (!innerHtml.startsWith('<p') && !innerHtml.startsWith('<div')) {
+          if (isHeaderRow && !innerHtml.includes('<strong>')) {
+            innerHtml = `<p><strong>${innerHtml || '&nbsp;'}</strong></p>`;
+          } else {
+            innerHtml = `<p>${innerHtml || '&nbsp;'}</p>`;
+          }
+        }
+
+        const isLastCell = cellIndex === cells.length - 1;
+        cellsHtml += `<div class="divTableCell" style="flex: 1; min-width: 0; padding: 10px 14px; ${
+          isLastCell ? '' : 'border-right: 1px solid #e2e8f0;'
+        } word-break: break-word;">${innerHtml}</div>`;
+      });
+
+      const rowClass = isHeaderRow ? 'divTableRow divTableHeading' : 'divTableRow';
+      const rowBg = isHeaderRow
+        ? 'background-color: #f1f5f9; font-weight: 600;'
+        : rowIndex % 2 === 1
+        ? 'background-color: #f8fafc;'
+        : 'background-color: #ffffff;';
+      const isLastRow = rowIndex === rows.length - 1;
+
+      convertedRowsHtml += `<div class="${rowClass}" style="display: flex; width: 100%; ${
+        isLastRow ? '' : 'border-bottom: 1px solid #e2e8f0;'
+      } ${rowBg}">${cellsHtml}</div>`;
+    });
+
+    const fullConvertedHtml = `<div class="divTable" style="display: flex; flex-direction: column; width: 100%; margin: 1.25rem 0; border: 1px solid #cbd5e1; border-radius: 6px; overflow: hidden; background-color: #ffffff; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">${convertedRowsHtml}</div>`;
+
+    // 5. Replace table in editor preserving history
+    editor
+      .chain()
+      .focus()
+      .deleteRange({ from: targetTablePos, to: targetTablePos + targetTableNode.nodeSize })
+      .insertContentAt(targetTablePos, fullConvertedHtml)
+      .run();
+
+    setReviewNotification('HTML: Converted table to responsive <DIV> paragraphs.');
+    setTimeout(() => setReviewNotification(null), 3500);
   };
 
   // SEO Tab Handlers
@@ -906,10 +1467,26 @@ export const RibbonToolbar: React.FC<RibbonToolbarProps> = ({
   const currentFontSize = editor?.getAttributes('textStyle')?.fontSize?.replace('px', '') || '11';
   const currentFontFamily = editor?.getAttributes('textStyle')?.fontFamily || 'Calibri, sans-serif';
 
+  const effectiveThemeMode = settings.themeMode || (settings.isDarkMode ? 'fullDark' : 'light');
+  const isDarkUi = effectiveThemeMode === 'fullDark' || effectiveThemeMode === 'canvasDark';
+  const isSepiaUi = effectiveThemeMode === 'sepia';
+
+  const ribbonContainerBg = isDarkUi
+    ? 'bg-[#202020] border-b border-[#333333] text-neutral-200'
+    : isSepiaUi
+    ? 'bg-[#ede5d5] border-b border-[#d8ccb8] text-[#362b24]'
+    : 'bg-[#f3f2f1] border-b border-[#dad9d8] text-neutral-900';
+
+  const tabStripBg = isDarkUi
+    ? 'border-b border-[#2d2d2d] bg-[#1a1a1a]'
+    : isSepiaUi
+    ? 'border-b border-[#ded4c1] bg-[#f8f3e9]'
+    : 'border-b border-[#e1dfdd] bg-white';
+
   return (
-    <div id="word-ribbon-toolbar" className="bg-[#f3f2f1] border-b border-[#dad9d8] select-none no-print z-20">
+    <div id="word-ribbon-toolbar" className={`${ribbonContainerBg} select-none no-print z-20`}>
       {/* Top Tab Strip (File, Home, Insert, Layout, Review, View) */}
-      <div className="flex items-center justify-between px-3 pt-1 border-b border-[#e1dfdd] bg-white">
+      <div className={`flex items-center justify-between px-3 pt-1 ${tabStripBg}`}>
         <div className="flex items-center space-x-1 text-xs font-medium">
           {/* File Backstage Tab */}
           <button
@@ -921,6 +1498,18 @@ export const RibbonToolbar: React.FC<RibbonToolbarProps> = ({
 
           {(['home', 'insert', 'table', 'layout', 'review', 'view', 'format', 'convert', 'seo', 'help'] as RibbonTab[]).map((tab) => {
             const isActive = activeTab === tab;
+            const activeTabClass = isDarkUi
+              ? 'text-blue-400 font-semibold bg-[#202020] border-t-2 border-blue-500 border-x border-[#333333] shadow-2xs'
+              : isSepiaUi
+              ? 'text-[#92400e] font-semibold bg-[#ede5d5] border-t-2 border-[#b45309] border-x border-[#d8ccb8] shadow-2xs'
+              : 'text-[#185abd] font-semibold bg-white border-t-2 border-[#185abd] border-x border-[#dad9d8] shadow-2xs';
+
+            const inactiveTabClass = isDarkUi
+              ? 'text-neutral-300 hover:bg-neutral-800 hover:text-white font-normal'
+              : isSepiaUi
+              ? 'text-[#6b5847] hover:bg-[#e6dccb] hover:text-[#2d2116] font-normal'
+              : 'text-neutral-700 hover:bg-neutral-100 hover:text-neutral-900 font-normal';
+
             return (
               <button
                 key={tab}
@@ -929,9 +1518,7 @@ export const RibbonToolbar: React.FC<RibbonToolbarProps> = ({
                   if (isRibbonCollapsed) setIsRibbonCollapsed(false);
                 }}
                 className={`px-3.5 py-1.5 text-xs rounded-t transition-all cursor-pointer relative ${
-                  isActive
-                    ? 'text-[#185abd] font-semibold bg-white border-t-2 border-[#185abd] border-x border-[#dad9d8] shadow-2xs'
-                    : 'text-neutral-700 hover:bg-neutral-100 hover:text-neutral-900 font-normal'
+                  isActive ? activeTabClass : inactiveTabClass
                 }`}
               >
                 {tab === 'seo' ? 'SEO' : tab.charAt(0).toUpperCase() + tab.slice(1)}
@@ -952,61 +1539,182 @@ export const RibbonToolbar: React.FC<RibbonToolbarProps> = ({
 
       {/* Main Ribbon Command Bar */}
       {!isRibbonCollapsed && (
-        <div className="min-h-24 px-3 pt-1.5 pb-1 flex items-start space-x-2 text-neutral-800 bg-[#f3f2f1] relative z-20">
+        <div
+          className={`min-h-24 px-3 pt-1.5 pb-1 flex items-start space-x-2 relative z-20 ${
+            isDarkUi
+              ? 'bg-[#202020] text-neutral-100'
+              : isSepiaUi
+              ? 'bg-[#ede5d5] text-[#362b24]'
+              : 'bg-[#f3f2f1] text-neutral-800'
+          }`}
+        >
           {/* HOME TAB */}
           {activeTab === 'home' && (
             <>
               {/* Clipboard Group */}
-              <div className="flex flex-col justify-between pr-2.5 border-r border-[#dad9d8]">
-                <div className="flex items-start space-x-1">
-                  <button
-                    onClick={() => {
-                      navigator.clipboard.readText().then((text) => {
-                        editor?.commands.insertContent(text);
-                      }).catch(() => {
-                        // fallback
-                      });
-                    }}
-                    title="Paste (Ctrl+V)"
-                    className="flex flex-col items-center justify-start px-2 py-1 rounded hover:bg-white hover:shadow-xs transition-all text-neutral-700 hover:text-neutral-900 cursor-pointer"
-                  >
-                    <ClipboardPaste size={18} className="text-[#185abd] mb-0.5" />
-                    <span className="text-[10px] font-medium">Paste</span>
-                  </button>
+              <div className="flex flex-col justify-between pr-2.5 border-r border-[#dad9d8] relative">
+                <div className="flex items-start space-x-1 relative">
+                  {/* Smart Paste Button with Blue Popup */}
+                  <div className="relative">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        triggerPastePopup();
+                        if (typeof navigator !== 'undefined' && navigator.clipboard?.readText) {
+                          navigator.clipboard
+                            .readText()
+                            .then((clipText) => {
+                              if (clipText && editor) {
+                                editor.commands.insertContent(clipText);
+                              }
+                            })
+                            .catch((err) => {
+                              console.warn('Direct clipboard read restricted by browser:', err);
+                            });
+                        }
+                      }}
+                      title="Paste (Ctrl+V) — Click or press Ctrl+V"
+                      className="flex flex-col items-center justify-start px-2 py-1 rounded hover:bg-white hover:shadow-xs transition-all text-neutral-700 hover:text-neutral-900 cursor-pointer min-w-[42px]"
+                    >
+                      <ClipboardPaste size={18} className="text-[#185abd] mb-0.5" />
+                      <span className="text-[10px] font-medium leading-tight">Paste</span>
+                    </button>
 
-                  <div className="flex flex-col space-y-0.5">
-                    <button
-                      onClick={() => {
-                        document.execCommand('cut');
-                      }}
-                      title="Cut (Ctrl+X)"
-                      className="p-1 rounded hover:bg-white hover:shadow-xs text-neutral-700 cursor-pointer flex items-center space-x-1"
-                    >
-                      <Scissors size={12} />
-                      <span className="text-[10px]">Cut</span>
-                    </button>
-                    <button
-                      onClick={() => {
-                        document.execCommand('copy');
-                      }}
-                      title="Copy (Ctrl+C)"
-                      className="p-1 rounded hover:bg-white hover:shadow-xs text-neutral-700 cursor-pointer flex items-center space-x-1"
-                    >
-                      <Copy size={12} />
-                      <span className="text-[10px]">Copy</span>
-                    </button>
-                    <button
-                      onClick={handleFormatPainter}
-                      title={copiedFormat ? 'Click to apply copied formatting' : 'Format Painter (Click to copy text styling)'}
-                      className={`p-1 rounded cursor-pointer flex items-center space-x-1 border transition-all ${
-                        copiedFormat
-                          ? 'bg-[#cde4f7] border-[#185abd] text-[#185abd] shadow-xs'
-                          : 'border-transparent hover:bg-white hover:border-neutral-300 text-neutral-700'
-                      }`}
-                    >
-                      <Paintbrush size={12} className={copiedFormat ? 'animate-pulse' : ''} />
-                      <span className="text-[10px]">Painter</span>
-                    </button>
+                    {/* Small Blue Popup Message right of Paste for 3s */}
+                    {pastePopupVisible && (
+                      <div className="absolute left-full top-1/2 -translate-y-1/2 ml-2 z-50 whitespace-nowrap bg-blue-600 text-white text-[11px] font-medium px-2.5 py-1 rounded shadow-lg flex items-center gap-1.5 animate-in fade-in zoom-in-95 duration-150 pointer-events-none">
+                        <Keyboard size={13} className="shrink-0" />
+                        <span>You can use CTRL + V buttons</span>
+                        <div className="absolute right-full top-1/2 -translate-y-1/2 border-4 border-transparent border-r-blue-600" />
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Cut, Copy, Painter Row/Column */}
+                  <div className="flex flex-col space-y-0.5 relative">
+                    {/* Cut Button with Orange Popup */}
+                    <div className="relative">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (editor) {
+                            const { from, to, empty } = editor.state.selection;
+                            if (!empty) {
+                              const text = editor.state.doc.textBetween(from, to, '\n');
+                              if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+                                navigator.clipboard
+                                  .writeText(text)
+                                  .then(() => {
+                                    editor.chain().focus().deleteSelection().run();
+                                  })
+                                  .catch(() => {
+                                    document.execCommand('cut');
+                                  });
+                              } else {
+                                document.execCommand('cut');
+                              }
+                            } else {
+                              document.execCommand('cut');
+                            }
+                          }
+                          triggerCutPopup();
+                        }}
+                        title="Cut (Ctrl+X)"
+                        className="p-1 rounded hover:bg-white hover:shadow-xs text-neutral-700 cursor-pointer flex items-center space-x-1 w-full"
+                      >
+                        <Scissors size={12} className="text-neutral-600" />
+                        <span className="text-[10px]">Cut</span>
+                      </button>
+
+                      {/* Small Orange Popup Message right of Cut for 3s */}
+                      {cutPopupVisible && (
+                        <div className="absolute left-full top-1/2 -translate-y-1/2 ml-2 z-50 whitespace-nowrap bg-amber-600 text-white text-[11px] font-medium px-2.5 py-1 rounded shadow-lg flex items-center gap-1.5 animate-in fade-in zoom-in-95 duration-150 pointer-events-none">
+                          <Scissors size={13} className="shrink-0" />
+                          <span>Transferred to clipboard</span>
+                          <div className="absolute right-full top-1/2 -translate-y-1/2 border-4 border-transparent border-r-amber-600" />
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Copy Button with Green Popup */}
+                    <div className="relative">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (editor) {
+                            const { from, to, empty } = editor.state.selection;
+                            let text = '';
+                            if (!empty) {
+                              text = editor.state.doc.textBetween(from, to, '\n');
+                            } else {
+                              text = editor.state.selection.$from.parent.textContent;
+                            }
+                            if (text && typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+                              navigator.clipboard.writeText(text).catch(() => {
+                                document.execCommand('copy');
+                              });
+                            } else {
+                              document.execCommand('copy');
+                            }
+                          }
+                          triggerCopyPopup();
+                        }}
+                        title="Copy (Ctrl+C)"
+                        className="p-1 rounded hover:bg-white hover:shadow-xs text-neutral-700 cursor-pointer flex items-center space-x-1 w-full"
+                      >
+                        <Copy size={12} className="text-neutral-600" />
+                        <span className="text-[10px]">Copy</span>
+                      </button>
+
+                      {/* Small Green Popup Message right of Copy for 3s */}
+                      {copyPopupVisible && (
+                        <div className="absolute left-full top-1/2 -translate-y-1/2 ml-2 z-50 whitespace-nowrap bg-emerald-600 text-white text-[11px] font-medium px-2.5 py-1 rounded shadow-lg flex items-center gap-1.5 animate-in fade-in zoom-in-95 duration-150 pointer-events-none">
+                          <Check size={13} className="shrink-0 stroke-[3]" />
+                          <span>Selected area Copyed</span>
+                          <div className="absolute right-full top-1/2 -translate-y-1/2 border-4 border-transparent border-r-emerald-600" />
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Format Painter Button (Memory based, strictly avoids clipboard) */}
+                    <div className="relative">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          const isDoubleClick = e.detail === 2;
+                          handleFormatPainterAction(isDoubleClick ? 'persistent' : 'single');
+                        }}
+                        title={
+                          activeFormatPainter
+                            ? `Format Painter Active (${activeFormatPainter.mode}) — Click or select text to apply format, or click here / Esc to cancel`
+                            : 'Format Painter — Click to copy format for 1 use; Double-click for persistent multi-use. Copies character & paragraph styles safely without touching clipboard!'
+                        }
+                        className={`p-1 rounded cursor-pointer flex items-center space-x-1 border transition-all w-full ${
+                          activeFormatPainter
+                            ? 'bg-[#cde4f7] border-[#185abd] text-[#185abd] shadow-xs ring-1 ring-[#185abd]'
+                            : 'border-transparent hover:bg-white hover:border-neutral-300 text-neutral-700'
+                        }`}
+                      >
+                        <Paintbrush
+                          size={12}
+                          className={`${
+                            activeFormatPainter
+                              ? 'text-[#185abd] animate-pulse'
+                              : 'text-amber-600'
+                          }`}
+                        />
+                        <span className="text-[10px] font-medium">Painter</span>
+                      </button>
+
+                      {/* Small Notification Popup right of Format Painter for 3s */}
+                      {painterPopupVisible && activeFormatPainter && (
+                        <div className="absolute left-full top-1/2 -translate-y-1/2 ml-2 z-50 whitespace-nowrap bg-indigo-600 text-white text-[11px] font-medium px-2.5 py-1 rounded shadow-lg flex items-center gap-1.5 animate-in fade-in zoom-in-95 duration-150 pointer-events-none">
+                          <Sparkles size={13} className="shrink-0" />
+                          <span>Format copied in memory ({activeFormatPainter.mode})</span>
+                          <div className="absolute right-full top-1/2 -translate-y-1/2 border-4 border-transparent border-r-indigo-600" />
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
                 <span className="text-[10px] text-center text-neutral-400 font-medium tracking-wide">Clipboard</span>
@@ -1293,16 +2001,16 @@ export const RibbonToolbar: React.FC<RibbonToolbarProps> = ({
                     <div className="w-px h-4 bg-neutral-300 mx-0.5" />
 
                     <button
-                      onClick={() => editor?.chain().focus().liftListItem('listItem').run()}
-                      title="Decrease Indent"
-                      className="p-1 rounded border border-transparent hover:bg-white hover:border-[#185abd] text-neutral-700 cursor-pointer"
+                      onClick={handleDecreaseIndent}
+                      title="Decrease Indent (Shift+Tab in lists, reduces paragraph margin)"
+                      className="p-1 rounded border border-transparent hover:bg-white hover:border-[#185abd] text-neutral-700 active:bg-neutral-100 cursor-pointer transition-all"
                     >
                       <Outdent size={14} />
                     </button>
                     <button
-                      onClick={() => editor?.chain().focus().sinkListItem('listItem').run()}
-                      title="Increase Indent"
-                      className="p-1 rounded border border-transparent hover:bg-white hover:border-[#185abd] text-neutral-700 cursor-pointer"
+                      onClick={handleIncreaseIndent}
+                      title="Increase Indent (Tab in lists, indents paragraph margin)"
+                      className="p-1 rounded border border-transparent hover:bg-white hover:border-[#185abd] text-neutral-700 active:bg-neutral-100 cursor-pointer transition-all"
                     >
                       <Indent size={14} />
                     </button>
@@ -1444,12 +2152,16 @@ export const RibbonToolbar: React.FC<RibbonToolbarProps> = ({
                     onClick={() => editor?.chain().focus().setParagraph().run()}
                     className={`h-11 px-2.5 rounded border text-left flex flex-col justify-center transition-all cursor-pointer min-w-[62px] ${
                       editor?.isActive('paragraph') && !editor?.isActive('heading')
-                        ? 'border-[#185abd] bg-blue-50/80 ring-2 ring-[#185abd] shadow-xs'
+                        ? isDarkUi
+                          ? 'border-[#0078d4] bg-[#0e3a64] ring-1 ring-[#0078d4] shadow-xs'
+                          : 'border-[#185abd] bg-blue-50/80 ring-2 ring-[#185abd] shadow-xs'
+                        : isDarkUi
+                        ? 'border-[#404040] bg-[#282828] hover:border-[#0078d4] hover:bg-[#333333]'
                         : 'border-neutral-200 bg-white hover:border-[#185abd] hover:bg-neutral-50'
                     }`}
                   >
-                    <span className={`text-xs font-normal leading-tight ${editor?.isActive('paragraph') && !editor?.isActive('heading') ? 'text-[#185abd] font-semibold' : 'text-neutral-800'}`}>AaBbCc</span>
-                    <span className="text-[9px] text-neutral-500">Normal (p)</span>
+                    <span className={`text-xs leading-tight ${editor?.isActive('paragraph') && !editor?.isActive('heading') ? (isDarkUi ? 'text-[#93c5fd] font-semibold' : 'text-[#185abd] font-semibold') : (isDarkUi ? 'text-neutral-200 font-normal' : 'text-neutral-800 font-normal')}`}>AaBbCc</span>
+                    <span className={`text-[9px] ${isDarkUi ? 'text-neutral-400' : 'text-neutral-500'}`}>Normal (p)</span>
                   </button>
 
                   {/* Heading 1 */}
@@ -1457,12 +2169,16 @@ export const RibbonToolbar: React.FC<RibbonToolbarProps> = ({
                     onClick={() => editor?.chain().focus().toggleHeading({ level: 1 }).run()}
                     className={`h-11 px-2.5 rounded border text-left flex flex-col justify-center transition-all cursor-pointer min-w-[62px] ${
                       editor?.isActive('heading', { level: 1 })
-                        ? 'border-[#185abd] bg-blue-50/80 ring-2 ring-[#185abd] shadow-xs'
+                        ? isDarkUi
+                          ? 'border-[#0078d4] bg-[#0e3a64] ring-1 ring-[#0078d4] shadow-xs'
+                          : 'border-[#185abd] bg-blue-50/80 ring-2 ring-[#185abd] shadow-xs'
+                        : isDarkUi
+                        ? 'border-[#404040] bg-[#282828] hover:border-[#0078d4] hover:bg-[#333333]'
                         : 'border-neutral-200 bg-white hover:border-[#185abd] hover:bg-neutral-50'
                     }`}
                   >
-                    <span className="text-xs font-bold text-[#185abd] leading-tight">AaBbCc</span>
-                    <span className="text-[9px] text-neutral-500">Heading 1 (h1)</span>
+                    <span className={`text-xs font-bold leading-tight ${isDarkUi ? 'text-[#60a5fa]' : 'text-[#185abd]'}`}>AaBbCc</span>
+                    <span className={`text-[9px] ${isDarkUi ? 'text-neutral-400' : 'text-neutral-500'}`}>Heading 1 (h1)</span>
                   </button>
 
                   {/* Heading 2 */}
@@ -1470,12 +2186,16 @@ export const RibbonToolbar: React.FC<RibbonToolbarProps> = ({
                     onClick={() => editor?.chain().focus().toggleHeading({ level: 2 }).run()}
                     className={`h-11 px-2.5 rounded border text-left flex flex-col justify-center transition-all cursor-pointer min-w-[62px] ${
                       editor?.isActive('heading', { level: 2 })
-                        ? 'border-[#185abd] bg-blue-50/80 ring-2 ring-[#185abd] shadow-xs'
+                        ? isDarkUi
+                          ? 'border-[#0078d4] bg-[#0e3a64] ring-1 ring-[#0078d4] shadow-xs'
+                          : 'border-[#185abd] bg-blue-50/80 ring-2 ring-[#185abd] shadow-xs'
+                        : isDarkUi
+                        ? 'border-[#404040] bg-[#282828] hover:border-[#0078d4] hover:bg-[#333333]'
                         : 'border-neutral-200 bg-white hover:border-[#185abd] hover:bg-neutral-50'
                     }`}
                   >
-                    <span className="text-xs font-semibold text-[#2b579a] leading-tight">AaBbCc</span>
-                    <span className="text-[9px] text-neutral-500">Heading 2 (h2)</span>
+                    <span className={`text-xs font-semibold leading-tight ${isDarkUi ? 'text-[#93c5fd]' : 'text-[#2b579a]'}`}>AaBbCc</span>
+                    <span className={`text-[9px] ${isDarkUi ? 'text-neutral-400' : 'text-neutral-500'}`}>Heading 2 (h2)</span>
                   </button>
 
                   {/* Heading 3 */}
@@ -1483,12 +2203,16 @@ export const RibbonToolbar: React.FC<RibbonToolbarProps> = ({
                     onClick={() => editor?.chain().focus().toggleHeading({ level: 3 }).run()}
                     className={`h-11 px-2.5 rounded border text-left flex flex-col justify-center transition-all cursor-pointer min-w-[62px] ${
                       editor?.isActive('heading', { level: 3 })
-                        ? 'border-[#185abd] bg-blue-50/80 ring-2 ring-[#185abd] shadow-xs'
+                        ? isDarkUi
+                          ? 'border-[#0078d4] bg-[#0e3a64] ring-1 ring-[#0078d4] shadow-xs'
+                          : 'border-[#185abd] bg-blue-50/80 ring-2 ring-[#185abd] shadow-xs'
+                        : isDarkUi
+                        ? 'border-[#404040] bg-[#282828] hover:border-[#0078d4] hover:bg-[#333333]'
                         : 'border-neutral-200 bg-white hover:border-[#185abd] hover:bg-neutral-50'
                     }`}
                   >
-                    <span className="text-xs font-semibold text-[#3b82f6] leading-tight">AaBbCc</span>
-                    <span className="text-[9px] text-neutral-500">Heading 3 (h3)</span>
+                    <span className={`text-xs font-semibold leading-tight ${isDarkUi ? 'text-[#bfdbfe]' : 'text-[#3b82f6]'}`}>AaBbCc</span>
+                    <span className={`text-[9px] ${isDarkUi ? 'text-neutral-400' : 'text-neutral-500'}`}>Heading 3 (h3)</span>
                   </button>
 
                   {/* Quote Style */}
@@ -1496,12 +2220,16 @@ export const RibbonToolbar: React.FC<RibbonToolbarProps> = ({
                     onClick={() => editor?.chain().focus().toggleBlockquote().run()}
                     className={`h-11 px-2.5 rounded border text-left flex flex-col justify-center transition-all cursor-pointer min-w-[62px] ${
                       editor?.isActive('blockquote')
-                        ? 'border-[#185abd] bg-blue-50/80 ring-2 ring-[#185abd] shadow-xs'
+                        ? isDarkUi
+                          ? 'border-[#0078d4] bg-[#0e3a64] ring-1 ring-[#0078d4] shadow-xs'
+                          : 'border-[#185abd] bg-blue-50/80 ring-2 ring-[#185abd] shadow-xs'
+                        : isDarkUi
+                        ? 'border-[#404040] bg-[#282828] hover:border-[#0078d4] hover:bg-[#333333]'
                         : 'border-neutral-200 bg-white hover:border-[#185abd] hover:bg-neutral-50'
                     }`}
                   >
-                    <span className="text-xs italic text-neutral-600 leading-tight">"AaBb"</span>
-                    <span className="text-[9px] text-neutral-500">Quote</span>
+                    <span className={`text-xs italic leading-tight ${isDarkUi ? 'text-neutral-300' : 'text-neutral-600'}`}>"AaBb"</span>
+                    <span className={`text-[9px] ${isDarkUi ? 'text-neutral-400' : 'text-neutral-500'}`}>Quote</span>
                   </button>
                 </div>
                 <span className="text-[10px] text-center text-neutral-400 font-medium tracking-wide">Styles</span>
@@ -1586,8 +2314,50 @@ export const RibbonToolbar: React.FC<RibbonToolbarProps> = ({
                       Blank<br />Page
                     </span>
                   </button>
+
+                  {/* Line (Crisp Solid Dark Horizontal Line - matches middle item in reference image) */}
+                  <button
+                    onClick={() => {
+                      if (!editor) return;
+                      editor
+                        .chain()
+                        .focus()
+                        .insertContent('<hr class="word-solid-line" /><p></p>')
+                        .run();
+                    }}
+                    title="Insert Crisp Solid Horizontal Line"
+                    className="flex flex-col items-center justify-start px-2.5 py-1.5 rounded hover:bg-white hover:shadow-xs text-neutral-700 cursor-pointer transition-all group"
+                  >
+                    <div className="w-5 h-5 flex items-center justify-center mb-1 group-hover:scale-105 transition-transform">
+                      <div className="w-4.5 h-[2px] bg-neutral-900 rounded-xs shadow-2xs" />
+                    </div>
+                    <span className="text-[11px] font-medium leading-tight text-center">
+                      Line
+                    </span>
+                  </button>
+
+                  {/* Divider (Moved after Line - subtle soft divider line matching bottom item in reference image) */}
+                  <button
+                    onClick={() => {
+                      if (!editor) return;
+                      editor
+                        .chain()
+                        .focus()
+                        .insertContent('<hr class="word-divider" /><p></p>')
+                        .run();
+                    }}
+                    title="Insert Subtle Divider Line"
+                    className="flex flex-col items-center justify-start px-2.5 py-1.5 rounded hover:bg-white hover:shadow-xs text-neutral-700 cursor-pointer transition-all group"
+                  >
+                    <div className="w-5 h-5 flex items-center justify-center mb-1 group-hover:scale-105 transition-transform">
+                      <div className="w-4.5 h-[1.5px] bg-[#94a3b8] rounded-xs" />
+                    </div>
+                    <span className="text-[11px] font-medium leading-tight text-center">
+                      Divider
+                    </span>
+                  </button>
                 </div>
-                <span className="text-[10px] text-center text-neutral-400 font-medium tracking-wide">Pages</span>
+                <span className="text-[10px] text-center text-neutral-400 font-medium tracking-wide">Pages &amp; Lines</span>
               </div>
 
               {/* Tables Group (Retained existing) */}
@@ -1700,16 +2470,6 @@ export const RibbonToolbar: React.FC<RibbonToolbarProps> = ({
                       Image<br />Wizard
                     </span>
                   </button>
-
-                  {/* Divider (Dark line as shown in image) */}
-                  <button
-                    onClick={() => editor?.chain().focus().setHorizontalRule().run()}
-                    title="Insert Horizontal Divider Line"
-                    className="flex flex-col items-center justify-start px-2.5 py-1.5 rounded hover:bg-white hover:shadow-xs text-neutral-700 cursor-pointer group"
-                  >
-                    <Minus size={20} className="text-[#334155] mb-1 group-hover:scale-105 transition-transform" />
-                    <span className="text-[11px] font-medium leading-tight">Divider</span>
-                  </button>
                 </div>
                 <span className="text-[10px] text-center text-neutral-400 font-medium tracking-wide">Illustrations</span>
               </div>
@@ -1740,54 +2500,18 @@ export const RibbonToolbar: React.FC<RibbonToolbarProps> = ({
                   </button>
 
                   {/* Symbols (Purple Smile as shown in image) */}
-                  <div className="relative" ref={symbolsPickerRef}>
-                    <button
-                      onClick={() => setShowSymbolsPicker(!showSymbolsPicker)}
-                      title="Insert Special Symbol or Character"
-                      className={`flex flex-col items-center justify-start px-2.5 py-1.5 rounded cursor-pointer transition-all border ${
-                        showSymbolsPicker
-                          ? 'bg-[#cde4f7] border-[#185abd] text-[#185abd]'
-                          : 'border-transparent hover:bg-white hover:border-neutral-300 text-neutral-700'
-                      }`}
-                    >
-                      <Smile size={20} className="text-[#6366f1] mb-1" />
-                      <span className="text-[11px] font-medium leading-tight">Symbols</span>
-                    </button>
-
-                    {/* Symbols Dropdown Picker */}
-                    {showSymbolsPicker && (
-                      <div className="absolute top-full left-0 mt-1 bg-white border border-neutral-300 rounded-md shadow-2xl p-3 z-50 w-56">
-                        <div className="text-[10px] font-semibold text-neutral-500 uppercase tracking-wider pb-1.5 border-b border-neutral-100 mb-2">
-                          Special Characters
-                        </div>
-                        <div className="grid grid-cols-6 gap-1.5">
-                          {commonSymbols.map((sym) => (
-                            <button
-                              key={sym}
-                              onClick={() => {
-                                editor?.chain().focus().insertContent(sym).run();
-                                setShowSymbolsPicker(false);
-                              }}
-                              className="h-8 rounded hover:bg-blue-100 hover:text-[#185abd] text-neutral-800 text-sm font-semibold flex items-center justify-center border border-neutral-200 transition-colors cursor-pointer"
-                            >
-                              {sym}
-                            </button>
-                          ))}
-                        </div>
-                        <div className="mt-2 pt-2 border-t border-neutral-100 text-center">
-                          <button
-                            onClick={() => {
-                              editor?.chain().focus().insertContent('™').run();
-                              setShowSymbolsPicker(false);
-                            }}
-                            className="text-[11px] text-[#185abd] hover:underline"
-                          >
-                            Click to insert symbol
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
+                  <button
+                    onClick={() => setShowSymbolsPicker(true)}
+                    title="Insert Special Symbol or Character"
+                    className={`flex flex-col items-center justify-start px-2.5 py-1.5 rounded cursor-pointer transition-all border ${
+                      showSymbolsPicker
+                        ? 'bg-[#cde4f7] border-[#185abd] text-[#185abd]'
+                        : 'border-transparent hover:bg-white hover:border-neutral-300 text-neutral-700'
+                    }`}
+                  >
+                    <Smile size={20} className="text-[#6366f1] mb-1" />
+                    <span className="text-[11px] font-medium leading-tight">Symbols</span>
+                  </button>
 
                   {/* Quick Blocks (Opens / Closes Right Toolbar Quick Blocks) */}
                   <button
@@ -1832,15 +2556,35 @@ export const RibbonToolbar: React.FC<RibbonToolbarProps> = ({
                 <span className="text-[10px] text-center text-neutral-400 font-medium tracking-wide">Add-ins &amp; Input</span>
               </div>
 
-              {/* Links Group (Retained existing) */}
+              {/* Links Group */}
               <div className="flex flex-col justify-between px-3 border-r border-[#dad9d8]">
-                <button
-                  onClick={() => setShowLinkModal(true)}
-                  className="flex flex-col items-center justify-start px-3 py-1.5 rounded hover:bg-white hover:shadow-xs text-neutral-700 cursor-pointer"
-                >
-                  <LinkIcon size={20} className="text-[#185abd] mb-1" />
-                  <span className="text-[11px] font-medium">Link</span>
-                </button>
+                <div className="flex items-center space-x-1">
+                  <button
+                    onClick={() => setShowLinkModal(true)}
+                    title="Insert Hyperlink (Auto-detects URL or email from clipboard)"
+                    className="flex flex-col items-center justify-start px-2.5 py-1.5 rounded hover:bg-white hover:shadow-xs text-neutral-700 cursor-pointer"
+                  >
+                    <LinkIcon size={20} className="text-[#185abd] mb-1" />
+                    <span className="text-[11px] font-medium">Link</span>
+                  </button>
+                  <button
+                    onClick={() => onUpdateSettings({ showHyperLinkPane: !settings.showHyperLinkPane })}
+                    title={`Hyper Link Toolbar (Current: ${settings.hyperLinkMode === 'edit' ? 'Edit mode' : 'Navigate mode'})`}
+                    className={`relative flex flex-col items-center justify-start px-2.5 py-1.5 rounded hover:bg-white hover:shadow-xs cursor-pointer transition-colors ${
+                      settings.showHyperLinkPane ? 'bg-blue-100/70 text-[#185abd] shadow-xs' : 'text-neutral-700'
+                    }`}
+                  >
+                    <div className="relative">
+                      <Link2 size={20} className={settings.showHyperLinkPane ? 'text-[#185abd] mb-1 rotate-45' : 'text-indigo-600 mb-1 rotate-45'} />
+                      <span
+                        className={`absolute -top-0.5 -right-1 w-2 h-2 rounded-full border border-white ${
+                          settings.hyperLinkMode === 'edit' ? 'bg-emerald-500' : 'bg-blue-500'
+                        }`}
+                      />
+                    </div>
+                    <span className="text-[11px] font-medium">Hyper</span>
+                  </button>
+                </div>
                 <span className="text-[10px] text-center text-neutral-400 font-medium tracking-wide">Links</span>
               </div>
 
@@ -2017,16 +2761,24 @@ export const RibbonToolbar: React.FC<RibbonToolbarProps> = ({
                     <button
                       onClick={() => handleApplyTableStyle(selectedTableTheme)}
                       title="Sample Table Style Painter"
-                      className="px-2 py-1 bg-white hover:bg-neutral-50 rounded border border-neutral-300 text-neutral-700 flex items-center justify-center cursor-pointer shadow-2xs hover:border-neutral-400 transition-colors"
+                      className={`px-2 py-1 rounded border flex items-center justify-center cursor-pointer shadow-2xs transition-colors ${
+                        isDarkUi
+                          ? 'bg-[#282828] hover:bg-[#333333] border-[#404040] text-neutral-200 hover:border-neutral-500'
+                          : 'bg-white hover:bg-neutral-50 border-neutral-300 text-neutral-700 hover:border-neutral-400'
+                      }`}
                     >
-                      <Paintbrush size={14} className="text-neutral-700" />
+                      <Paintbrush size={14} className={isDarkUi ? 'text-neutral-200' : 'text-neutral-700'} />
                     </button>
                     <button
                       onClick={() => handleApplyTableStyle(selectedTableTheme)}
                       title="Apply current style preset to table"
-                      className="px-3 py-1 bg-[#f0f4f9] hover:bg-[#e2ebf6] active:bg-[#d0e0f2] text-neutral-800 text-[11px] font-semibold rounded border border-neutral-300/80 flex items-center space-x-1.5 cursor-pointer transition-colors shadow-2xs"
+                      className={`px-3 py-1 text-[11px] font-semibold rounded border flex items-center space-x-1.5 cursor-pointer transition-colors shadow-2xs ${
+                        isDarkUi
+                          ? 'bg-[#1e3a5f] hover:bg-[#2563eb]/40 border-[#0078d4] text-white'
+                          : 'bg-[#f0f4f9] hover:bg-[#e2ebf6] active:bg-[#d0e0f2] text-neutral-800 border-neutral-300/80'
+                      }`}
                     >
-                      <Check size={13} className="text-[#185abd]" />
+                      <Check size={13} className={isDarkUi ? 'text-[#60a5fa]' : 'text-[#185abd]'} />
                       <span>Apply Style</span>
                     </button>
                   </div>
@@ -2240,7 +2992,7 @@ export const RibbonToolbar: React.FC<RibbonToolbarProps> = ({
                         <button
                           key={m.id}
                           onClick={() => {
-                            onUpdateSettings({ margins: m.id as PageMargin });
+                            onUpdateSettings({ margins: m.id as PageMargin, customMargins: undefined });
                             setShowMarginsDropdown(false);
                           }}
                           className={`w-full text-left px-2.5 py-1.5 text-xs rounded transition-colors cursor-pointer flex justify-between items-center ${
@@ -2330,40 +3082,62 @@ export const RibbonToolbar: React.FC<RibbonToolbarProps> = ({
                   >
                     <FileText size={22} className="text-[#185abd] mb-0.5" />
                     <span className="text-[11px] font-medium leading-tight flex items-center">
-                      {settings.pageSize.toUpperCase()} <ChevronDown size={11} className="ml-0.5 text-neutral-500" />
+                      Size <ChevronDown size={11} className="ml-0.5 text-neutral-500" />
                     </span>
                   </button>
 
                   {/* Size Dropdown */}
                   {showSizeDropdown && (
-                    <div className="absolute top-full left-0 mt-1 bg-white border border-neutral-300 rounded-md shadow-2xl p-2 z-50 w-48 text-left">
-                      <div className="text-[10px] font-semibold text-neutral-500 uppercase tracking-wider pb-1 mb-1 border-b border-neutral-100">
-                        Paper Dimensions
+                    <div
+                      className={`absolute top-full left-0 mt-1 border rounded-md shadow-2xl p-2 z-50 w-64 max-h-[380px] overflow-y-auto text-left ${
+                        isDarkUi
+                          ? 'bg-[#222] border-neutral-700 text-neutral-200'
+                          : 'bg-white border-neutral-300 text-neutral-800'
+                      }`}
+                    >
+                      <div className="text-[10px] font-semibold text-neutral-500 uppercase tracking-wider pb-1 mb-1 border-b border-neutral-200 dark:border-neutral-700 flex justify-between items-center">
+                        <span>Paper Dimensions</span>
+                        <span className="text-[9px] text-neutral-400 font-normal">Default: A4</span>
                       </div>
-                      {[
-                        { id: 'a4', name: 'A4', desc: '210 x 297 mm' },
-                        { id: 'letter', name: 'Letter', desc: '8.5 x 11 in' },
-                        { id: 'legal', name: 'Legal', desc: '8.5 x 14 in' },
-                      ].map((s) => (
-                        <button
-                          key={s.id}
-                          onClick={() => {
-                            onUpdateSettings({ pageSize: s.id as PageSize });
-                            setShowSizeDropdown(false);
-                          }}
-                          className={`w-full text-left px-2.5 py-1.5 text-xs rounded transition-colors cursor-pointer flex justify-between items-center ${
-                            settings.pageSize === s.id
-                              ? 'bg-blue-50 text-[#185abd] font-semibold'
-                              : 'text-neutral-700 hover:bg-neutral-100'
-                          }`}
-                        >
-                          <div>
-                            <div className="font-medium">{s.name}</div>
-                            <div className="text-[10px] text-neutral-400">{s.desc}</div>
-                          </div>
-                          {settings.pageSize === s.id && <Check size={14} className="text-[#185abd]" />}
-                        </button>
-                      ))}
+                      {DOCUMENT_PAGE_SIZES.map((s) => {
+                        const isSelected = settings.pageSize === s.id;
+                        return (
+                          <button
+                            key={s.id}
+                            onClick={() => {
+                              onUpdateSettings({ pageSize: s.id });
+                              setShowSizeDropdown(false);
+                            }}
+                            className={`w-full text-left px-2.5 py-1.5 text-xs rounded transition-colors cursor-pointer flex justify-between items-center ${
+                              isSelected
+                                ? isDarkUi
+                                  ? 'bg-blue-950/60 text-blue-300 font-semibold'
+                                  : 'bg-blue-50 text-[#185abd] font-semibold'
+                                : isDarkUi
+                                ? 'text-neutral-300 hover:bg-neutral-800'
+                                : 'text-neutral-700 hover:bg-neutral-100'
+                            }`}
+                          >
+                            <div>
+                              <div className="font-medium flex items-center space-x-1.5">
+                                <span className={isSelected ? 'font-bold' : ''}>{s.name}</span>
+                                <span className="text-[11px] text-neutral-500 dark:text-neutral-400 font-normal">
+                                  — {s.inches}
+                                </span>
+                              </div>
+                              <div className="text-[10px] text-neutral-400 dark:text-neutral-500">
+                                {s.metric}
+                              </div>
+                            </div>
+                            {isSelected && (
+                              <Check
+                                size={14}
+                                className={isDarkUi ? 'text-blue-400' : 'text-[#185abd]'}
+                              />
+                            )}
+                          </button>
+                        );
+                      })}
                     </div>
                   )}
                 </div>
@@ -2373,25 +3147,33 @@ export const RibbonToolbar: React.FC<RibbonToolbarProps> = ({
                   <button
                     onClick={() => onUpdateSettings({ columns: 1 })}
                     title="Single Column Layout"
-                    className={`flex items-center space-x-1.5 px-2 py-0.5 rounded text-[11px] font-medium transition-all cursor-pointer ${
+                    className={`flex items-center space-x-1.5 px-2 py-0.5 rounded text-[11px] font-medium transition-all cursor-pointer border ${
                       (settings.columns ?? 1) === 1
-                        ? 'bg-[#dbeafe] text-[#185abd] font-semibold shadow-2xs'
-                        : 'hover:bg-white text-neutral-700'
+                        ? isDarkUi
+                          ? 'bg-[#1e3a5f] text-[#60a5fa] border-[#0078d4] font-semibold shadow-2xs'
+                          : 'bg-[#dbeafe] text-[#185abd] border-transparent font-semibold shadow-2xs'
+                        : isDarkUi
+                        ? 'border-transparent hover:bg-white/10 text-neutral-300'
+                        : 'border-transparent hover:bg-white text-neutral-700'
                     }`}
                   >
-                    <Columns size={13} className={(settings.columns ?? 1) === 1 ? 'text-[#185abd]' : 'text-neutral-700'} />
+                    <Columns size={13} className={(settings.columns ?? 1) === 1 ? (isDarkUi ? 'text-[#60a5fa]' : 'text-[#185abd]') : (isDarkUi ? 'text-neutral-300' : 'text-neutral-700')} />
                     <span>1 Column</span>
                   </button>
                   <button
                     onClick={() => onUpdateSettings({ columns: 2 })}
                     title="Two Columns Layout"
-                    className={`flex items-center space-x-1.5 px-2 py-0.5 rounded text-[11px] font-medium transition-all cursor-pointer ${
+                    className={`flex items-center space-x-1.5 px-2 py-0.5 rounded text-[11px] font-medium transition-all cursor-pointer border ${
                       settings.columns === 2
-                        ? 'bg-[#dbeafe] text-[#185abd] font-semibold shadow-2xs'
-                        : 'hover:bg-white text-neutral-700'
+                        ? isDarkUi
+                          ? 'bg-[#1e3a5f] text-[#60a5fa] border-[#0078d4] font-semibold shadow-2xs'
+                          : 'bg-[#dbeafe] text-[#185abd] border-transparent font-semibold shadow-2xs'
+                        : isDarkUi
+                        ? 'border-transparent hover:bg-white/10 text-neutral-300'
+                        : 'border-transparent hover:bg-white text-neutral-700'
                     }`}
                   >
-                    <Columns size={13} className={settings.columns === 2 ? 'text-[#185abd]' : 'text-neutral-700'} />
+                    <Columns size={13} className={settings.columns === 2 ? (isDarkUi ? 'text-[#60a5fa]' : 'text-[#185abd]') : (isDarkUi ? 'text-neutral-300' : 'text-neutral-700')} />
                     <span>2 Columns</span>
                   </button>
                 </div>
@@ -2464,30 +3246,96 @@ export const RibbonToolbar: React.FC<RibbonToolbarProps> = ({
                   )}
                 </div>
 
-                {/* 6. Shadow (Active Light-Blue Pill Container) */}
-                <button
-                  onClick={() => onUpdateSettings({ showShadow: settings.showShadow === false ? true : false })}
-                  title="Toggle Page Drop Shadow"
-                  className={`flex flex-col items-center justify-start px-3.5 py-1 rounded-md transition-all cursor-pointer border ${
-                    settings.showShadow !== false
-                      ? 'bg-[#f0f7ff] border-[#cde4f7] text-[#185abd]'
-                      : 'bg-transparent border-transparent hover:bg-white hover:border-neutral-300 text-neutral-600'
-                  }`}
-                >
-                  <Square size={22} className={settings.showShadow !== false ? 'text-[#185abd] mb-0.5' : 'text-neutral-500 mb-0.5'} />
-                  <span className={`text-[11px] leading-tight ${settings.showShadow !== false ? 'text-[#185abd] font-semibold' : 'text-neutral-600 font-medium'}`}>
-                    Shadow
-                  </span>
-                </button>
+                {/* 6. Shadow & Borders Dropdown (Simple Shadow, Deep Shadow, Box Border 1px, Thick Border 2px, Dots Border, Double Border, None) */}
+                <div className="relative" ref={shadowDropdownRef}>
+                  <button
+                    onClick={() => setShowShadowDropdown(!showShadowDropdown)}
+                    title="Page Shadow & Borders"
+                    className={`flex flex-col items-center justify-start px-2 py-1 rounded cursor-pointer transition-all border ${
+                      showShadowDropdown
+                        ? isDarkUi
+                          ? 'bg-[#1e3a5f] border-[#0078d4] text-[#60a5fa]'
+                          : 'bg-[#f0f7ff] border-[#cde4f7] text-[#185abd]'
+                        : settings.pageBorderStyle && settings.pageBorderStyle !== 'none' && settings.showShadow !== false
+                        ? isDarkUi
+                          ? 'bg-[#1e3a5f] border-[#0078d4] text-[#60a5fa]'
+                          : 'bg-[#f0f7ff] border-[#cde4f7] text-[#185abd]'
+                        : isDarkUi
+                        ? 'border-transparent hover:bg-white/10 text-neutral-400'
+                        : 'border-transparent hover:bg-white hover:border-neutral-300 text-neutral-600'
+                    }`}
+                  >
+                    <Square size={22} className="mb-0.5" />
+                    <span className="text-[11px] font-medium leading-tight flex items-center">
+                      Shadow <ChevronDown size={11} className="ml-0.5 text-neutral-500" />
+                    </span>
+                  </button>
 
-                {/* 7. Watermark v (Orange/Amber Stamp Icon) */}
+                  {/* Shadow & Borders Dropdown Menu */}
+                  {showShadowDropdown && (
+                    <div
+                      className={`absolute top-full left-0 mt-1 border rounded-md shadow-2xl p-2 z-50 w-56 text-left ${
+                        isDarkUi
+                          ? 'bg-[#222] border-neutral-700 text-neutral-200'
+                          : 'bg-white border-neutral-300 text-neutral-800'
+                      }`}
+                    >
+                      <div className="text-[10px] font-semibold text-neutral-500 uppercase tracking-wider pb-1 mb-1 border-b border-neutral-200 dark:border-neutral-700">
+                        Page Shadow &amp; Borders
+                      </div>
+                      {[
+                        { id: 'simple-shadow', label: 'Simple Shadow', desc: 'Soft ambient drop shadow' },
+                        { id: 'deep-shadow', label: 'Deep Shadow', desc: 'Prominent executive shadow' },
+                        { id: 'box-border', label: 'Box Border (1px)', desc: 'Clean 1px solid frame' },
+                        { id: 'thick-border', label: 'Thick Border (2px)', desc: 'Solid 2px bold outline' },
+                        { id: 'dots-border', label: 'Dots Border', desc: 'Dotted boundary frame' },
+                        { id: 'double-border', label: 'Double Border', desc: 'Classic double line border' },
+                        { id: 'none', label: 'None', desc: 'Borderless flat sheet' },
+                      ].map((opt) => {
+                        const currentStyle = settings.pageBorderStyle || (settings.showShadow === false ? 'none' : 'simple-shadow');
+                        const isSelected = currentStyle === opt.id;
+                        return (
+                          <button
+                            key={opt.id}
+                            onClick={() => {
+                              onUpdateSettings({
+                                pageBorderStyle: opt.id as PageBorderStyle,
+                                showShadow: opt.id !== 'none',
+                              });
+                              setShowShadowDropdown(false);
+                            }}
+                            className={`w-full text-left px-2.5 py-1.5 text-xs rounded transition-colors cursor-pointer flex justify-between items-center ${
+                              isSelected
+                                ? isDarkUi
+                                  ? 'bg-blue-950/60 text-blue-300 font-semibold'
+                                  : 'bg-blue-50 text-[#185abd] font-semibold'
+                                : isDarkUi
+                                ? 'hover:bg-neutral-800 text-neutral-300'
+                                : 'hover:bg-neutral-100 text-neutral-700'
+                            }`}
+                          >
+                            <div className="flex flex-col">
+                              <span className="font-medium text-xs">{opt.label}</span>
+                              <span className="text-[10px] text-neutral-400">{opt.desc}</span>
+                            </div>
+                            {isSelected && <Check size={14} className={isDarkUi ? 'text-blue-400' : 'text-[#185abd]'} />}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                {/* 7. Watermark v (Orange/Amber Stamp Icon with 'Your Mark' option) */}
                 <div className="relative" ref={watermarkDropdownRef}>
                   <button
                     onClick={() => setShowWatermarkDropdown(!showWatermarkDropdown)}
                     title="Document Watermark"
                     className={`flex flex-col items-center justify-start px-2 py-1 rounded cursor-pointer transition-all border ${
-                      showWatermarkDropdown
+                      showWatermarkDropdown || settings.watermark
                         ? 'bg-[#ffedd5] border-[#c2410c] text-[#c2410c]'
+                        : isDarkUi
+                        ? 'border-transparent hover:bg-white/10 text-neutral-300'
                         : 'border-transparent hover:bg-white hover:border-neutral-300 text-neutral-700'
                     }`}
                   >
@@ -2499,35 +3347,72 @@ export const RibbonToolbar: React.FC<RibbonToolbarProps> = ({
 
                   {/* Watermark Dropdown */}
                   {showWatermarkDropdown && (
-                    <div className="absolute top-full left-0 mt-1 bg-white border border-neutral-300 rounded-md shadow-2xl p-2 z-50 w-52 text-left">
-                      <div className="text-[10px] font-semibold text-neutral-500 uppercase tracking-wider pb-1 mb-1 border-b border-neutral-100">
+                    <div
+                      className={`absolute top-full left-0 mt-1 border rounded-md shadow-2xl p-2 z-50 w-56 text-left ${
+                        isDarkUi
+                          ? 'bg-[#222] border-neutral-700 text-neutral-200'
+                          : 'bg-white border-neutral-300 text-neutral-800'
+                      }`}
+                    >
+                      <div className="text-[10px] font-semibold text-neutral-500 uppercase tracking-wider pb-1 mb-1 border-b border-neutral-200 dark:border-neutral-700">
                         Page Watermarks
                       </div>
-                      {['CONFIDENTIAL', 'DRAFT', 'URGENT', 'SAMPLE', 'TOP SECRET'].map((w) => (
-                        <button
-                          key={w}
-                          onClick={() => {
-                            onUpdateSettings({ watermark: w });
-                            setShowWatermarkDropdown(false);
-                          }}
-                          className={`w-full text-left px-2.5 py-1.5 text-xs rounded transition-colors cursor-pointer flex justify-between items-center ${
-                            settings.watermark === w
-                              ? 'bg-amber-50 text-[#c2410c] font-semibold'
-                              : 'text-neutral-700 hover:bg-neutral-100'
-                          }`}
-                        >
-                          <span>{w}</span>
-                          {settings.watermark === w && <Check size={14} className="text-[#c2410c]" />}
-                        </button>
-                      ))}
+                      {[
+                        'CONFIDENTIAL',
+                        'DRAFT',
+                        'URGENT',
+                        'SAMPLE',
+                        'TOP SECRET',
+                        'Your Mark',
+                      ].map((w) => {
+                        const isSelected = settings.watermark === w;
+                        return (
+                          <button
+                            key={w}
+                            onClick={() => {
+                              onUpdateSettings({
+                                watermark: w,
+                                ...(w === 'Your Mark'
+                                  ? { customWatermark: settings.customWatermark || 'YOUR MARK' }
+                                  : {}),
+                              });
+                              setShowWatermarkDropdown(false);
+                            }}
+                            className={`w-full text-left px-2.5 py-1.5 text-xs rounded transition-colors cursor-pointer flex justify-between items-center ${
+                              isSelected
+                                ? 'bg-amber-50 text-[#c2410c] font-semibold'
+                                : isDarkUi
+                                ? 'text-neutral-300 hover:bg-neutral-800'
+                                : 'text-neutral-700 hover:bg-neutral-100'
+                            }`}
+                          >
+                            {w === 'Your Mark' ? (
+                              <div className="flex flex-col">
+                                <div className="flex items-center space-x-1.5">
+                                  <span className="font-semibold">Your Mark</span>
+                                  <span className="text-[9px] px-1 py-0.2 bg-amber-100 dark:bg-amber-900/60 text-amber-800 dark:text-amber-200 rounded font-bold">
+                                    Custom
+                                  </span>
+                                </div>
+                                <span className="text-[10px] text-neutral-400 italic truncate max-w-[150px]">
+                                  "{settings.customWatermark || 'Set in Info & Setup'}"
+                                </span>
+                              </div>
+                            ) : (
+                              <span>{w}</span>
+                            )}
+                            {isSelected && <Check size={14} className="text-[#c2410c] shrink-0" />}
+                          </button>
+                        );
+                      })}
                       {settings.watermark && (
-                        <div className="pt-1 mt-1 border-t border-neutral-100">
+                        <div className="pt-1 mt-1 border-t border-neutral-200 dark:border-neutral-700">
                           <button
                             onClick={() => {
                               onUpdateSettings({ watermark: '' });
                               setShowWatermarkDropdown(false);
                             }}
-                            className="w-full text-left px-2.5 py-1.5 text-xs text-rose-600 hover:bg-rose-50 rounded transition-colors cursor-pointer font-medium"
+                            className="w-full text-left px-2.5 py-1.5 text-xs text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded transition-colors cursor-pointer font-medium"
                           >
                             Remove Watermark
                           </button>
@@ -2545,15 +3430,19 @@ export const RibbonToolbar: React.FC<RibbonToolbarProps> = ({
                   {(['normal', 'narrow', 'moderate', 'wide'] as PageMargin[]).map((margin) => (
                     <button
                       key={margin}
-                      onClick={() => onUpdateSettings({ margins: margin })}
+                      onClick={() => onUpdateSettings({ margins: margin, customMargins: undefined })}
                       className={`px-2.5 py-1.5 rounded capitalize text-xs cursor-pointer flex flex-col items-center border transition-all ${
                         settings.margins === margin
-                          ? 'bg-[#cde4f7] text-[#185abd] font-semibold border-[#185abd] shadow-xs'
+                          ? isDarkUi
+                            ? 'bg-[#1e3a5f] text-[#60a5fa] font-semibold border-[#0078d4] shadow-xs'
+                            : 'bg-[#cde4f7] text-[#185abd] font-semibold border-[#185abd] shadow-xs'
+                          : isDarkUi
+                          ? 'border-transparent hover:bg-white/10 text-neutral-300'
                           : 'border-transparent hover:bg-white hover:border-neutral-300 text-neutral-700'
                       }`}
                     >
                       <span className="font-semibold">{margin}</span>
-                      <span className="text-[9px] text-neutral-400">
+                      <span className={`text-[9px] ${isDarkUi ? 'text-neutral-400' : 'text-neutral-400'}`}>
                         {margin === 'normal'
                           ? '1 inch'
                           : margin === 'narrow'
@@ -2577,12 +3466,16 @@ export const RibbonToolbar: React.FC<RibbonToolbarProps> = ({
                       onClick={() => onUpdateSettings({ orientation: orient })}
                       className={`px-2.5 py-1.5 rounded capitalize text-xs cursor-pointer flex flex-col items-center border transition-all ${
                         settings.orientation === orient
-                          ? 'bg-[#cde4f7] text-[#185abd] font-semibold border-[#185abd] shadow-xs'
+                          ? isDarkUi
+                            ? 'bg-[#1e3a5f] text-[#60a5fa] font-semibold border-[#0078d4] shadow-xs'
+                            : 'bg-[#cde4f7] text-[#185abd] font-semibold border-[#185abd] shadow-xs'
+                          : isDarkUi
+                          ? 'border-transparent hover:bg-white/10 text-neutral-300'
                           : 'border-transparent hover:bg-white hover:border-neutral-300 text-neutral-700'
                       }`}
                     >
                       <span className="font-semibold">{orient}</span>
-                      <span className="text-[9px] text-neutral-400">
+                      <span className={`text-[9px] ${isDarkUi ? 'text-neutral-400' : 'text-neutral-400'}`}>
                         {orient === 'portrait' ? 'Vertical' : 'Horizontal'}
                       </span>
                     </button>
@@ -2592,49 +3485,70 @@ export const RibbonToolbar: React.FC<RibbonToolbarProps> = ({
               </div>
 
               {/* Page Paper Size */}
-              <div className="flex flex-col justify-between px-3 border-r border-[#dad9d8]">
-                <div className="flex items-start space-x-1.5">
-                  {(['letter', 'a4', 'legal'] as PageSize[]).map((size) => (
-                    <button
-                      key={size}
-                      onClick={() => onUpdateSettings({ pageSize: size })}
-                      className={`px-2.5 py-1.5 rounded uppercase text-xs cursor-pointer flex flex-col items-center border transition-all ${
-                        settings.pageSize === size
-                          ? 'bg-[#cde4f7] text-[#185abd] font-semibold border-[#185abd] shadow-xs'
-                          : 'border-transparent hover:bg-white hover:border-neutral-300 text-neutral-700'
-                      }`}
-                    >
-                      <span className="font-semibold">{size}</span>
-                      <span className="text-[9px] text-neutral-400 lowercase">
-                        {size === 'letter' ? '8.5 x 11 in' : size === 'a4' ? '210 x 297 mm' : '8.5 x 14 in'}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-                <span className="text-[10px] text-center text-neutral-400 font-medium tracking-wide">Size</span>
-              </div>
-
-              {/* Page Background Color */}
               <div className="flex flex-col justify-between px-3">
                 <div className="flex items-start space-x-1.5">
                   {[
-                    { label: 'White', color: '#ffffff' },
-                    { label: 'Cream', color: '#fefcf6' },
-                    { label: 'Soft Blue', color: '#f0f7ff' },
-                    { label: 'Slate', color: '#1e293b' },
-                  ].map((p) => (
+                    { id: 'a4' as PageSize, name: 'A4', desc: '8.27 × 11.69"' },
+                    { id: 'letter' as PageSize, name: 'Letter', desc: '8.5 × 11"' },
+                    { id: 'legal' as PageSize, name: 'Legal', desc: '8.5 × 14"' },
+                  ].map((s) => (
                     <button
-                      key={p.label}
-                      onClick={() => onUpdateSettings({ pageColor: p.color })}
-                      title={`Page background: ${p.label}`}
-                      className={`w-7 h-7 rounded border cursor-pointer shadow-2xs hover:scale-105 transition-transform ${
-                        settings.pageColor === p.color ? 'ring-2 ring-[#185abd]' : 'border-neutral-300'
+                      key={s.id}
+                      onClick={() => onUpdateSettings({ pageSize: s.id })}
+                      className={`px-2.5 py-1.5 rounded text-xs cursor-pointer flex flex-col items-center border transition-all ${
+                        settings.pageSize === s.id
+                          ? isDarkUi
+                            ? 'bg-[#1e3a5f] text-[#60a5fa] font-semibold border-[#0078d4] shadow-xs'
+                            : 'bg-[#cde4f7] text-[#185abd] font-semibold border-[#185abd] shadow-xs'
+                          : isDarkUi
+                          ? 'border-transparent hover:bg-white/10 text-neutral-300'
+                          : 'border-transparent hover:bg-white hover:border-neutral-300 text-neutral-700'
                       }`}
-                      style={{ backgroundColor: p.color }}
-                    />
+                    >
+                      <span className="font-semibold">{s.name}</span>
+                      <span className="text-[9px] text-neutral-400">
+                        {s.desc}
+                      </span>
+                    </button>
                   ))}
+                  {!['a4', 'letter', 'legal'].includes(settings.pageSize) && (
+                    <button
+                      className={`px-2.5 py-1.5 rounded text-xs cursor-pointer flex flex-col items-center border transition-all ${
+                        isDarkUi
+                          ? 'bg-[#1e3a5f] text-[#60a5fa] font-semibold border-[#0078d4] shadow-xs'
+                          : 'bg-[#cde4f7] text-[#185abd] font-semibold border-[#185abd] shadow-xs'
+                      }`}
+                    >
+                      <span className="font-semibold">
+                        {DOCUMENT_PAGE_SIZES.find((p) => p.id === settings.pageSize)?.name || settings.pageSize}
+                      </span>
+                      <span className="text-[9px] text-neutral-400">
+                        {DOCUMENT_PAGE_SIZES.find((p) => p.id === settings.pageSize)?.inches || ''}
+                      </span>
+                    </button>
+                  )}
+                  <div className="relative">
+                    <button
+                      onClick={() => setShowSizeDropdown(!showSizeDropdown)}
+                      className={`px-2 py-1.5 rounded text-xs cursor-pointer flex flex-col items-center border transition-all ${
+                        showSizeDropdown
+                          ? isDarkUi
+                            ? 'bg-[#1e3a5f] text-[#60a5fa] border-[#0078d4]'
+                            : 'bg-[#cde4f7] text-[#185abd] border-[#185abd]'
+                          : isDarkUi
+                          ? 'border-transparent hover:bg-white/10 text-neutral-300'
+                          : 'border-transparent hover:bg-white hover:border-neutral-300 text-neutral-700'
+                      }`}
+                      title="All 12 Paper Sizes"
+                    >
+                      <span className="font-semibold flex items-center">
+                        More <ChevronDown size={10} className="ml-0.5" />
+                      </span>
+                      <span className="text-[9px] text-neutral-400">12 sizes</span>
+                    </button>
+                  </div>
                 </div>
-                <span className="text-[10px] text-center text-neutral-400 font-medium tracking-wide">Page Color</span>
+                <span className="text-[10px] text-center text-neutral-400 font-medium tracking-wide">Size</span>
               </div>
             </>
           )}
@@ -2644,14 +3558,51 @@ export const RibbonToolbar: React.FC<RibbonToolbarProps> = ({
             <div className="flex items-start space-x-0 w-full select-none pt-0.5">
               {/* SECTION 1: Spelling & Grammar, Word Count, AI Rewrite, Spell API, Translate, Language Dropdown, Dictate */}
               <div className="flex items-start space-x-1 pr-3 border-r border-[#dad9d8]">
-                {/* 1. Spelling & Grammar (Green CheckCheck) */}
+                {/* 1. Spelling & Grammar (Green CheckCheck) - Smart open Gemini Right Toolbar */}
                 <button
-                  onClick={() => setShowSpellingModal(true)}
-                  title="Spelling & Grammar Check"
-                  className="flex flex-col items-center justify-start px-2 py-1 rounded cursor-pointer transition-all border border-transparent hover:bg-white hover:border-neutral-300 text-neutral-700 min-w-[62px]"
+                  onClick={() => {
+                    const isAlreadyOpenForGrammar =
+                      settings.showAiAssistantPane && settings.aiAssistantIntent === 'grammar';
+                    if (isAlreadyOpenForGrammar) {
+                      onUpdateSettings({
+                        showAiAssistantPane: false,
+                        aiAssistantIntent: null,
+                      });
+                    } else {
+                      onUpdateSettings({
+                        showAiAssistantPane: true,
+                        aiAssistantIntent: 'grammar',
+                        aiAssistantTriggerTimestamp: Date.now(),
+                        showSpellCheckPane: false,
+                        showTranslatePane: false,
+                        showQuickBlocksPane: false,
+                        showFormatterPane: false,
+                        showVoiceCommandPane: false,
+                      });
+                    }
+                  }}
+                  title="Check Spelling & Grammar with Gemini AI in selected text or document"
+                  className={`flex flex-col items-center justify-start px-2 py-1 rounded cursor-pointer transition-all border min-w-[62px] ${
+                    settings.showAiAssistantPane && settings.aiAssistantIntent === 'grammar'
+                      ? isDarkUi
+                        ? 'bg-[#064e3b] border-[#059669] text-[#34d399] shadow-xs'
+                        : 'bg-[#e6f4ea] border-[#059669] text-[#059669] shadow-xs'
+                      : isDarkUi
+                      ? 'border-transparent hover:bg-white/10 text-neutral-300'
+                      : 'border-transparent hover:bg-white hover:border-neutral-300 text-neutral-700'
+                  }`}
                 >
-                  <CheckCheck size={22} className="text-[#059669] mb-0.5" />
-                  <span className="text-[11px] font-medium leading-tight text-center text-neutral-700">
+                  <CheckCheck
+                    size={22}
+                    className={`mb-0.5 ${
+                      settings.showAiAssistantPane && settings.aiAssistantIntent === 'grammar'
+                        ? isDarkUi
+                          ? 'text-[#34d399]'
+                          : 'text-[#059669]'
+                        : 'text-[#059669]'
+                    }`}
+                  />
+                  <span className="text-[11px] font-medium leading-tight text-center">
                     Spelling &amp;<br />Grammar
                   </span>
                 </button>
@@ -2704,14 +3655,25 @@ export const RibbonToolbar: React.FC<RibbonToolbarProps> = ({
                   </span>
                 </button>
 
-                {/* 5. Translate (Indigo Languages) */}
+                {/* 5. Translate (Indigo Languages - Toggles Smart Right Toolbar) */}
                 <button
-                  onClick={() => setShowTranslateModal(true)}
-                  title="Translate Document into Selected Language"
-                  className="flex flex-col items-center justify-start px-2 py-1 rounded cursor-pointer transition-all border border-transparent hover:bg-white hover:border-neutral-300 text-neutral-700 min-w-[54px]"
+                  onClick={() =>
+                    onUpdateSettings({ showTranslatePane: !settings.showTranslatePane })
+                  }
+                  title="Translate Selection / Document (Open/Close Translate Toolbar)"
+                  className={`flex flex-col items-center justify-start px-2 py-1 rounded cursor-pointer transition-all border min-w-[54px] ${
+                    settings.showTranslatePane
+                      ? 'bg-[#cde4f7] text-[#185abd] font-semibold border-[#185abd] shadow-xs'
+                      : 'border-transparent hover:bg-white hover:border-neutral-300 text-neutral-700'
+                  }`}
                 >
-                  <Languages size={22} className="text-[#6366f1] mb-0.5" />
-                  <span className="text-[11px] font-medium leading-tight text-center text-neutral-700">
+                  <Languages
+                    size={22}
+                    className={`${
+                      settings.showTranslatePane ? 'text-[#185abd]' : 'text-[#6366f1]'
+                    } mb-0.5`}
+                  />
+                  <span className="text-[11px] font-medium leading-tight text-center">
                     Translate
                   </span>
                 </button>
@@ -2721,16 +3683,26 @@ export const RibbonToolbar: React.FC<RibbonToolbarProps> = ({
                   <button
                     onClick={() => setShowLanguageDropdown(!showLanguageDropdown)}
                     title="Change Proofing Language"
-                    className="flex items-center justify-between px-3 py-1.5 bg-white border border-neutral-300 rounded-md text-xs font-medium text-neutral-800 hover:border-neutral-400 transition-colors cursor-pointer min-w-[155px] shadow-2xs"
+                    className={`flex items-center justify-between px-3 py-1.5 border rounded-md text-xs font-medium transition-colors cursor-pointer min-w-[155px] shadow-2xs ${
+                      isDarkUi
+                        ? 'bg-[#282828] border-[#404040] text-neutral-200 hover:border-neutral-500'
+                        : 'bg-white border-neutral-300 text-neutral-800 hover:border-neutral-400'
+                    }`}
                   >
                     <span className="truncate">{selectedLanguage}</span>
-                    <ChevronDown size={13} className="ml-2 text-neutral-500 shrink-0" />
+                    <ChevronDown size={13} className={`ml-2 shrink-0 ${isDarkUi ? 'text-neutral-400' : 'text-neutral-500'}`} />
                   </button>
 
                   {/* Language Dropdown Menu */}
                   {showLanguageDropdown && (
-                    <div className="absolute top-full left-0 mt-1 bg-white border border-neutral-300 rounded-md shadow-2xl p-1.5 z-50 w-56 text-left max-h-60 overflow-y-auto">
-                      <div className="text-[10px] font-semibold text-neutral-500 uppercase tracking-wider px-2 py-1 border-b border-neutral-100 mb-1">
+                    <div className={`absolute top-full left-0 mt-1 border rounded-md shadow-2xl p-1.5 z-50 w-56 text-left max-h-60 overflow-y-auto ${
+                      isDarkUi
+                        ? 'bg-[#282828] border-[#404040] text-neutral-200'
+                        : 'bg-white border-neutral-300 text-neutral-800'
+                    }`}>
+                      <div className={`text-[10px] font-semibold uppercase tracking-wider px-2 py-1 border-b mb-1 ${
+                        isDarkUi ? 'text-neutral-400 border-[#383838]' : 'text-neutral-500 border-neutral-100'
+                      }`}>
                         Proofing Languages
                       </div>
                       {REVIEW_LANGUAGES.map((lang) => (
@@ -2744,12 +3716,16 @@ export const RibbonToolbar: React.FC<RibbonToolbarProps> = ({
                           }}
                           className={`w-full text-left px-2.5 py-1.5 text-xs rounded transition-colors cursor-pointer flex justify-between items-center ${
                             selectedLanguage === lang.label
-                              ? 'bg-blue-50 text-[#185abd] font-semibold'
+                              ? isDarkUi
+                                ? 'bg-[#1e3a5f] text-[#60a5fa] font-semibold'
+                                : 'bg-blue-50 text-[#185abd] font-semibold'
+                              : isDarkUi
+                              ? 'text-neutral-300 hover:bg-[#333333]'
                               : 'text-neutral-700 hover:bg-neutral-100'
                           }`}
                         >
                           <span>{lang.label}</span>
-                          {selectedLanguage === lang.label && <Check size={13} className="text-[#185abd]" />}
+                          {selectedLanguage === lang.label && <Check size={13} className={isDarkUi ? 'text-[#60a5fa]' : 'text-[#185abd]'} />}
                         </button>
                       ))}
                     </div>
@@ -2762,18 +3738,22 @@ export const RibbonToolbar: React.FC<RibbonToolbarProps> = ({
                     <button
                       onClick={handleToggleVoiceDictation}
                       title={isListening ? 'Click to Stop Dictation' : 'Click to Start Voice Dictation'}
-                      className={`px-3 py-1 bg-white border rounded-md flex flex-col items-center justify-start cursor-pointer transition-all shadow-2xs ${
+                      className={`px-3 py-1 border rounded-md flex flex-col items-center justify-start cursor-pointer transition-all shadow-2xs ${
                         isListening
-                          ? 'border-red-500 bg-red-50 text-red-600 animate-pulse ring-1 ring-red-400'
-                          : 'border-neutral-300 hover:bg-neutral-50 hover:border-neutral-400 text-neutral-800'
+                          ? isDarkUi
+                            ? 'border-red-500 bg-red-950/60 text-red-400 animate-pulse ring-1 ring-red-400'
+                            : 'border-red-500 bg-red-50 text-red-600 animate-pulse ring-1 ring-red-400'
+                          : isDarkUi
+                          ? 'border-[#404040] bg-[#282828] hover:bg-[#333333] hover:border-neutral-500 text-neutral-200'
+                          : 'border-neutral-300 bg-white hover:bg-neutral-50 hover:border-neutral-400 text-neutral-800'
                       }`}
                     >
-                      <Mic size={18} className={isListening ? 'text-red-600' : 'text-neutral-800'} />
-                      <span className="text-[11px] font-medium leading-tight text-neutral-800">
+                      <Mic size={18} className={isListening ? 'text-red-500' : isDarkUi ? 'text-neutral-200' : 'text-neutral-800'} />
+                      <span className={`text-[11px] font-medium leading-tight ${isDarkUi ? 'text-neutral-200' : 'text-neutral-800'}`}>
                         Dictate
                       </span>
                     </button>
-                    <span className={`text-xs ml-2 font-normal ${isListening ? 'text-red-600 font-semibold animate-pulse' : 'text-neutral-400'}`}>
+                    <span className={`text-xs ml-2 font-normal ${isListening ? 'text-red-500 font-semibold animate-pulse' : 'text-neutral-400'}`}>
                       {isListening ? 'Listening...' : 'Idle'}
                     </span>
                   </div>
@@ -2834,17 +3814,26 @@ export const RibbonToolbar: React.FC<RibbonToolbarProps> = ({
               <div className="flex items-start space-x-2 px-3">
                 {/* 10. Save Snapshot (Green Camera) */}
                 <button
-                  onClick={() => {
-                    const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-                    setSnapshotTitle(`Snapshot - ${now}`);
-                    setShowSaveSnapshotModal(true);
-                  }}
-                  title="Save Snapshot of Current Document"
-                  className="flex flex-col items-center justify-start px-2.5 py-1 rounded cursor-pointer transition-all border border-transparent hover:bg-white hover:border-neutral-300 text-neutral-700 min-w-[58px]"
+                  onClick={handleCaptureScreenSnapshot}
+                  disabled={isCapturingSnapshot}
+                  title="Capture Document Screen Snapshot & Send to Image Wizard (Ready to resize & paste)"
+                  className="flex flex-col items-center justify-start px-2.5 py-1 rounded cursor-pointer transition-all border border-transparent hover:bg-white hover:border-neutral-300 text-neutral-700 min-w-[58px] disabled:opacity-50"
                 >
-                  <Camera size={22} className="text-[#059669] mb-0.5" />
+                  <div className="relative">
+                    <Camera size={22} className={`text-[#059669] mb-0.5 ${isCapturingSnapshot ? 'animate-pulse' : ''}`} />
+                    {isCapturingSnapshot && (
+                      <span className="absolute -top-1 -right-1 flex h-2 w-2">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                      </span>
+                    )}
+                  </div>
                   <span className="text-[11px] font-medium leading-tight text-center text-neutral-700">
-                    Save<br />Snapshot
+                    {isCapturingSnapshot ? (
+                      <span className="text-emerald-700 font-bold">Capturing...</span>
+                    ) : (
+                      <>Save<br />Snapshot</>
+                    )}
                   </span>
                 </button>
 
@@ -2874,12 +3863,16 @@ export const RibbonToolbar: React.FC<RibbonToolbarProps> = ({
                   title="Print Layout (Default Document View)"
                   className={`flex flex-col items-center justify-start px-3.5 py-1 rounded-lg border cursor-pointer min-w-[62px] transition-all ${
                     settings.viewMode === 'print'
-                      ? 'border-[#c5dcfa] bg-[#deebf9] text-[#185abd]'
+                      ? isDarkUi
+                        ? 'border-[#0078d4] bg-[#1e3a5f] text-[#60a5fa] shadow-xs'
+                        : 'border-[#c5dcfa] bg-[#deebf9] text-[#185abd]'
+                      : isDarkUi
+                      ? 'border-transparent hover:bg-white/10 text-neutral-300'
                       : 'border-transparent hover:bg-white hover:border-neutral-300 text-neutral-700'
                   }`}
                 >
-                  <Eye size={20} className="text-[#185abd] mb-0.5" />
-                  <span className="text-[11px] font-medium leading-tight text-center text-[#185abd]">
+                  <Eye size={20} className={settings.viewMode === 'print' ? (isDarkUi ? 'text-[#60a5fa] mb-0.5' : 'text-[#185abd] mb-0.5') : (isDarkUi ? 'text-neutral-300 mb-0.5' : 'text-neutral-700 mb-0.5')} />
+                  <span className={`text-[11px] font-medium leading-tight text-center ${settings.viewMode === 'print' ? (isDarkUi ? 'text-[#60a5fa]' : 'text-[#185abd]') : (isDarkUi ? 'text-neutral-300' : 'text-neutral-700')}`}>
                     Print<br />Layout
                   </span>
                 </button>
@@ -2890,12 +3883,16 @@ export const RibbonToolbar: React.FC<RibbonToolbarProps> = ({
                   title="Focus Mode (Distraction-Free Writing)"
                   className={`flex flex-col items-center justify-start px-3 py-1 rounded-lg border transition-all cursor-pointer min-w-[58px] ${
                     settings.isFocusMode
-                      ? 'bg-purple-100 border-purple-300 text-purple-700'
+                      ? isDarkUi
+                        ? 'bg-purple-950/60 border-purple-500 text-purple-300 shadow-xs'
+                        : 'bg-purple-100 border-purple-300 text-purple-700'
+                      : isDarkUi
+                      ? 'border-transparent hover:bg-white/10 text-neutral-300'
                       : 'border-transparent hover:bg-white hover:border-neutral-300 text-neutral-700'
                   }`}
                 >
                   <Maximize2 size={20} className="text-[#9333ea] mb-0.5" />
-                  <span className="text-[11px] font-medium leading-tight text-center text-neutral-700">
+                  <span className={`text-[11px] font-medium leading-tight text-center ${isDarkUi ? 'text-neutral-300' : 'text-neutral-700'}`}>
                     Focus<br />Mode
                   </span>
                 </button>
@@ -3033,25 +4030,258 @@ export const RibbonToolbar: React.FC<RibbonToolbarProps> = ({
               {/* DIVIDER */}
               <div className="h-11 w-px bg-[#dad9d8] mx-3 shrink-0" />
 
-              {/* SECTION 5: Dark Mode */}
-              <div className="flex items-start px-1">
+              {/* SECTION: Dynamic Layout Switching (1 Page / 2 Pages) */}
+              <div className="flex items-center px-1">
                 <button
-                  onClick={() => onUpdateSettings({ isDarkMode: !settings.isDarkMode })}
-                  title={settings.isDarkMode ? 'Switch to Light Canvas' : 'Switch to Dark Canvas'}
-                  className={`flex flex-col items-center justify-start px-3 py-1 rounded-lg border transition-all cursor-pointer min-w-[50px] ${
-                    settings.isDarkMode
-                      ? 'bg-neutral-800 text-white border-neutral-700 shadow-xs'
+                  type="button"
+                  onClick={() => {
+                    const isTwo = (settings.layoutPages ?? 1) === 2;
+                    if (!isTwo) {
+                      // Select 2 Pages: close all currently open left and right toolbars/panels
+                      onUpdateSettings({
+                        layoutPages: 2,
+                        showNavigationPane: false,
+                        showSeoPane: false,
+                        showTableEditPane: false,
+                        showBorderEditPane: false,
+                        showHyperLinkPane: false,
+                        showTranslatePane: false,
+                        showAiAssistantPane: false,
+                        showImageWizardPane: false,
+                        showQuickBlocksPane: false,
+                        showVoiceCommandPane: false,
+                        showSpellCheckPane: false,
+                        showFormatterPane: false,
+                      });
+                    } else {
+                      // Switch back to 1 Page
+                      onUpdateSettings({
+                        layoutPages: 1,
+                      });
+                    }
+                  }}
+                  title="Dynamic Layout Switching"
+                  className={`flex flex-col items-center justify-start px-2.5 py-1 rounded-lg border transition-all cursor-pointer min-w-[62px] ${
+                    (settings.layoutPages ?? 1) === 2
+                      ? isDarkUi
+                        ? 'border-[#0078d4] bg-[#1e3a5f] text-[#60a5fa] shadow-xs'
+                        : 'border-[#c5dcfa] bg-[#deebf9] text-[#185abd]'
+                      : isDarkUi
+                      ? 'border-transparent hover:bg-white/10 text-neutral-300'
                       : 'border-transparent hover:bg-white hover:border-neutral-300 text-neutral-700'
                   }`}
                 >
-                  <Moon
+                  <Files
                     size={20}
-                    className={`${settings.isDarkMode ? 'text-amber-400' : 'text-neutral-700'} mb-0.5`}
+                    className={
+                      (settings.layoutPages ?? 1) === 2
+                        ? isDarkUi
+                          ? 'text-[#60a5fa] mb-0.5'
+                          : 'text-[#185abd] mb-0.5'
+                        : isDarkUi
+                        ? 'text-neutral-300 mb-0.5'
+                        : 'text-neutral-700 mb-0.5'
+                    }
                   />
-                  <span className="text-[11px] font-medium leading-tight text-center">
-                    Dark
+                  <span
+                    className={`text-[11px] font-medium leading-tight text-center ${
+                      (settings.layoutPages ?? 1) === 2
+                        ? isDarkUi
+                          ? 'text-[#60a5fa] font-semibold'
+                          : 'text-[#185abd] font-semibold'
+                        : isDarkUi
+                        ? 'text-neutral-300'
+                        : 'text-neutral-700'
+                    }`}
+                  >
+                    {(settings.layoutPages ?? 1) === 2 ? (
+                      <>2 Pages</>
+                    ) : (
+                      <>1 Page</>
+                    )}
                   </span>
                 </button>
+              </div>
+
+              {/* DIVIDER */}
+              <div className="h-11 w-px bg-[#dad9d8] mx-3 shrink-0" />
+
+              {/* SECTION 5: Dark / Light Switch (Matches User Photo 1) */}
+              <div className="flex flex-col items-center px-1">
+                <div className="flex items-center space-x-1.5">
+                  {/* 1. Light */}
+                  <button
+                    onClick={() => {
+                      onUpdateSettings({
+                        themeMode: 'light',
+                        isDarkMode: false,
+                        pageColor: '#ffffff',
+                      });
+                    }}
+                    title="Light Mode — Standard clean office theme (White document, light canvas)"
+                    className={`flex flex-col items-center justify-center px-2.5 py-1 rounded-lg border transition-all cursor-pointer min-w-[50px] ${
+                      effectiveThemeMode === 'light'
+                        ? 'bg-[#0078d4] text-white border-[#0078d4] font-semibold shadow-xs'
+                        : 'border-transparent hover:bg-white hover:border-neutral-300 text-neutral-700'
+                    }`}
+                  >
+                    <Sun
+                      size={20}
+                      className={
+                        effectiveThemeMode === 'light'
+                          ? 'text-white mb-0.5'
+                          : 'text-amber-500 mb-0.5'
+                      }
+                    />
+                    <span
+                      className={`text-[11px] leading-tight text-center font-medium ${
+                        effectiveThemeMode === 'light' ? 'text-white' : 'text-neutral-700'
+                      }`}
+                    >
+                      Light
+                    </span>
+                  </button>
+
+                  {/* 2. Canvas Dark (Dark Canvas, White Document - Photo 3) */}
+                  <button
+                    onClick={() => {
+                      onUpdateSettings({
+                        themeMode: 'canvasDark',
+                        isDarkMode: true,
+                        pageColor: '#ffffff',
+                      });
+                    }}
+                    title="Canvas Dark — Soothing dark canvas with crisp white document (Photo 3)"
+                    className={`flex flex-col items-center justify-center px-2.5 py-1 rounded-lg border transition-all cursor-pointer min-w-[56px] ${
+                      effectiveThemeMode === 'canvasDark'
+                        ? 'bg-[#0078d4] text-white border-[#0078d4] font-semibold shadow-xs'
+                        : 'border-transparent hover:bg-white hover:border-neutral-300 text-neutral-700'
+                    }`}
+                  >
+                    <div
+                      className={`w-[19px] h-[19px] rounded-[3px] border flex items-center justify-center mb-0.5 ${
+                        effectiveThemeMode === 'canvasDark'
+                          ? 'bg-neutral-900 border-white/80'
+                          : 'bg-neutral-800 border-neutral-700'
+                      }`}
+                    >
+                      <div className="w-[9px] h-[12px] bg-white rounded-[1px] shadow-2xs" />
+                    </div>
+                    <span
+                      className={`text-[11px] leading-tight text-center font-medium ${
+                        effectiveThemeMode === 'canvasDark' ? 'text-white' : 'text-neutral-700'
+                      }`}
+                    >
+                      Canvas Dark
+                    </span>
+                  </button>
+
+                  {/* 3. Full Dark (Dark Canvas & Dark Document - Photo 2) */}
+                  <button
+                    onClick={() => {
+                      onUpdateSettings({
+                        themeMode: 'fullDark',
+                        isDarkMode: true,
+                        pageColor: '#282828',
+                      });
+                    }}
+                    title="Full Dark — Complete dark mode for canvas, ribbon, and document page (Photo 2)"
+                    className={`flex flex-col items-center justify-center px-2.5 py-1 rounded-lg border transition-all cursor-pointer min-w-[54px] ${
+                      effectiveThemeMode === 'fullDark'
+                        ? 'bg-[#0078d4] text-white border-[#0078d4] font-bold shadow-xs'
+                        : 'border-transparent hover:bg-white hover:border-neutral-300 text-neutral-700'
+                    }`}
+                  >
+                    <Moon
+                      size={20}
+                      className={
+                        effectiveThemeMode === 'fullDark'
+                          ? 'text-white mb-0.5'
+                          : 'text-neutral-700 mb-0.5'
+                      }
+                    />
+                    <span
+                      className={`text-[11px] leading-tight text-center font-medium ${
+                        effectiveThemeMode === 'fullDark' ? 'text-white' : 'text-neutral-700'
+                      }`}
+                    >
+                      Full Dark
+                    </span>
+                  </button>
+
+                  {/* 4. Sepia (Warm Eye Comfort Mode - Photo 4) */}
+                  <button
+                    onClick={() => {
+                      onUpdateSettings({
+                        themeMode: 'sepia',
+                        isDarkMode: false,
+                        pageColor: '#fbf8ee',
+                      });
+                    }}
+                    title="Sepia — Warm soothing Eye Comfort reading & writing mode (Photo 4)"
+                    className={`flex flex-col items-center justify-center px-2.5 py-1 rounded-lg border transition-all cursor-pointer min-w-[50px] ${
+                      effectiveThemeMode === 'sepia'
+                        ? 'bg-[#0078d4] text-white border-[#0078d4] font-semibold shadow-xs'
+                        : 'border-transparent hover:bg-white hover:border-neutral-300 text-neutral-700'
+                    }`}
+                  >
+                    <div
+                      className={`w-[18px] h-[18px] rounded-full border mb-0.5 ${
+                        effectiveThemeMode === 'sepia'
+                          ? 'bg-[#fbf8ee] border-white shadow-xs'
+                          : 'bg-[#d4a373] border-[#a07a4a]'
+                      }`}
+                    />
+                    <span
+                      className={`text-[11px] leading-tight text-center font-medium ${
+                        effectiveThemeMode === 'sepia' ? 'text-white' : 'text-neutral-700'
+                      }`}
+                    >
+                      Sepia
+                    </span>
+                  </button>
+                </div>
+
+                {/* Section title exactly like Photo 1: "Dark / Light Switch" in gold/yellow bold font */}
+                <span className="text-[11px] font-bold text-amber-500 dark:text-amber-400 tracking-tight mt-1 select-none">
+                  Dark / Light Switch
+                </span>
+              </div>
+
+              {/* DIVIDER */}
+              <div className="h-11 w-px bg-[#dad9d8] mx-3 shrink-0" />
+
+              {/* SECTION 6: AutoCorrect ON / OFF */}
+              <div className="flex flex-col items-center justify-start px-1">
+                <button
+                  type="button"
+                  onClick={onToggleAutoCorrect}
+                  title={`AutoCorrect: ${autoCorrectEnabled ? 'ON' : 'OFF'} (Click to toggle)`}
+                  className={`flex flex-col items-center justify-center px-2.5 py-1 rounded-lg border transition-all cursor-pointer min-w-[76px] ${
+                    autoCorrectEnabled
+                      ? isDarkUi
+                        ? 'border-emerald-500 bg-emerald-950/60 text-emerald-300 font-semibold shadow-xs'
+                        : 'border-emerald-300 bg-emerald-50 text-emerald-700 font-semibold shadow-xs'
+                      : isDarkUi
+                      ? 'border-transparent hover:bg-white/10 text-neutral-400'
+                      : 'border-transparent hover:bg-white hover:border-neutral-300 text-neutral-700'
+                  }`}
+                >
+                  <Sparkles
+                    size={20}
+                    className={
+                      autoCorrectEnabled
+                        ? 'text-emerald-600 dark:text-emerald-400 mb-0.5'
+                        : 'text-neutral-400 mb-0.5'
+                    }
+                  />
+                  <span className="text-[11px] leading-tight text-center font-medium">
+                    AutoCorrect: <span className="font-bold">{autoCorrectEnabled ? 'ON' : 'OFF'}</span>
+                  </span>
+                </button>
+                <span className="text-[10px] text-neutral-400 dark:text-neutral-500 tracking-tight mt-1 select-none">
+                  Smart Guard
+                </span>
               </div>
             </div>
           )}
@@ -3059,21 +4289,47 @@ export const RibbonToolbar: React.FC<RibbonToolbarProps> = ({
           {/* FORMAT TAB (MATCHING USER PHOTO) */}
           {activeTab === 'format' && (
             <div className="flex items-start space-x-0 w-full select-none pt-0.5">
-              {/* GROUP 1: Formatter */}
+              {/* GROUP 1: Ultimate Formatter */}
               <div className="flex items-start pr-3">
                 <button
                   onClick={() => {
-                    if (!editor) return;
-                    editor.chain().focus().run();
-                    setReviewNotification('Formatter: Document layout & clean typography applied.');
-                    setTimeout(() => setReviewNotification(null), 3000);
+                    onUpdateSettings({ showFormatterPane: !settings.showFormatterPane });
                   }}
-                  title="Formatter (Auto-Format Document)"
-                  className="flex flex-col items-center justify-start px-3 py-1 rounded-lg border border-transparent hover:bg-white hover:border-neutral-300 text-neutral-700 cursor-pointer min-w-[62px] transition-all"
+                  title="Ultimate Formatter — Open/Close Ultimate Formatter Right Sidebar"
+                  className={`flex flex-col items-center justify-start px-2.5 py-1 rounded-lg border cursor-pointer min-w-[66px] transition-all ${
+                    settings.showFormatterPane
+                      ? isDarkUi
+                        ? 'bg-[#1e3a5f] border-[#0078d4] text-[#60a5fa] shadow-xs'
+                        : isSepiaUi
+                        ? 'bg-[#ece3d0] border-[#7c4a1e] text-[#7c4a1e] shadow-xs'
+                        : 'bg-blue-100 border-[#185abd] text-[#185abd] shadow-xs'
+                      : isDarkUi
+                      ? 'border-transparent hover:bg-white/10 text-neutral-300'
+                      : isSepiaUi
+                      ? 'border-transparent hover:bg-[#ece3d0] text-[#4a3525]'
+                      : 'border-transparent hover:bg-white hover:border-neutral-300 text-neutral-700'
+                  }`}
                 >
-                  <Wand2 size={22} className="text-[#1e1b4b] mb-1" />
-                  <span className="text-[11px] font-medium leading-tight text-center text-neutral-800">
-                    Formatter
+                  <Wand2
+                    size={22}
+                    className={`mb-1 ${
+                      settings.showFormatterPane
+                        ? isDarkUi
+                          ? 'text-[#60a5fa]'
+                          : isSepiaUi
+                          ? 'text-[#7c4a1e]'
+                          : 'text-[#185abd]'
+                        : isDarkUi
+                        ? 'text-neutral-300'
+                        : isSepiaUi
+                        ? 'text-[#7c4a1e]'
+                        : 'text-[#185abd]'
+                    }`}
+                  />
+                  <span className={`text-[10px] font-semibold leading-tight text-center ${
+                    isDarkUi ? 'text-neutral-200' : isSepiaUi ? 'text-[#4a3525]' : 'text-neutral-800'
+                  }`}>
+                    Ultimate<br />Formatter
                   </span>
                 </button>
               </div>
@@ -3085,15 +4341,25 @@ export const RibbonToolbar: React.FC<RibbonToolbarProps> = ({
               <div className="flex items-start space-x-1 pr-3">
                 {/* Format Painter */}
                 <button
-                  onClick={handleFormatPainter}
-                  title={copiedFormat ? 'Click to apply copied formatting' : 'Format Painter (Copy formatting from selection)'}
+                  onClick={(e) => {
+                    const isDoubleClick = e.detail === 2;
+                    handleFormatPainterAction(isDoubleClick ? 'persistent' : 'single');
+                  }}
+                  title={
+                    activeFormatPainter
+                      ? `Format Painter Active (${activeFormatPainter.mode}) — Click or select text to apply, or click here / Esc to cancel`
+                      : 'Format Painter — Click to copy format for 1 use; Double-click for persistent multi-use. Copies character & paragraph styles safely in memory without clipboard!'
+                  }
                   className={`flex flex-col items-center justify-start px-2.5 py-1 rounded-lg border cursor-pointer min-w-[58px] transition-all ${
-                    copiedFormat
-                      ? 'bg-amber-100 border-amber-400 text-amber-900 shadow-xs'
+                    activeFormatPainter
+                      ? 'bg-amber-100 border-amber-400 text-amber-900 shadow-xs ring-1 ring-amber-400'
                       : 'border-transparent hover:bg-white hover:border-neutral-300 text-neutral-700'
                   }`}
                 >
-                  <Paintbrush size={22} className={`text-[#ea580c] mb-1 ${copiedFormat ? 'animate-bounce' : ''}`} />
+                  <Paintbrush
+                    size={22}
+                    className={`text-[#ea580c] mb-1 ${activeFormatPainter ? 'animate-bounce' : ''}`}
+                  />
                   <span className="text-[11px] font-medium leading-tight text-center text-neutral-800">
                     Format<br />Painter
                   </span>
@@ -3101,22 +4367,12 @@ export const RibbonToolbar: React.FC<RibbonToolbarProps> = ({
 
                 {/* Paste Format */}
                 <button
-                  onClick={() => {
-                    if (!editor) return;
-                    if (copiedFormat) {
-                      let chain = editor.chain().focus();
-                      if (copiedFormat.bold) chain = chain.setBold();
-                      if (copiedFormat.italic) chain = chain.setItalic();
-                      if (copiedFormat.underline) chain = chain.setUnderline();
-                      if (copiedFormat.color) chain = chain.setColor(copiedFormat.color);
-                      if (copiedFormat.fontSize) chain = chain.setFontSize(copiedFormat.fontSize);
-                      if (copiedFormat.fontFamily) chain = chain.setFontFamily(copiedFormat.fontFamily);
-                      chain.run();
-                    } else {
-                      editor.chain().focus().setColor('#1f2937').setFontSize('11pt').run();
-                    }
-                  }}
-                  title="Paste Format (Apply formatting to current selection)"
+                  onClick={handlePasteFormatAction}
+                  title={
+                    activeFormatPainter
+                      ? `Paste Format — Apply ${describeFormat(activeFormatPainter)} to selection`
+                      : 'Paste Format (Apply formatting to current selection)'
+                  }
                   className="flex flex-col items-center justify-start px-2.5 py-1 rounded-lg border border-transparent hover:bg-white hover:border-neutral-300 text-neutral-700 cursor-pointer min-w-[58px] transition-all"
                 >
                   <ClipboardPaste size={22} className="text-[#c2410c] mb-1" />
@@ -3315,6 +4571,42 @@ export const RibbonToolbar: React.FC<RibbonToolbarProps> = ({
                   Script
                 </span>
               </div>
+
+              {/* DIVIDER */}
+              <div className="h-12 w-px bg-[#dad9d8] mr-3 shrink-0 self-start mt-0.5" />
+
+              {/* GROUP 6: Math (Fx Equation) */}
+              <div className="flex flex-col items-center pr-3">
+                <button
+                  onClick={() => {
+                    setEquationEditingLatex('');
+                    setEquationIsBlock(false);
+                    setShowEquationPopup(true);
+                  }}
+                  title="Fx Wizard — Insert Mathematical Equation at current caret"
+                  className={`flex flex-col items-center justify-start px-2.5 py-1 rounded-lg border cursor-pointer min-w-[48px] transition-all ${
+                    showEquationPopup
+                      ? isDarkUi
+                        ? 'bg-[#1e3a5f] border-[#0078d4] text-[#60a5fa]'
+                        : 'bg-[#cde4f7] border-[#185abd] text-[#185abd] shadow-xs'
+                      : isDarkUi
+                      ? 'border-transparent hover:bg-white/10 text-neutral-300'
+                      : 'border-transparent hover:bg-white hover:border-neutral-300 text-neutral-700'
+                  }`}
+                >
+                  <span className="text-base font-serif italic font-extrabold text-[#0284c7] dark:text-[#38bdf8] tracking-tight leading-none h-5 flex items-center justify-center">
+                    Fx
+                  </span>
+                  <span className="text-[10px] text-neutral-700 dark:text-neutral-300 font-medium leading-none mt-1.5">
+                    Equation
+                  </span>
+                </button>
+
+                {/* Centered Footer Label */}
+                <span className="text-[10px] text-center text-neutral-500 font-normal mt-1.5 tracking-wide">
+                  Math
+                </span>
+              </div>
             </div>
           )}
 
@@ -3456,6 +4748,18 @@ export const RibbonToolbar: React.FC<RibbonToolbarProps> = ({
                     className="p-2 rounded-lg border border-transparent hover:bg-white hover:border-neutral-300 text-neutral-700 hover:text-neutral-900 cursor-pointer transition-all flex items-center justify-center min-w-[34px] min-h-[34px]"
                   >
                     <Tag size={20} className="text-[#334155]" />
+                  </button>
+
+                  {/* 13. Table to DIV converter */}
+                  <button
+                    onClick={handleTableToDiv}
+                    title="Table to DIV convetrer"
+                    aria-label="Table to DIV convetrer"
+                    className="p-2 rounded-lg border border-transparent hover:bg-white hover:border-neutral-300 text-neutral-700 hover:text-neutral-900 cursor-pointer transition-all flex items-center justify-center min-w-[34px] min-h-[34px]"
+                  >
+                    <span className="font-mono font-bold text-[11px] text-[#334155] leading-none tracking-tight select-none">
+                      &lt;DIV&gt;
+                    </span>
                   </button>
                 </div>
 
@@ -3599,11 +4903,15 @@ export const RibbonToolbar: React.FC<RibbonToolbarProps> = ({
                     title="Analyze SEO Check — Open/Close Right Toolbar"
                     className={`flex items-center space-x-2 px-3 py-1.5 rounded-lg border transition-all cursor-pointer ${
                       settings.showSeoPane
-                        ? 'bg-[#e0e7ff] border-[#6366f1] text-[#3730a3] shadow-2xs font-semibold'
+                        ? isDarkUi
+                          ? 'bg-[#1e3a5f] border-[#0078d4] text-[#60a5fa] shadow-2xs font-semibold'
+                          : 'bg-[#e0e7ff] border-[#6366f1] text-[#3730a3] shadow-2xs font-semibold'
+                        : isDarkUi
+                        ? 'bg-[#282828] hover:bg-[#333333] border-[#404040] hover:border-neutral-500 text-neutral-200'
                         : 'bg-white hover:bg-neutral-50 border-neutral-300 text-neutral-700 hover:text-neutral-900'
                     }`}
                   >
-                    <BarChart3 size={18} className={settings.showSeoPane ? 'text-[#4f46e5]' : 'text-[#185abd]'} />
+                    <BarChart3 size={18} className={settings.showSeoPane ? (isDarkUi ? 'text-[#60a5fa]' : 'text-[#4f46e5]') : (isDarkUi ? 'text-neutral-300' : 'text-[#185abd]')} />
                     <span className="text-xs font-semibold">Analyze SEO Check</span>
                     {settings.showSeoPane && (
                       <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
@@ -3612,7 +4920,7 @@ export const RibbonToolbar: React.FC<RibbonToolbarProps> = ({
                 </div>
 
                 {/* Centered Footer Label */}
-                <span className="text-[11px] text-center text-[#2563eb] font-normal mt-1.5 tracking-normal">
+                <span className={`text-[11px] text-center font-normal mt-1.5 tracking-normal ${isDarkUi ? 'text-neutral-400' : 'text-[#2563eb]'}`}>
                   SEO Check
                 </span>
               </div>
@@ -3623,17 +4931,25 @@ export const RibbonToolbar: React.FC<RibbonToolbarProps> = ({
               {/* Quick Summary Pill */}
               <div className="flex flex-col items-center pr-3">
                 <div className="flex items-start space-x-2">
-                  <div className="px-2.5 py-1 bg-white rounded border border-neutral-300 text-xs">
+                  <div className={`px-2.5 py-1 rounded border text-xs ${
+                    isDarkUi
+                      ? 'bg-[#282828] border-[#404040] text-neutral-200'
+                      : 'bg-white border-neutral-300'
+                  }`}>
                     <span className="text-[9px] text-neutral-400 uppercase block">Headings</span>
-                    <span className="font-bold text-[#185abd]">
+                    <span className={`font-bold ${isDarkUi ? 'text-[#60a5fa]' : 'text-[#185abd]'}`}>
                       {editor?.getJSON().content?.filter((n: any) => n.type === 'heading').length || 0} Found
                     </span>
                   </div>
                   <button
                     onClick={() => onUpdateSettings({ showSeoPane: true })}
-                    className="px-2.5 py-1.5 bg-[#f0f4f9] hover:bg-[#e2ebf6] text-neutral-800 text-xs font-semibold rounded border border-neutral-300 cursor-pointer flex items-center space-x-1"
+                    className={`px-2.5 py-1.5 text-xs font-semibold rounded border cursor-pointer flex items-center space-x-1 transition-colors ${
+                      isDarkUi
+                        ? 'bg-[#1e3a5f] hover:bg-[#2563eb]/40 border-[#0078d4] text-white'
+                        : 'bg-[#f0f4f9] hover:bg-[#e2ebf6] text-neutral-800 border-neutral-300'
+                    }`}
                   >
-                    <SearchCheck size={14} className="text-[#185abd]" />
+                    <SearchCheck size={14} className={isDarkUi ? 'text-[#60a5fa]' : 'text-[#185abd]'} />
                     <span>Quick Audit</span>
                   </button>
                 </div>
@@ -3642,124 +4958,288 @@ export const RibbonToolbar: React.FC<RibbonToolbarProps> = ({
             </div>
           )}
 
-          {/* HELP TAB */}
+          {/* HELP TAB (Matches Screenshot 1) */}
           {activeTab === 'help' && (
-            <>
-              {/* Help & Support */}
-              <div className="flex flex-col justify-between px-3">
-                <div className="flex items-start space-x-2">
+            <div className="flex items-center space-x-1.5 px-3 py-1">
+              {/* GROUP 1: Help & Guides */}
+              <div className="flex flex-col items-center pr-2">
+                <div className="flex items-center space-x-1.5">
+                  {/* Button 1: Keyboard Shortcuts */}
                   <button
-                    onClick={() => {
-                      alert('Microsoft Word Shortcuts:\n• Ctrl+B: Bold\n• Ctrl+I: Italic\n• Ctrl+U: Underline\n• Ctrl+Z: Undo\n• Ctrl+Y: Redo\n• Tab: Next Table Cell\n• Shift+Tab: Previous Table Cell');
-                    }}
-                    className="flex items-center space-x-1.5 px-3 py-1.5 bg-white hover:bg-neutral-50 rounded border border-neutral-300 text-xs text-neutral-700 cursor-pointer shadow-2xs"
+                    onClick={() => setShowShortcutsModal(true)}
+                    title="View Keyboard Shortcuts (Ctrl+B, Ctrl+I, Ctrl+Z, etc.)"
+                    className="flex flex-col items-center justify-center px-3 py-1 rounded hover:bg-neutral-100 text-neutral-700 transition-colors cursor-pointer"
                   >
-                    <HelpCircle size={15} className="text-[#185abd]" />
-                    <span className="font-medium">Keyboard Shortcuts</span>
+                    <Keyboard size={22} className="text-[#185abd] mb-1" />
+                    <span className="text-[11px] leading-tight text-center text-neutral-800">
+                      Keyboard<br />Shortcuts
+                    </span>
                   </button>
+
+                  {/* Button 2: Quick Guide */}
                   <button
-                    onClick={() => onSelectTab('table')}
-                    className="flex items-center space-x-1.5 px-3 py-1.5 bg-[#f0f4f9] hover:bg-[#e2ebf6] rounded border border-neutral-300 text-xs text-[#185abd] font-semibold cursor-pointer shadow-2xs"
+                    onClick={() => setShowQuickGuideModal(true)}
+                    title="Open WordPad Quick Guide"
+                    className="flex flex-col items-center justify-center px-3 py-1 rounded hover:bg-neutral-100 text-neutral-700 transition-colors cursor-pointer"
                   >
-                    <TableIcon size={15} />
-                    <span>Table Editing Guide</span>
+                    <BookOpen size={22} className="text-[#185abd] mb-1" />
+                    <span className="text-[11px] leading-tight text-center text-neutral-800">
+                      Quick<br />Guide
+                    </span>
+                  </button>
+
+                  {/* Button 3: About */}
+                  <button
+                    onClick={() => setShowAboutModal(true)}
+                    title="About WordPad Pro & Version Information"
+                    className="flex flex-col items-center justify-center px-3 py-1 rounded hover:bg-neutral-100 text-neutral-700 transition-colors cursor-pointer"
+                  >
+                    <Info size={22} className="text-[#185abd] mb-1" />
+                    <span className="text-[11px] leading-tight text-center text-neutral-800">
+                      About<br />Nedit5.1
+                    </span>
                   </button>
                 </div>
-                <span className="text-[10px] text-center text-neutral-400 font-medium tracking-wide">Assistance</span>
+                <span className="text-[11px] text-center text-[#2563eb] font-normal mt-1.5 tracking-normal">
+                  Help &amp; Guides
+                </span>
               </div>
-            </>
+
+              {/* DIVIDER */}
+              <div className="h-12 w-px bg-[#dad9d8] mx-2 shrink-0 self-start mt-0.5" />
+
+              {/* GROUP 2: DOCUMENT READ (Text-to-Speech System & Browser Voices) */}
+              <div className="flex flex-col items-center px-2">
+                <div className="flex items-center space-x-2">
+                  {/* Big Read Aloud Play Button */}
+                  <button
+                    onClick={startDocumentReading}
+                    title="Read Aloud — Read selected text or entire document using system and browser voices"
+                    className={`flex flex-col items-center justify-center px-3 py-1 rounded transition-all cursor-pointer border ${
+                      isSpeaking && !isSpeechPaused
+                        ? isDarkUi
+                          ? 'bg-emerald-950/60 border-emerald-500 text-emerald-300 shadow-2xs font-medium'
+                          : 'bg-emerald-50 border-emerald-400 text-emerald-800 shadow-2xs font-medium'
+                        : isSpeechPaused
+                        ? isDarkUi
+                          ? 'bg-amber-950/60 border-amber-500 text-amber-300 font-medium'
+                          : 'bg-amber-50 border-amber-300 text-amber-800'
+                        : isDarkUi
+                        ? 'bg-[#282828] hover:bg-[#333333] border-[#404040] hover:border-neutral-500 text-neutral-200'
+                        : 'bg-white hover:bg-neutral-50 border-neutral-300 text-neutral-800'
+                    }`}
+                  >
+                    {isSpeaking && !isSpeechPaused ? (
+                      <Volume2 size={22} className="text-emerald-500 animate-pulse mb-1" />
+                    ) : (
+                      <Play size={22} className={`${isDarkUi ? 'text-[#60a5fa] fill-[#60a5fa]' : 'text-[#185abd] fill-[#185abd]'} mb-1`} />
+                    )}
+                    <span className={`text-[11px] leading-tight text-center font-medium ${isDarkUi ? 'text-neutral-200' : ''}`}>
+                      {isSpeaking && !isSpeechPaused
+                        ? 'Reading...'
+                        : isSpeechPaused
+                        ? 'Resume'
+                        : 'Read Aloud'}
+                    </span>
+                  </button>
+
+                  {/* Middle Control Cluster: Pause, Stop, Speed, Voices */}
+                  <div className="flex flex-col space-y-1.5">
+                    {/* Top Row: Pause, Stop, Speed Rate */}
+                    <div className="flex items-center space-x-2">
+                      {/* Pause / Resume Button */}
+                      <button
+                        onClick={pauseDocumentReading}
+                        disabled={!isSpeaking}
+                        title={isSpeechPaused ? 'Resume reading' : 'Pause reading'}
+                        className={`flex items-center space-x-1 px-2 py-0.5 rounded text-xs border transition-colors cursor-pointer ${
+                          isSpeechPaused
+                            ? isDarkUi
+                              ? 'bg-amber-950/60 border-amber-500 text-amber-300 font-semibold'
+                              : 'bg-amber-100 border-amber-400 text-amber-900 font-semibold'
+                            : isDarkUi
+                            ? 'bg-[#282828] border-[#404040] hover:bg-[#333333] text-neutral-200 disabled:opacity-40 disabled:cursor-not-allowed'
+                            : 'bg-white border-neutral-300 hover:bg-neutral-100 text-neutral-700 disabled:opacity-40 disabled:cursor-not-allowed'
+                        }`}
+                      >
+                        <Pause size={13} className={isSpeechPaused ? 'text-amber-500' : isDarkUi ? 'text-neutral-300' : 'text-neutral-600'} />
+                        <span>{isSpeechPaused ? 'Resume' : 'Pause'}</span>
+                      </button>
+
+                      {/* Stop Button */}
+                      <button
+                        onClick={stopDocumentReading}
+                        disabled={!isSpeaking}
+                        title="Stop reading aloud"
+                        className={`flex items-center space-x-1 px-2 py-0.5 rounded text-xs border transition-colors cursor-pointer ${
+                          isDarkUi
+                            ? 'bg-[#282828] border-[#404040] hover:bg-rose-950/40 text-neutral-200 hover:text-rose-400 disabled:opacity-40 disabled:cursor-not-allowed'
+                            : 'bg-white border-neutral-300 hover:bg-rose-50 text-neutral-700 hover:text-rose-700 disabled:opacity-40 disabled:cursor-not-allowed'
+                        }`}
+                      >
+                        <Square size={11} className="fill-rose-600 text-rose-600" />
+                        <span>Stop</span>
+                      </button>
+
+                      {/* Speed Dropdown */}
+                      <div className="flex items-center space-x-1 pl-1">
+                        <Gauge size={13} className={`shrink-0 ${isDarkUi ? 'text-neutral-400' : 'text-neutral-500'}`} />
+                        <span className={`text-[11px] font-medium ${isDarkUi ? 'text-neutral-400' : 'text-neutral-600'}`}>Speed:</span>
+                        <select
+                          value={speechRate}
+                          onChange={(e) => setSpeechRate(parseFloat(e.target.value))}
+                          className={`text-[11px] h-[23px] px-1.5 py-0.5 rounded font-medium cursor-pointer focus:outline-none focus:ring-1 focus:ring-blue-500 border ${
+                            isDarkUi
+                              ? 'bg-[#282828] border-[#404040] text-neutral-200'
+                              : 'bg-white border-neutral-300 text-neutral-700'
+                          }`}
+                          title="Reading speed multiplier"
+                        >
+                          <option value={0.5}>0.5x</option>
+                          <option value={0.75}>0.75x</option>
+                          <option value={1.0}>1.0x (Normal)</option>
+                          <option value={1.25}>1.25x</option>
+                          <option value={1.5}>1.5x</option>
+                          <option value={1.75}>1.75x</option>
+                          <option value={2.0}>2.0x</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    {/* Bottom Row: System and Browser Voices Dropdown */}
+                    <div className="flex items-center space-x-1.5">
+                      <Languages size={14} className={`${isDarkUi ? 'text-[#60a5fa]' : 'text-[#185abd]'} shrink-0`} />
+                      <span className={`text-[11px] font-medium shrink-0 ${isDarkUi ? 'text-neutral-400' : 'text-neutral-600'}`}>Voice:</span>
+                      <select
+                        value={selectedSpeechVoice}
+                        onChange={(e) => setSelectedSpeechVoice(e.target.value)}
+                        className={`w-[230px] text-[11px] h-[23px] px-1.5 py-0 rounded font-medium truncate cursor-pointer focus:outline-none focus:ring-1 focus:ring-blue-500 border ${
+                          isDarkUi
+                            ? 'bg-[#282828] border-[#404040] text-neutral-200'
+                            : 'bg-white border-neutral-300 text-neutral-800'
+                        }`}
+                        title="Available system and browser voices"
+                      >
+                        {speechVoices.length === 0 ? (
+                          <option value="">System Default Voice</option>
+                        ) : (
+                          speechVoices.map((voice, idx) => (
+                            <option key={voice.name + idx} value={voice.name}>
+                              {voice.name} ({voice.lang}){voice.default ? ' — [Default]' : ''}
+                            </option>
+                          ))
+                        )}
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Status & Feedback Indicator */}
+                  <div className={`flex flex-col justify-center px-2.5 py-1 rounded min-w-[130px] max-w-[170px] h-[52px] border ${
+                    isDarkUi
+                      ? 'bg-[#282828] border-[#404040]'
+                      : 'bg-white border-neutral-200'
+                  }`}>
+                    {isSpeaking ? (
+                      <div className="flex items-center space-x-1.5 text-emerald-500">
+                        <Volume2 size={13} className="animate-bounce shrink-0 text-emerald-500" />
+                        <span className="text-[10px] font-semibold truncate">
+                          {isSpeechPaused ? 'Paused' : 'Reading aloud...'}
+                        </span>
+                      </div>
+                    ) : (
+                      <div className="flex items-center space-x-1 text-neutral-400">
+                        <Headphones size={13} className="shrink-0" />
+                        <span className="text-[10px] font-medium">Speech Ready</span>
+                      </div>
+                    )}
+                    <span
+                      className={`text-[9px] truncate mt-0.5 ${isDarkUi ? 'text-neutral-400' : 'text-neutral-500'}`}
+                      title={currentSpeechSentence || 'Reads selected text or document'}
+                    >
+                      {currentSpeechSentence || (isSpeaking ? 'Reading...' : 'Select text or reads all')}
+                    </span>
+                  </div>
+                </div>
+
+                <span className="text-[11px] text-center text-[#2563eb] font-normal mt-1.5 tracking-normal">
+                  Document Read
+                </span>
+              </div>
+
+              {/* DIVIDER */}
+              <div className="h-12 w-px bg-[#dad9d8] mx-2 shrink-0 self-start mt-0.5" />
+
+              {/* GROUP 3: AI Assistant */}
+              <div className="flex flex-col items-center pl-1">
+                <button
+                  onClick={() =>
+                    onUpdateSettings({
+                      showAiAssistantPane: !settings.showAiAssistantPane,
+                    })
+                  }
+                  title="AI Writing Assistant — Open / Close Right Toolbar"
+                  className={`flex flex-col items-center justify-center px-3.5 py-1 rounded transition-all cursor-pointer ${
+                    settings.showAiAssistantPane
+                      ? 'bg-purple-100/90 text-[#6d28d9] font-semibold border border-purple-300 shadow-2xs'
+                      : 'hover:bg-purple-50/70 text-[#6d28d9]'
+                  }`}
+                >
+                  <Sparkles
+                    size={22}
+                    className="text-[#7c3aed] fill-purple-100 mb-1"
+                  />
+                  <span className="text-[11px] leading-tight text-center font-semibold text-[#6d28d9]">
+                    AI<br />Assistant
+                  </span>
+                </button>
+                <span className="text-[11px] text-center text-purple-600 font-normal mt-1.5 tracking-normal">
+                  AI Writing
+                </span>
+              </div>
+            </div>
           )}
         </div>
       )}
 
-      {/* Insert Link Modal */}
+      {/* Insert Link Modal (Auto-detects clipboard URL or email - Photo 1) */}
       {showLinkModal && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-xl border border-neutral-200 p-4 w-full max-w-sm">
-            <h3 className="text-sm font-semibold text-neutral-800 mb-3 flex items-center space-x-2">
-              <LinkIcon size={16} className="text-[#185abd]" />
-              <span>Insert Hyperlink</span>
-            </h3>
-            <input
-              type="url"
-              placeholder="https://example.com"
-              value={linkUrl}
-              onChange={(e) => setLinkUrl(e.target.value)}
-              autoFocus
-              className="w-full text-xs px-3 py-2 border border-neutral-300 rounded focus:outline-none focus:ring-1 focus:ring-[#185abd] mb-3"
-            />
-            <div className="flex justify-end space-x-2">
-              <button
-                onClick={() => setShowLinkModal(false)}
-                className="px-3 py-1.5 text-xs text-neutral-600 hover:bg-neutral-100 rounded cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleInsertLink}
-                className="px-3.5 py-1.5 text-xs bg-[#185abd] hover:bg-[#114b9c] text-white rounded font-medium cursor-pointer"
-              >
-                Insert Link
-              </button>
-            </div>
-          </div>
-        </div>
+        <React.Suspense fallback={null}>
+          <InsertLinkModal
+            editor={editor}
+            onClose={() => setShowLinkModal(false)}
+          />
+        </React.Suspense>
       )}
 
-      {/* Insert Image Modal */}
+      {/* Lazy-Loaded Smart Insert Picture Modal (Matches Photo) */}
       {showImageModal && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-xl border border-neutral-200 p-4 w-full max-w-sm">
-            <h3 className="text-sm font-semibold text-neutral-800 mb-3 flex items-center space-x-2">
-              <ImageIcon size={16} className="text-[#185abd]" />
-              <span>Insert Picture</span>
-            </h3>
+        <React.Suspense fallback={null}>
+          <InsertPictureModal
+            isOpen={showImageModal}
+            onClose={() => setShowImageModal(false)}
+            editor={editor}
+            onNotify={(msg) => {
+              setReviewNotification(msg);
+              setTimeout(() => setReviewNotification(null), 3500);
+            }}
+          />
+        </React.Suspense>
+      )}
 
-            <div className="space-y-3">
-              <div>
-                <label className="block text-xs text-neutral-500 mb-1">From URL</label>
-                <input
-                  type="url"
-                  placeholder="https://images.unsplash.com/photo-..."
-                  value={imageUrl}
-                  onChange={(e) => setImageUrl(e.target.value)}
-                  className="w-full text-xs px-3 py-2 border border-neutral-300 rounded focus:outline-none focus:ring-1 focus:ring-[#185abd]"
-                />
-              </div>
-
-              <div className="text-center text-xs text-neutral-400">or</div>
-
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                className="w-full py-2 px-3 border border-dashed border-neutral-300 hover:border-[#185abd] text-xs text-neutral-700 rounded text-center cursor-pointer hover:bg-blue-50/50"
-              >
-                Upload from Computer
-              </button>
-            </div>
-
-            <div className="flex justify-end space-x-2 mt-4">
-              <button
-                onClick={() => setShowImageModal(false)}
-                className="px-3 py-1.5 text-xs text-neutral-600 hover:bg-neutral-100 rounded cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => {
-                  if (imageUrl.trim() && editor) {
-                    editor.chain().focus().setImage({ src: imageUrl }).run();
-                  }
-                  setShowImageModal(false);
-                  setImageUrl('');
-                }}
-                disabled={!imageUrl.trim()}
-                className="px-3.5 py-1.5 text-xs bg-[#185abd] hover:bg-[#114b9c] disabled:opacity-50 text-white rounded font-medium cursor-pointer"
-              >
-                Insert
-              </button>
-            </div>
-          </div>
-        </div>
+      {/* Lazy-Loaded Special Characters & Symbols Modal (Matches Screenshot) */}
+      {showSymbolsPicker && (
+        <React.Suspense fallback={null}>
+          <SymbolsPickerModal
+            isOpen={showSymbolsPicker}
+            onClose={() => setShowSymbolsPicker(false)}
+            editor={editor}
+            themeMode={effectiveThemeMode}
+            onNotify={(msg) => {
+              setReviewNotification(msg);
+              setTimeout(() => setReviewNotification(null), 3000);
+            }}
+          />
+        </React.Suspense>
       )}
       {/* Insert AI Image Modal */}
       {showAiImageModal && (
@@ -3826,8 +5306,18 @@ export const RibbonToolbar: React.FC<RibbonToolbarProps> = ({
 
       {/* Review Floating Toast Notification */}
       {reviewNotification && (
-        <div className="fixed bottom-6 right-6 z-50 bg-[#1e293b] text-white px-4 py-2.5 rounded-lg shadow-xl border border-neutral-700 flex items-center space-x-2.5 text-xs animate-in fade-in duration-200">
-          <CheckCheck size={16} className="text-emerald-400 shrink-0" />
+        <div
+          className={`fixed bottom-6 right-6 z-50 px-4 py-2.5 rounded-lg shadow-xl border flex items-center space-x-2.5 text-xs animate-in fade-in duration-200 ${
+            reviewNotification.startsWith('❌')
+              ? 'bg-[#1e1414] text-red-100 border-red-500/80 shadow-red-950/40'
+              : 'bg-[#1e293b] text-white border-neutral-700'
+          }`}
+        >
+          {reviewNotification.startsWith('❌') ? (
+            <AlertCircle size={16} className="text-red-400 shrink-0" />
+          ) : (
+            <CheckCheck size={16} className="text-emerald-400 shrink-0" />
+          )}
           <span>{reviewNotification}</span>
         </div>
       )}
@@ -4020,20 +5510,70 @@ export const RibbonToolbar: React.FC<RibbonToolbarProps> = ({
         </div>
       )}
 
+      {/* Lightweight Interactive Screen Capture Tool */}
+      {showScreenCaptureTool && screenCaptureBaseImage && (
+        <ScreenCaptureTool
+          isOpen={showScreenCaptureTool}
+          baseImageUrl={screenCaptureBaseImage}
+          onClose={() => setShowScreenCaptureTool(false)}
+          onConfirmCapture={handleConfirmAreaCapture}
+        />
+      )}
+
       {/* Save Snapshot Modal */}
       {showSaveSnapshotModal && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl shadow-2xl border border-neutral-200 p-5 w-full max-w-md">
-            <div className="flex items-start space-x-2 text-[#059669] mb-2 font-semibold">
-              <Camera size={20} />
-              <h3 className="text-sm text-neutral-800 font-bold">Save Document Snapshot</h3>
+            <div className="flex items-start justify-between mb-2">
+              <div className="flex items-center space-x-2 text-[#059669] font-semibold">
+                <Camera size={20} />
+                <h3 className="text-sm text-neutral-800 font-bold">Document Screen Snapshot</h3>
+              </div>
+              <button
+                onClick={() => setShowSaveSnapshotModal(false)}
+                className="text-neutral-400 hover:text-neutral-600 cursor-pointer"
+              >
+                <X size={16} />
+              </button>
             </div>
+            
             <p className="text-xs text-neutral-500 mb-3">
-              Create an instantaneous snapshot milestone of your entire document to safely track progress or revert at any time.
+              Screen snapshot captured and sent to the Image Wizard right toolbar. You can resize it, paste it into the document, or record it as a version milestone.
             </p>
 
+            {/* Captured Screen Snapshot Preview & Image Wizard Button */}
+            {capturedSnapshotImage && (
+              <div className="mb-3 p-2 bg-emerald-50/70 border border-emerald-200 rounded-lg">
+                <div className="text-[11px] font-semibold text-emerald-800 flex items-center justify-between mb-1.5">
+                  <span className="flex items-center gap-1">
+                    <Check size={13} className="text-emerald-600" />
+                    Sent to Image Wizard (Right Toolbar)
+                  </span>
+                  <button
+                    onClick={() => {
+                      if (capturedSnapshotImage) {
+                        snapshotStore.setLatestSnapshot(capturedSnapshotImage, 'milestone');
+                      }
+                      onUpdateSettings({ showImageWizardPane: true });
+                      setShowSaveSnapshotModal(false);
+                    }}
+                    className="text-[11px] font-bold text-blue-600 hover:text-blue-800 hover:underline cursor-pointer"
+                  >
+                    Open Image Wizard →
+                  </button>
+                </div>
+                <div className="max-h-36 overflow-hidden rounded border border-emerald-200/80 bg-white flex items-center justify-center">
+                  <img
+                    src={capturedSnapshotImage}
+                    alt="Captured Snapshot"
+                    className="max-h-36 w-auto object-contain"
+                  />
+                </div>
+              </div>
+            )}
+
             <div className="mb-4">
-              <label className="block text-xs font-semibold text-neutral-700 mb-1">Snapshot Label</label>
+              <label className="block text-xs font-semibold text-neutral-700 mb-1">Milestone Label (Optional)</label>
               <input
                 type="text"
                 value={snapshotTitle}
@@ -4043,39 +5583,58 @@ export const RibbonToolbar: React.FC<RibbonToolbarProps> = ({
               />
             </div>
 
-            <div className="flex justify-end space-x-2">
-              <button
-                onClick={() => setShowSaveSnapshotModal(false)}
-                className="px-3.5 py-1.5 text-xs text-neutral-600 hover:bg-neutral-100 rounded cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => {
-                  if (!editor) return;
-                  const html = editor.getHTML();
-                  const text = editor.getText();
-                  const wordCount = text.trim() ? text.trim().split(/\s+/).length : 0;
-                  const newSnap: DocumentSnapshot = {
-                    id: `snap-${Date.now()}`,
-                    name: snapshotTitle.trim() || `Snapshot ${snapshots.length + 1}`,
-                    timestamp: new Date().toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
-                    htmlContent: html,
-                    wordCount,
-                  };
-                  const updated = [newSnap, ...snapshots];
-                  setSnapshots(updated);
-                  try {
-                    localStorage.setItem('word_doc_snapshots', JSON.stringify(updated));
-                  } catch {}
-                  setShowSaveSnapshotModal(false);
-                  setReviewNotification(`Snapshot "${newSnap.name}" saved!`);
-                  setTimeout(() => setReviewNotification(null), 3000);
-                }}
-                className="px-4 py-1.5 text-xs bg-[#059669] hover:bg-[#047857] text-white rounded font-medium cursor-pointer"
-              >
-                Save Snapshot
-              </button>
+            <div className="flex items-center justify-between pt-1 border-t border-neutral-100">
+              {capturedSnapshotImage ? (
+                <button
+                  onClick={() => {
+                    const a = document.createElement('a');
+                    a.href = capturedSnapshotImage;
+                    a.download = `document-snapshot-${Date.now()}.png`;
+                    a.click();
+                  }}
+                  className="px-2.5 py-1.5 text-xs text-neutral-700 hover:bg-neutral-100 border border-neutral-300 rounded font-medium cursor-pointer flex items-center gap-1.5"
+                  title="Download screen snapshot as PNG file"
+                >
+                  <Download size={13} />
+                  <span>Download PNG</span>
+                </button>
+              ) : <div />}
+
+              <div className="flex space-x-2">
+                <button
+                  onClick={() => setShowSaveSnapshotModal(false)}
+                  className="px-3 py-1.5 text-xs text-neutral-600 hover:bg-neutral-100 rounded cursor-pointer"
+                >
+                  Close
+                </button>
+                <button
+                  onClick={() => {
+                    if (!editor) return;
+                    const html = editor.getHTML();
+                    const text = editor.getText();
+                    const wordCount = text.trim() ? text.trim().split(/\s+/).length : 0;
+                    const newSnap: DocumentSnapshot = {
+                      id: `snap-${Date.now()}`,
+                      name: snapshotTitle.trim() || `Snapshot ${snapshots.length + 1}`,
+                      timestamp: new Date().toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
+                      htmlContent: html,
+                      wordCount,
+                      previewImage: capturedSnapshotImage || undefined,
+                    };
+                    const updated = [newSnap, ...snapshots];
+                    setSnapshots(updated);
+                    try {
+                      localStorage.setItem('word_doc_snapshots', JSON.stringify(updated.slice(0, 20)));
+                    } catch {}
+                    setShowSaveSnapshotModal(false);
+                    setReviewNotification(`Milestone "${newSnap.name}" saved!`);
+                    setTimeout(() => setReviewNotification(null), 3000);
+                  }}
+                  className="px-3.5 py-1.5 text-xs bg-[#059669] hover:bg-[#047857] text-white rounded font-medium cursor-pointer"
+                >
+                  Save Milestone
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -4161,64 +5720,6 @@ export const RibbonToolbar: React.FC<RibbonToolbarProps> = ({
                 className="px-4 py-1.5 bg-neutral-200 hover:bg-neutral-300 text-neutral-800 rounded font-medium cursor-pointer"
               >
                 Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Spelling & Grammar Modal */}
-      {showSpellingModal && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-2xl border border-neutral-200 p-5 w-full max-w-lg">
-            <div className="flex items-center justify-between pb-3 border-b border-neutral-200">
-              <div className="flex items-center space-x-2 text-[#059669]">
-                <CheckCheck size={20} />
-                <h3 className="text-sm font-bold text-neutral-800">Spelling &amp; Grammar Proofing</h3>
-              </div>
-              <button
-                onClick={() => setShowSpellingModal(false)}
-                className="text-neutral-400 hover:text-neutral-700 p-1 cursor-pointer"
-              >
-                <X size={17} />
-              </button>
-            </div>
-
-            <div className="py-4 space-y-3">
-              <div className="p-3 bg-emerald-50/70 border border-emerald-200 rounded-lg flex items-start space-x-3">
-                <CheckCheck size={20} className="text-emerald-600 shrink-0 mt-0.5" />
-                <div>
-                  <h4 className="text-xs font-bold text-emerald-800">Proofing Check Completed</h4>
-                  <p className="text-[11px] text-emerald-700 mt-0.5">
-                    Language: <span className="font-semibold">{selectedLanguage}</span>. No structural syntax errors or broken typography detected in active document sections.
-                  </p>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-3 gap-2 text-center">
-                <div className="p-2.5 bg-neutral-50 rounded-lg border border-neutral-200">
-                  <div className="text-base font-bold text-neutral-800">
-                    {editor?.getText().trim() ? editor.getText().trim().split(/\s+/).length : 0}
-                  </div>
-                  <div className="text-[10px] text-neutral-500 uppercase tracking-wide">Words Scanned</div>
-                </div>
-                <div className="p-2.5 bg-neutral-50 rounded-lg border border-neutral-200">
-                  <div className="text-base font-bold text-emerald-600">0</div>
-                  <div className="text-[10px] text-neutral-500 uppercase tracking-wide">Misspellings</div>
-                </div>
-                <div className="p-2.5 bg-neutral-50 rounded-lg border border-neutral-200">
-                  <div className="text-base font-bold text-blue-600">100%</div>
-                  <div className="text-[10px] text-neutral-500 uppercase tracking-wide">Readability</div>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex justify-end space-x-2 pt-2 border-t border-neutral-200">
-              <button
-                onClick={() => setShowSpellingModal(false)}
-                className="px-4 py-1.5 text-xs bg-[#059669] hover:bg-[#047857] text-white rounded font-medium cursor-pointer"
-              >
-                Accept &amp; Complete
               </button>
             </div>
           </div>
@@ -4328,98 +5829,6 @@ export const RibbonToolbar: React.FC<RibbonToolbarProps> = ({
                 className="px-4 py-1.5 text-xs bg-[#9333ea] hover:bg-[#7e22ce] disabled:opacity-50 text-white rounded font-medium cursor-pointer"
               >
                 Apply to Document
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Translate Modal */}
-      {showTranslateModal && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-2xl border border-neutral-200 p-5 w-full max-w-lg">
-            <div className="flex items-center justify-between pb-3 border-b border-neutral-200">
-              <div className="flex items-center space-x-2 text-[#6366f1]">
-                <Languages size={20} />
-                <h3 className="text-sm font-bold text-neutral-800">Document &amp; Selection Translation</h3>
-              </div>
-              <button
-                onClick={() => setShowTranslateModal(false)}
-                className="text-neutral-400 hover:text-neutral-700 p-1 cursor-pointer"
-              >
-                <X size={17} />
-              </button>
-            </div>
-
-            <div className="py-3 space-y-3">
-              <div>
-                <label className="block text-xs font-semibold text-neutral-700 mb-1">Target Language</label>
-                <select
-                  value={targetTranslateLang}
-                  onChange={(e) => setTargetTranslateLang(e.target.value)}
-                  className="w-full text-xs px-3 py-1.5 border border-neutral-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-[#6366f1]"
-                >
-                  {REVIEW_LANGUAGES.map((l) => (
-                    <option key={l.code} value={l.label}>
-                      {l.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="text-xs font-semibold text-neutral-700">Translation Preview</label>
-                  <button
-                    onClick={() => {
-                      if (targetTranslateLang.includes('Greek')) {
-                        setTranslatedContent('Καλώς ήρθατε στο έγγραφό σας. Αυτή είναι η επαληθευμένη ελληνική απόδοση του επιλεγμένου περιεχομένου.');
-                      } else if (targetTranslateLang.includes('Spanish')) {
-                        setTranslatedContent('Bienvenido a su documento. Esta es la versión traducida al español del contenido.');
-                      } else if (targetTranslateLang.includes('French')) {
-                        setTranslatedContent('Bienvenue dans votre document. Ceci est la version traduite en français de votre contenu.');
-                      } else if (targetTranslateLang.includes('German')) {
-                        setTranslatedContent('Willkommen in Ihrem Dokument. Dies ist die übersetzte deutsche Fassung des Inhalts.');
-                      } else {
-                        setTranslatedContent('Welcome to your document. This is the translated rendition of the active text.');
-                      }
-                    }}
-                    className="text-[11px] text-[#6366f1] font-medium hover:underline cursor-pointer"
-                  >
-                    Generate Translation
-                  </button>
-                </div>
-
-                <textarea
-                  rows={4}
-                  value={translatedContent}
-                  onChange={(e) => setTranslatedContent(e.target.value)}
-                  placeholder="Click 'Generate Translation' to preview translated text..."
-                  className="w-full text-xs p-2.5 border border-neutral-300 rounded focus:outline-none focus:ring-1 focus:ring-[#6366f1] resize-none"
-                />
-              </div>
-            </div>
-
-            <div className="flex justify-end space-x-2 pt-2 border-t border-neutral-200">
-              <button
-                onClick={() => setShowTranslateModal(false)}
-                className="px-3.5 py-1.5 text-xs text-neutral-600 hover:bg-neutral-100 rounded cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => {
-                  if (editor && translatedContent.trim()) {
-                    editor.chain().focus().insertContent(`<p>${translatedContent}</p>`).run();
-                    setShowTranslateModal(false);
-                    setReviewNotification(`Translated content inserted`);
-                    setTimeout(() => setReviewNotification(null), 3000);
-                  }
-                }}
-                disabled={!translatedContent.trim()}
-                className="px-4 py-1.5 text-xs bg-[#6366f1] hover:bg-[#4f46e5] disabled:opacity-50 text-white rounded font-medium cursor-pointer"
-              >
-                Insert Translated Text
               </button>
             </div>
           </div>
@@ -4547,6 +5956,201 @@ export const RibbonToolbar: React.FC<RibbonToolbarProps> = ({
             </div>
           </div>
         </div>
+      )}
+
+      {/* 1. Keyboard Shortcuts Modal */}
+      {showShortcutsModal && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl border border-neutral-200 p-5 w-full max-w-lg animate-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between pb-3 border-b border-neutral-200">
+              <div className="flex items-center space-x-2 text-[#185abd]">
+                <Keyboard size={20} />
+                <h3 className="text-sm font-bold text-neutral-800">Microsoft Word Compatible Shortcuts</h3>
+              </div>
+              <button
+                onClick={() => setShowShortcutsModal(false)}
+                className="text-neutral-400 hover:text-neutral-700 p-1 rounded-md"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="py-4 space-y-3 max-h-[65vh] overflow-y-auto text-xs text-neutral-700 pr-1">
+              <div>
+                <span className="font-semibold text-neutral-900 block mb-1 text-[11px] uppercase tracking-wider text-slate-500">
+                  Formatting
+                </span>
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="p-2 bg-slate-50 rounded border border-slate-200 flex justify-between">
+                    <span className="text-neutral-600">Bold</span>
+                    <kbd className="px-1.5 py-0.5 bg-white border border-slate-300 rounded font-mono text-[10px]">Ctrl + B</kbd>
+                  </div>
+                  <div className="p-2 bg-slate-50 rounded border border-slate-200 flex justify-between">
+                    <span className="text-neutral-600">Italic</span>
+                    <kbd className="px-1.5 py-0.5 bg-white border border-slate-300 rounded font-mono text-[10px]">Ctrl + I</kbd>
+                  </div>
+                  <div className="p-2 bg-slate-50 rounded border border-slate-200 flex justify-between">
+                    <span className="text-neutral-600">Underline</span>
+                    <kbd className="px-1.5 py-0.5 bg-white border border-slate-300 rounded font-mono text-[10px]">Ctrl + U</kbd>
+                  </div>
+                  <div className="p-2 bg-slate-50 rounded border border-slate-200 flex justify-between">
+                    <span className="text-neutral-600">Strikethrough</span>
+                    <kbd className="px-1.5 py-0.5 bg-white border border-slate-300 rounded font-mono text-[10px]">Ctrl + Shift + X</kbd>
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <span className="font-semibold text-neutral-900 block mb-1 text-[11px] uppercase tracking-wider text-slate-500">
+                  Document Actions
+                </span>
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="p-2 bg-slate-50 rounded border border-slate-200 flex justify-between">
+                    <span className="text-neutral-600">Save Document</span>
+                    <kbd className="px-1.5 py-0.5 bg-white border border-slate-300 rounded font-mono text-[10px]">Ctrl + S</kbd>
+                  </div>
+                  <div className="p-2 bg-slate-50 rounded border border-slate-200 flex justify-between">
+                    <span className="text-neutral-600">Print / PDF</span>
+                    <kbd className="px-1.5 py-0.5 bg-white border border-slate-300 rounded font-mono text-[10px]">Ctrl + P</kbd>
+                  </div>
+                  <div className="p-2 bg-slate-50 rounded border border-slate-200 flex justify-between">
+                    <span className="text-neutral-600">Find</span>
+                    <kbd className="px-1.5 py-0.5 bg-white border border-slate-300 rounded font-mono text-[10px]">Ctrl + F</kbd>
+                  </div>
+                  <div className="p-2 bg-slate-50 rounded border border-slate-200 flex justify-between">
+                    <span className="text-neutral-600">Replace</span>
+                    <kbd className="px-1.5 py-0.5 bg-white border border-slate-300 rounded font-mono text-[10px]">Ctrl + H</kbd>
+                  </div>
+                  <div className="p-2 bg-slate-50 rounded border border-slate-200 flex justify-between">
+                    <span className="text-neutral-600">Undo</span>
+                    <kbd className="px-1.5 py-0.5 bg-white border border-slate-300 rounded font-mono text-[10px]">Ctrl + Z</kbd>
+                  </div>
+                  <div className="p-2 bg-slate-50 rounded border border-slate-200 flex justify-between">
+                    <span className="text-neutral-600">Redo</span>
+                    <kbd className="px-1.5 py-0.5 bg-white border border-slate-300 rounded font-mono text-[10px]">Ctrl + Y</kbd>
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <span className="font-semibold text-neutral-900 block mb-1 text-[11px] uppercase tracking-wider text-slate-500">
+                  Tables
+                </span>
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="p-2 bg-slate-50 rounded border border-slate-200 flex justify-between">
+                    <span className="text-neutral-600">Next Cell</span>
+                    <kbd className="px-1.5 py-0.5 bg-white border border-slate-300 rounded font-mono text-[10px]">Tab</kbd>
+                  </div>
+                  <div className="p-2 bg-slate-50 rounded border border-slate-200 flex justify-between">
+                    <span className="text-neutral-600">Previous Cell</span>
+                    <kbd className="px-1.5 py-0.5 bg-white border border-slate-300 rounded font-mono text-[10px]">Shift + Tab</kbd>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="pt-3 border-t border-neutral-200 flex justify-end">
+              <button
+                onClick={() => setShowShortcutsModal(false)}
+                className="px-4 py-1.5 text-xs bg-[#185abd] hover:bg-[#114b9c] text-white rounded font-medium cursor-pointer"
+              >
+                Got It
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 2. Quick Guide Modal */}
+      {showQuickGuideModal && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl border border-neutral-200 p-5 w-full max-w-lg animate-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between pb-3 border-b border-neutral-200">
+              <div className="flex items-center space-x-2 text-[#185abd]">
+                <BookOpen size={20} />
+                <h3 className="text-sm font-bold text-neutral-800">WordPad Quick Guide</h3>
+              </div>
+              <button
+                onClick={() => setShowQuickGuideModal(false)}
+                className="text-neutral-400 hover:text-neutral-700 p-1 rounded-md"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="py-4 space-y-3.5 max-h-[65vh] overflow-y-auto text-xs text-neutral-700">
+              <div className="p-3 bg-purple-50/60 border border-purple-200 rounded-lg">
+                <div className="font-semibold text-purple-900 mb-1 flex items-center space-x-1.5">
+                  <Sparkles size={14} className="text-purple-600" />
+                  <span>AI Writing Assistant</span>
+                </div>
+                <p className="text-purple-800 leading-relaxed text-[11px]">
+                  Click the <strong>AI Assistant</strong> button in the Help tab to toggle the right toolbar. Powered by Gemini, you can summarize selections, improve writing flow, fix grammar mistakes, and translate into any language with your own Gemini API key.
+                </p>
+              </div>
+
+              <div className="p-3 bg-blue-50/60 border border-blue-200 rounded-lg">
+                <div className="font-semibold text-blue-900 mb-1">Interactive Table &amp; Border Toolbar</div>
+                <p className="text-blue-800 leading-relaxed text-[11px]">
+                  Insert tables from the <strong>Insert</strong> or <strong>Table</strong> tab. Use the floating context menu or the <strong>Border Edit</strong> toolbar to apply presets (Outline, Inside, All, Borders None) and customize line style, thickness, and fill.
+                </p>
+              </div>
+
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg">
+                <div className="font-semibold text-slate-800 mb-1">Full-Fidelity File Export</div>
+                <p className="text-slate-600 leading-relaxed text-[11px]">
+                  Under the <strong>File</strong> Backstage, export to Microsoft Word <code>.docx</code>, PDF document, HTML web page, or Markdown with all formatting, tables, and images preserved.
+                </p>
+              </div>
+            </div>
+
+            <div className="pt-3 border-t border-neutral-200 flex justify-end">
+              <button
+                onClick={() => setShowQuickGuideModal(false)}
+                className="px-4 py-1.5 text-xs bg-[#185abd] hover:bg-[#114b9c] text-white rounded font-medium cursor-pointer"
+              >
+                Close Guide
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 3. About Modal (Lazy-loaded 90% Screen Popup with 7 Interactive Tabs) */}
+      {showAboutModal && (
+        <React.Suspense
+          fallback={
+            <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-[100] p-4">
+              <div className="bg-white dark:bg-[#1e1e1e] rounded-2xl p-6 shadow-2xl flex flex-col items-center space-y-3">
+                <div className="w-8 h-8 border-3 border-[#0062ff] border-t-transparent rounded-full animate-spin" />
+                <span className="text-xs font-semibold text-neutral-700 dark:text-neutral-300">
+                  Loading Nedit v5.1 Suite Information...
+                </span>
+              </div>
+            </div>
+          }
+        >
+          <AboutSuiteModal
+            isOpen={showAboutModal}
+            onClose={() => setShowAboutModal(false)}
+          />
+        </React.Suspense>
+      )}
+
+      {/* Fx Wizard Equation Popup (Lazy-loaded only when Fx is clicked) */}
+      {showEquationPopup && (
+        <React.Suspense fallback={null}>
+          <EquationWizardPopup
+            editor={editor}
+            initialLatex={equationEditingLatex}
+            isBlockDefault={equationIsBlock}
+            onClose={() => {
+              setShowEquationPopup(false);
+              setEquationEditingLatex('');
+              setEquationIsBlock(false);
+            }}
+          />
+        </React.Suspense>
       )}
     </div>
   );
