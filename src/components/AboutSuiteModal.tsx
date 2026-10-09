@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Info,
   X,
@@ -47,9 +48,9 @@ const TAB_CONFIGS: TabConfig[] = [
   {
     id: 'futures',
     label: 'Features',
-    badge: 'v5.1',
+    badge: 'v5.2',
     icon: Zap,
-    description: 'Complete breakdown of Nedit v5.1 capabilities & ecosystem',
+    description: 'Complete breakdown of Nedit v5.2 capabilities & ecosystem',
   },
   {
     id: 'sortcuts',
@@ -105,11 +106,13 @@ export const AboutSuiteModal: React.FC<AboutSuiteModalProps> = ({
 
   if (!isOpen) return null;
 
-  return (
+  return createPortal(
     <div
       role="dialog"
       aria-modal="true"
-      className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-[100] p-3 sm:p-5 select-none no-print animate-in fade-in duration-150"
+      className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-[99999] p-3 sm:p-5 select-none no-print animate-in fade-in duration-150 word-modal-backdrop"
+      data-word-modal="true"
+      style={{ zIndex: 99999 }}
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
@@ -130,7 +133,7 @@ export const AboutSuiteModal: React.FC<AboutSuiteModalProps> = ({
             <div>
               <div className="flex items-center space-x-2">
                 <h2 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white tracking-tight">
-                  Nedit v5.1 Document Suite
+                  Nedit v5.2 Document Suite
                 </h2>
                 <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-blue-100 dark:bg-blue-950/80 text-[#0062ff] dark:text-blue-400 border border-blue-200 dark:border-blue-800 tracking-wide uppercase">
                   Enterprise
@@ -218,7 +221,7 @@ export const AboutSuiteModal: React.FC<AboutSuiteModalProps> = ({
                   </div>
                   <div>
                     <h3 className="text-lg font-bold text-slate-900 dark:text-white">
-                      Nedit v5.1 Features &amp; Capability Matrix
+                      Nedit v5.2 Features &amp; Capability Matrix
                     </h3>
                     <p className="text-xs text-slate-500 dark:text-neutral-400">
                       Engineered for zero-latency, cloud-free local document creation and formatting.
@@ -335,7 +338,7 @@ export const AboutSuiteModal: React.FC<AboutSuiteModalProps> = ({
                     <div className="bg-slate-50 dark:bg-[#202020] rounded-xl border border-neutral-200 dark:border-neutral-800 divide-y divide-neutral-200 dark:divide-neutral-800 text-xs">
                       {[
                         { key: 'Ctrl + S', desc: 'Sync document state to local storage' },
-                        { key: 'Ctrl + P', desc: 'Launch print workstation & PDF vector export' },
+                        { key: 'Ctrl + P', desc: 'Launch ULTIMATE Print Workstation & PDF vector export' },
                         { key: 'Ctrl + O', desc: 'Open 3x3 format hub (DOCX, ODF, HTML, MD, JSON)' },
                         { key: 'Ctrl + N', desc: 'Launch New Document template catalog' },
                         { key: 'Ctrl + F', desc: 'Open find & replace toolbar with regex support' },
@@ -594,8 +597,8 @@ export const AboutSuiteModal: React.FC<AboutSuiteModalProps> = ({
                     },
                     {
                       step: '04',
-                      title: 'Page Setup, Margins & 2-Page Spreads',
-                      desc: 'Adjust margins (1", 0.5", 0.75", or custom), switch between Portrait and Landscape, or activate Two-Page View for facing page layout review.',
+                      title: 'Page Setup, Margins & 1, 2, 3 Column Modes',
+                      desc: 'Adjust margins (1", 0.5", 0.75", or custom), switch between Portrait and Landscape, or activate the 1 / 2 / 3 column carousel layout for multi-column documents.',
                     },
                     {
                       step: '05',
@@ -788,7 +791,7 @@ export const AboutSuiteModal: React.FC<AboutSuiteModalProps> = ({
         {/* ========================================================= */}
         <div className="px-6 py-3 border-t border-neutral-200 dark:border-neutral-800 flex items-center justify-between bg-white dark:bg-[#1a1a1a]">
           <div className="hidden sm:flex items-center space-x-4 text-xs text-neutral-500 dark:text-neutral-400">
-            <span>&bull; Nedit v5.1.0 Enterprise</span>
+            <span>&bull; Nedit v5.2.0 Enterprise</span>
             <span>&bull; 100% Client-Side Sandbox</span>
             <span>&bull; ECMA-376 Standard</span>
           </div>
@@ -821,7 +824,8 @@ export const AboutSuiteModal: React.FC<AboutSuiteModalProps> = ({
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
 

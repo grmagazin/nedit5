@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Editor } from '@tiptap/react';
 import { Search, RotateCw, X, ChevronDown, ChevronUp, Wrench, Check } from 'lucide-react';
 
@@ -6,6 +6,134 @@ interface SeoCheckSidebarProps {
   editor: Editor | null;
   onClose: () => void;
   wordCount?: number;
+}
+
+// Pure helper function to compute live SEO audit metrics from the document
+function computeSeoAnalysis(editor: Editor | null, wordCount: number) {
+  if (!editor || editor.isDestroyed) {
+    return {
+      score: 65,
+      rating: 'Fair',
+      color: 'text-amber-500',
+      h1Count: 0,
+      h2Count: 0,
+      h3Count: 0,
+      otherHeadings: 0,
+      words: wordCount,
+      imagesTotal: 0,
+      imagesMissingAlt: 0,
+      linksTotal: 0,
+      linksEmpty: 0,
+    };
+  }
+
+  const doc = editor.getJSON();
+  let h1Count = 0;
+  let h2Count = 0;
+  let h3Count = 0;
+  let otherHeadings = 0;
+  let imagesTotal = 0;
+  let imagesMissingAlt = 0;
+  let linksTotal = 0;
+  let linksEmpty = 0;
+
+  const traverse = (node: any) => {
+    if (node.type === 'heading') {
+      const level = node.attrs?.level || 1;
+      if (level === 1) h1Count++;
+      else if (level === 2) h2Count++;
+      else if (level === 3) h3Count++;
+      else otherHeadings++;
+    }
+
+    if (node.type === 'image') {
+      imagesTotal++;
+      if (!node.attrs?.alt || node.attrs.alt.trim() === '') {
+        imagesMissingAlt++;
+      }
+    }
+
+    if (node.marks) {
+      for (const mark of node.marks) {
+        if (mark.type === 'link') {
+          linksTotal++;
+          const text = node.text || '';
+          if (!text.trim()) {
+            linksEmpty++;
+          }
+        }
+      }
+    }
+
+    if (node.content) {
+      for (const child of node.content) {
+        traverse(child);
+      }
+    }
+  };
+
+  if (doc.content) {
+    traverse(doc);
+  }
+
+  // Also parse raw HTML for any standard images or links if not in JSON
+  const html = editor.getHTML();
+  const imgMatches = html.match(/<img\b[^>]*>/gi) || [];
+  if (imgMatches.length > imagesTotal) {
+    imagesTotal = imgMatches.length;
+    imagesMissingAlt = imgMatches.filter((img) => !img.includes('alt=') || /alt=["']\s*["']/i.test(img)).length;
+  }
+
+  const linkMatches = html.match(/<a\b[^>]*>([\s\S]*?)<\/a>/gi) || [];
+  if (linkMatches.length > linksTotal) {
+    linksTotal = linkMatches.length;
+    linksEmpty = linkMatches.filter((a) => {
+      const inner = a.replace(/<[^>]*>/g, '').trim();
+      return inner.length === 0;
+    }).length;
+  }
+
+  // Calculate score
+  let score = 50;
+  if (h1Count === 1) score += 15;
+  else if (h1Count > 1) score += 5;
+  
+  if (wordCount >= 300) score += 15;
+  else if (wordCount >= 100) score += 8;
+
+  if (imagesTotal === 0 || imagesMissingAlt === 0) score += 10;
+  if (linksEmpty === 0) score += 5;
+  if (linksTotal >= 1) score += 5;
+
+  // Heading structure bonus
+  if (h1Count >= 1 && (h2Count >= 1 || h3Count === 0)) score += 10;
+
+  score = Math.min(100, Math.max(20, score));
+
+  let rating = 'Poor';
+  let color = 'text-rose-500';
+  if (score >= 80) {
+    rating = 'Good';
+    color = 'text-emerald-600';
+  } else if (score >= 50) {
+    rating = 'Fair';
+    color = 'text-amber-500';
+  }
+
+  return {
+    score,
+    rating,
+    color,
+    h1Count,
+    h2Count,
+    h3Count,
+    otherHeadings,
+    words: wordCount,
+    imagesTotal,
+    imagesMissingAlt,
+    linksTotal,
+    linksEmpty,
+  };
 }
 
 export const SeoCheckSidebar: React.FC<SeoCheckSidebarProps> = ({
@@ -20,132 +148,15 @@ export const SeoCheckSidebar: React.FC<SeoCheckSidebarProps> = ({
   const [structureOpen, setStructureOpen] = useState(true);
   const [fixSuccessMsg, setFixSuccessMsg] = useState<string | null>(null);
 
-  // Compute live SEO audit metrics from the document
-  const analysis = useMemo(() => {
-    if (!editor) {
-      return {
-        score: 65,
-        rating: 'Fair',
-        color: 'text-amber-500',
-        h1Count: 0,
-        h2Count: 0,
-        h3Count: 0,
-        otherHeadings: 0,
-        words: wordCount,
-        imagesTotal: 0,
-        imagesMissingAlt: 0,
-        linksTotal: 0,
-        linksEmpty: 0,
-      };
-    }
+  // Initial calculation on mount, then debounced by 1 second while typing
+  const [analysis, setAnalysis] = useState(() => computeSeoAnalysis(editor, wordCount));
 
-    const doc = editor.getJSON();
-    let h1Count = 0;
-    let h2Count = 0;
-    let h3Count = 0;
-    let otherHeadings = 0;
-    let imagesTotal = 0;
-    let imagesMissingAlt = 0;
-    let linksTotal = 0;
-    let linksEmpty = 0;
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setAnalysis(computeSeoAnalysis(editor, wordCount));
+    }, 1000);
 
-    const traverse = (node: any) => {
-      if (node.type === 'heading') {
-        const level = node.attrs?.level || 1;
-        if (level === 1) h1Count++;
-        else if (level === 2) h2Count++;
-        else if (level === 3) h3Count++;
-        else otherHeadings++;
-      }
-
-      if (node.type === 'image') {
-        imagesTotal++;
-        if (!node.attrs?.alt || node.attrs.alt.trim() === '') {
-          imagesMissingAlt++;
-        }
-      }
-
-      if (node.marks) {
-        for (const mark of node.marks) {
-          if (mark.type === 'link') {
-            linksTotal++;
-            const text = node.text || '';
-            if (!text.trim()) {
-              linksEmpty++;
-            }
-          }
-        }
-      }
-
-      if (node.content) {
-        for (const child of node.content) {
-          traverse(child);
-        }
-      }
-    };
-
-    if (doc.content) {
-      traverse(doc);
-    }
-
-    // Also parse raw HTML for any standard images or links if not in JSON
-    const html = editor.getHTML();
-    const imgMatches = html.match(/<img\b[^>]*>/gi) || [];
-    if (imgMatches.length > imagesTotal) {
-      imagesTotal = imgMatches.length;
-      imagesMissingAlt = imgMatches.filter((img) => !img.includes('alt=') || /alt=["']\s*["']/i.test(img)).length;
-    }
-
-    const linkMatches = html.match(/<a\b[^>]*>([\s\S]*?)<\/a>/gi) || [];
-    if (linkMatches.length > linksTotal) {
-      linksTotal = linkMatches.length;
-      linksEmpty = linkMatches.filter((a) => {
-        const inner = a.replace(/<[^>]*>/g, '').trim();
-        return inner.length === 0;
-      }).length;
-    }
-
-    // Calculate score
-    let score = 50;
-    if (h1Count === 1) score += 15;
-    else if (h1Count > 1) score += 5;
-    
-    if (wordCount >= 300) score += 15;
-    else if (wordCount >= 100) score += 8;
-
-    if (imagesTotal === 0 || imagesMissingAlt === 0) score += 10;
-    if (linksEmpty === 0) score += 5;
-    if (linksTotal >= 1) score += 5;
-
-    // Heading structure bonus
-    if (h1Count >= 1 && (h2Count >= 1 || h3Count === 0)) score += 10;
-
-    score = Math.min(100, Math.max(20, score));
-
-    let rating = 'Poor';
-    let color = 'text-rose-500';
-    if (score >= 80) {
-      rating = 'Good';
-      color = 'text-emerald-600';
-    } else if (score >= 50) {
-      rating = 'Fair';
-      color = 'text-amber-500';
-    }
-
-    return {
-      score,
-      rating,
-      color,
-      h1Count,
-      h2Count,
-      h3Count,
-      otherHeadings,
-      words: wordCount,
-      imagesTotal,
-      imagesMissingAlt,
-      linksTotal,
-      linksEmpty,
-    };
+    return () => clearTimeout(timer);
   }, [editor, editor?.state.doc, wordCount, refreshKey]);
 
   // Auto-Fix Structure Issues
@@ -218,6 +229,7 @@ export const SeoCheckSidebar: React.FC<SeoCheckSidebarProps> = ({
       editor.chain().focus().insertContentAt(0, '<h1>Document Title</h1><p></p>').run();
     }
 
+    setAnalysis(computeSeoAnalysis(editor, wordCount));
     setRefreshKey((k) => k + 1);
     setFixSuccessMsg('Structure issues auto-fixed: H1 tag & headings hierarchy resolved!');
     setTimeout(() => setFixSuccessMsg(null), 3500);

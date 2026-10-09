@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useEffect, useCallback, useMemo, useRef, Suspense } from 'react';
+import { createPortal } from 'react-dom';
 import { useEditor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Underline from '@tiptap/extension-underline';
@@ -36,6 +37,7 @@ import {
   CustomTableCell,
   CustomTableHeader,
   CustomDiv,
+  CustomImage,
 } from './extensions/customExtensions';
 import { MathInline, MathBlock } from './extensions/mathExtension';
 import {
@@ -46,6 +48,7 @@ import {
 } from './utils/formatPainter';
 import { initialDocumentContent } from './utils/initialContent';
 import { RibbonTab, DocumentSettings, DocumentStats, DocumentComment } from './types';
+import { calculateDocumentPages } from './utils/pageCalculator';
 
 import { RibbonHeader } from './components/RibbonHeader';
 import { RibbonToolbar } from './components/RibbonToolbar';
@@ -131,7 +134,11 @@ const NavPaneLoadingFallback = () => (
 );
 
 const BackstageLoadingFallback = () => (
-  <div className="fixed inset-0 z-50 bg-[#185abd] flex items-center justify-center text-white">
+  <div
+    id="word-file-backstage-loading"
+    className="fixed inset-0 z-[99990] bg-[#185abd] flex items-center justify-center text-white"
+    style={{ position: 'fixed', zIndex: 99990 }}
+  >
     <div className="flex flex-col items-center gap-3">
       <div className="w-8 h-8 border-3 border-white border-t-transparent rounded-full animate-spin" />
       <span className="text-sm font-medium tracking-wide">Loading File Menu...</span>
@@ -264,10 +271,19 @@ export default function App() {
       ...defaultMeta,
       orientation: 'portrait',
       pageSize: 'a4',
-      margins: 'normal',
+      margins: 'narrow',
       pageColor: '#ffffff',
       zoom: 100,
       showRuler: true,
+      rulerUnit: (() => {
+        try {
+          const val = localStorage.getItem('wordpad_ruler_unit');
+          if (val === 'cm' || val === 'inches') return val;
+        } catch {
+          // ignore
+        }
+        return 'inches';
+      })(),
       showGridlines: false,
       showParagraphMarks: true,
       showNavigationPane: false,
@@ -321,7 +337,6 @@ export default function App() {
       })(),
       isDarkMode: false,
       columns: 1,
-      layoutPages: 1,
       showShadow: true,
       pageBorderStyle: 'simple-shadow',
       watermark: '',
@@ -345,41 +360,70 @@ export default function App() {
     setActivePageNumber(active);
   }, []);
 
-  // Calculate live statistics
-  const updateStats = useCallback((editorInstance: any) => {
+  // Timer refs for smart debouncing
+  const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const heavyStatsTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // 1. Fast, instant character & word count on every keystroke
+  const updateLightStats = useCallback((editorInstance: any) => {
     if (!editorInstance) return;
     const text = editorInstance.getText();
     const words = editorInstance.storage.characterCount?.words() ?? (text.trim() ? text.trim().split(/\s+/).length : 0);
     const characters = editorInstance.storage.characterCount?.characters() ?? text.length;
     const charactersNoSpaces = text.replace(/\s/g, '').length;
-    
-    // Count non-empty paragraphs
+    const readingTimeMinutes = Math.max(1, Math.ceil(words / 200));
+
+    setStats((prev) => ({
+      ...prev,
+      words,
+      characters,
+      charactersNoSpaces,
+      readingTimeMinutes,
+    }));
+  }, []);
+
+  // 2. Heavy DOM & AST structure calculations (paragraphs & multi-page DOM measuring)
+  const updateHeavyStats = useCallback((editorInstance: any) => {
+    if (!editorInstance || editorInstance.isDestroyed) return;
+
+    // Count non-empty paragraphs from JSON AST
     const json = editorInstance.getJSON();
     let paragraphs = 0;
     if (json.content) {
       paragraphs = json.content.filter((n: any) => n.type === 'paragraph' || n.type === 'heading').length;
     }
 
-    const readingTimeMinutes = Math.max(1, Math.ceil(words / 200));
-
-    setStats({
-      words,
-      characters,
-      charactersNoSpaces,
+    setStats((prev) => ({
+      ...prev,
       paragraphs: Math.max(1, paragraphs),
-      readingTimeMinutes,
-    });
+    }));
 
-    // Also update total pages count based on page breaks & content height
+    // Update total pages count based on user page breaks & DOM calibrations
     const pmEl = document.querySelector('.ProseMirror');
     if (pmEl) {
-      const explicitBreaks = pmEl.querySelectorAll('.word-page-break, .word-blank-page, hr.word-page-break').length;
-      const effectiveHeight = 960;
-      const scrollHeight = pmEl.scrollHeight || 0;
-      const naturalPages = Math.max(1, Math.ceil(scrollHeight / effectiveHeight));
-      setTotalPagesCount(Math.max(1, explicitBreaks + 1, naturalPages));
+      const docPages = calculateDocumentPages(
+        editorInstance,
+        settingsRef.current.pageSize,
+        settingsRef.current.orientation
+      );
+      setTotalPagesCount(docPages.length);
     }
   }, []);
+
+  // Coordinated stats scheduler: instant light stats + 400ms deferred heavy stats
+  const scheduleStatsUpdate = useCallback((editorInstance: any, immediateHeavy: boolean = false) => {
+    updateLightStats(editorInstance);
+    if (heavyStatsTimerRef.current) {
+      clearTimeout(heavyStatsTimerRef.current);
+    }
+    if (immediateHeavy) {
+      updateHeavyStats(editorInstance);
+    } else {
+      heavyStatsTimerRef.current = setTimeout(() => {
+        updateHeavyStats(editorInstance);
+      }, 400);
+    }
+  }, [updateLightStats, updateHeavyStats]);
 
   // Settings ref to access current mode inside callbacks without stale closures
   const settingsRef = useRef(settings);
@@ -447,7 +491,7 @@ export default function App() {
       TableRow,
       CustomTableHeader,
       CustomTableCell,
-      Image.configure({
+      CustomImage.configure({
         inline: true,
         allowBase64: true,
       }),
@@ -530,24 +574,53 @@ export default function App() {
       },
     },
     onUpdate: ({ editor: ed }) => {
-      updateStats(ed);
+      // 1. Instant light stats + 400ms deferred heavy stats
+      scheduleStatsUpdate(ed, false);
+
+      // 2. Auto-save with 1.5s trailing debounce
       if (autoSaveEnabledRef.current) {
-        // Auto-save debounce
-        try {
-          localStorage.setItem(STORAGE_KEY_CONTENT, ed.getHTML());
-          setIsSaved(true);
-        } catch {
-          // storage quota fallback
+        setIsSaved(false);
+        if (autoSaveTimerRef.current) {
+          clearTimeout(autoSaveTimerRef.current);
         }
+        autoSaveTimerRef.current = setTimeout(() => {
+          try {
+            if (!ed.isDestroyed) {
+              localStorage.setItem(STORAGE_KEY_CONTENT, ed.getHTML());
+              setIsSaved(true);
+            }
+          } catch {
+            // storage quota fallback
+          }
+        }, 1500);
       } else {
         // AutoSave is OFF: marked as unsaved until user manually saves
         setIsSaved(false);
       }
     },
     onCreate: ({ editor: ed }) => {
-      updateStats(ed);
+      // Immediate full stats calculation on initial load
+      scheduleStatsUpdate(ed, true);
     },
   });
+
+  // Flush pending auto-save immediately if user closes or reloads page
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      if (autoSaveTimerRef.current && editor && !editor.isDestroyed && autoSaveEnabledRef.current) {
+        clearTimeout(autoSaveTimerRef.current);
+        try {
+          localStorage.setItem(STORAGE_KEY_CONTENT, editor.getHTML());
+        } catch {}
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+      if (heavyStatsTimerRef.current) clearTimeout(heavyStatsTimerRef.current);
+    };
+  }, [editor]);
 
   // Keep editable state synced with read mode
   useEffect(() => {
@@ -555,6 +628,12 @@ export default function App() {
       editor.setEditable(settings.viewMode !== 'read');
     }
   }, [editor, settings.viewMode]);
+
+  // Sync document.title with document name and Nedit v5.2 branding
+  useEffect(() => {
+    const docName = settings.title?.trim();
+    document.title = docName ? `${docName} - Nedit v5.2` : 'Nedit v5.2';
+  }, [settings.title]);
 
   // Smart Format Painter State (In-Memory, strictly avoiding clipboard)
   const [formatPainter, setFormatPainter] = useState<CopiedWordFormat | null>(null);
@@ -823,56 +902,60 @@ export default function App() {
 
       {/* Microsoft Word Top Header Ribbon (Hidden in Focus Mode) */}
       {!settings.isFocusMode && (
-        <RibbonHeader
-          editor={editor}
-          settings={settings}
-          onUpdateSettings={handleUpdateSettings}
-          onOpenBackstage={(tab?: any) => {
-            setBackstageInitialTab(tab || 'info');
-            setShowBackstage(true);
-          }}
-          onOpenFindReplace={() => setShowFindReplace(true)}
-          onOpenStats={() => setShowStatsModal(true)}
-          onSelectTab={setActiveTab}
-          onSave={handleSaveToLocalStorage}
-          onPrint={handlePrint}
-          isSaved={isSaved}
-          autoSaveEnabled={autoSaveEnabled}
-          onToggleAutoSave={handleToggleAutoSave}
-          onOpenThemes={handleOpenThemes}
-          commentsCount={comments.length}
-          onToggleComments={() => setShowCommentsPanel((prev) => !prev)}
-        />
+        <div className="relative z-[200] shrink-0" style={{ position: 'relative', zIndex: 200 }}>
+          <RibbonHeader
+            editor={editor}
+            settings={settings}
+            onUpdateSettings={handleUpdateSettings}
+            onOpenBackstage={(tab?: any) => {
+              setBackstageInitialTab(tab || 'info');
+              setShowBackstage(true);
+            }}
+            onOpenFindReplace={() => setShowFindReplace(true)}
+            onOpenStats={() => setShowStatsModal(true)}
+            onSelectTab={setActiveTab}
+            onSave={handleSaveToLocalStorage}
+            onPrint={handlePrint}
+            isSaved={isSaved}
+            autoSaveEnabled={autoSaveEnabled}
+            onToggleAutoSave={handleToggleAutoSave}
+            onOpenThemes={handleOpenThemes}
+            commentsCount={comments.length}
+            onToggleComments={() => setShowCommentsPanel((prev) => !prev)}
+          />
+        </div>
       )}
 
       {/* Office Ribbon Toolbar (Hidden in Focus Mode) */}
       {!settings.isFocusMode && (
-        <RibbonToolbar
-          editor={editor}
-          activeTab={activeTab}
-          onSelectTab={setActiveTab}
-          settings={settings}
-          onUpdateSettings={handleUpdateSettings}
-          onOpenBackstage={handleOpenBackstageNormal}
-          onOpenFindReplace={() => setShowFindReplace(true)}
-          onOpenStats={() => setShowStatsModal(true)}
-          comments={comments}
-          onSetComments={setComments}
-          showCommentsPanel={showCommentsPanel}
-          onToggleCommentsPanel={(show) =>
-            setShowCommentsPanel((prev) => (show !== undefined ? show : !prev))
-          }
-          formatPainter={formatPainter}
-          onToggleFormatPainter={handleToggleFormatPainter}
-          onClearFormatPainter={handleClearFormatPainter}
-          onApplyFormatPainter={handleApplyFormatPainter}
-          autoCorrectEnabled={autoCorrectEnabled}
-          onToggleAutoCorrect={handleToggleAutoCorrect}
-        />
+        <div className="relative z-50 shrink-0" style={{ position: 'relative', zIndex: 50 }}>
+          <RibbonToolbar
+            editor={editor}
+            activeTab={activeTab}
+            onSelectTab={setActiveTab}
+            settings={settings}
+            onUpdateSettings={handleUpdateSettings}
+            onOpenBackstage={handleOpenBackstageNormal}
+            onOpenFindReplace={() => setShowFindReplace(true)}
+            onOpenStats={() => setShowStatsModal(true)}
+            comments={comments}
+            onSetComments={setComments}
+            showCommentsPanel={showCommentsPanel}
+            onToggleCommentsPanel={(show) =>
+              setShowCommentsPanel((prev) => (show !== undefined ? show : !prev))
+            }
+            formatPainter={formatPainter}
+            onToggleFormatPainter={handleToggleFormatPainter}
+            onClearFormatPainter={handleClearFormatPainter}
+            onApplyFormatPainter={handleApplyFormatPainter}
+            autoCorrectEnabled={autoCorrectEnabled}
+            onToggleAutoCorrect={handleToggleAutoCorrect}
+          />
+        </div>
       )}
 
       {/* Main Workspace Body: Navigation Pane + Document Canvas */}
-      <div className="flex-1 flex overflow-hidden relative">
+      <div className="flex-1 flex overflow-hidden relative z-0" style={{ position: 'relative', zIndex: 0 }}>
         {settings.showNavigationPane && (
           <Suspense fallback={<NavPaneLoadingFallback />}>
             <NavigationPane
@@ -895,6 +978,12 @@ export default function App() {
           formatPainter={formatPainter}
           onApplyFormatPainter={handleApplyFormatPainter}
           onCancelFormatPainter={handleClearFormatPainter}
+          onFocusLayoutTab={() => {
+            setActiveTab('layout');
+            if (settings.isFocusMode) {
+              handleUpdateSettings({ isFocusMode: false });
+            }
+          }}
         />
 
         {/* SEO Check Sidebar (Toggled via Analyze SEO button) */}
@@ -1079,7 +1168,7 @@ export default function App() {
         </Suspense>
       )}
 
-      {showBackstage && (
+      {showBackstage && typeof document !== 'undefined' && createPortal(
         <Suspense fallback={<BackstageLoadingFallback />}>
           <FileBackstage
             editor={editor}
@@ -1094,7 +1183,8 @@ export default function App() {
             onCleanLocalStorage={handleCleanLocalStorage}
             initialTab={backstageInitialTab}
           />
-        </Suspense>
+        </Suspense>,
+        document.body
       )}
 
       {/* Smart AutoCorrect Unobtrusive Indicator & Popover */}

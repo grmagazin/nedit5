@@ -102,6 +102,23 @@ export function injectPdfPrintStyles(options: PdfPrintOptions = {}): () => void 
         color: #000000 !important;
       }
 
+      /* Hide rulers, vertical guide lines, toolbar chrome completely */
+      #word-sticky-ruler-bar,
+      #word-sticky-ruler-bar *,
+      .interactive-ruler,
+      .interactive-ruler *,
+      .no-print,
+      .no-print * {
+        display: none !important;
+        visibility: hidden !important;
+        height: 0 !important;
+        width: 0 !important;
+        border: none !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        overflow: hidden !important;
+      }
+
       /* Protect tables, code blocks, images from midway clipping */
       table, figure, img, pre, .equation-block, .card-block {
         break-inside: avoid !important;

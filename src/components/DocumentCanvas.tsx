@@ -6,9 +6,15 @@ import { EditorContextMenu } from './EditorContextMenu';
 import { ImageClickMenu } from './ImageClickMenu';
 import { HyperLinkOverlay } from './HyperLinkOverlay';
 import { InsertLinkModal } from './InsertLinkModal';
-import { Paintbrush } from 'lucide-react';
+import { Paintbrush, FileText, BookOpen } from 'lucide-react';
 import { CopiedWordFormat, describeFormat } from '../utils/formatPainter';
-import { calculateDocumentPages, formatSmartPageText } from '../utils/pageCalculator';
+import {
+  calculateDocumentPages,
+  formatSmartPageText,
+  DEFAULT_PAGE_BREAK_CALIBRATIONS,
+  getCalibrationKey,
+  getCalibrationLabel,
+} from '../utils/pageCalculator';
 
 interface DocumentCanvasProps {
   editor: Editor | null;
@@ -17,6 +23,7 @@ interface DocumentCanvasProps {
   formatPainter?: CopiedWordFormat | null;
   onApplyFormatPainter?: () => void;
   onCancelFormatPainter?: () => void;
+  onFocusLayoutTab?: () => void;
 }
 
 export const DocumentCanvas: React.FC<DocumentCanvasProps> = ({
@@ -26,9 +33,8 @@ export const DocumentCanvas: React.FC<DocumentCanvasProps> = ({
   formatPainter,
   onApplyFormatPainter,
   onCancelFormatPainter,
+  onFocusLayoutTab,
 }) => {
-  const isTwoPages = settings.layoutPages === 2;
-
   // Real multi-page calculation for accurate dynamic header/footer page counters
   const calculatedPages = useMemo(() => {
     return calculateDocumentPages(editor, settings.pageSize, settings.orientation);
@@ -196,11 +202,11 @@ export const DocumentCanvas: React.FC<DocumentCanvasProps> = ({
   else if (isCanvasDark) canvasBgHex = '#181818';
   else if (isSepia) canvasBgHex = '#e8dfcc';
 
-  const twoPagesColumnGap = useMemo(() => {
-    const pl = parseInt(marginPaddingStyle.paddingLeft || '96', 10);
-    const pr = parseInt(marginPaddingStyle.paddingRight || '96', 10);
-    return `${pl + pr + 10}px`;
-  }, [marginPaddingStyle.paddingLeft, marginPaddingStyle.paddingRight]);
+  const rulerBorderHex = isFullDark || isCanvasDark
+    ? '#333333'
+    : isSepia
+    ? '#d8ccb8'
+    : '#dad9d8';
 
   // Handle Page Border & Shadow Styles (Simple Shadow, Deep Shadow, Box Border 1px, Thick Border 2px, Dots Border, Double Border, None)
   const effectivePageBorderStyle =
@@ -331,7 +337,111 @@ export const DocumentCanvas: React.FC<DocumentCanvasProps> = ({
   // Hyperlink Dialog State (triggered from Context Menu or canvas)
   const [showLinkModal, setShowLinkModal] = useState(false);
 
+  // Reference for real-time document sheet height measurement
+  const docPageRef = React.useRef<HTMLDivElement>(null);
+  const [docHeight, setDocHeight] = useState<number>(1424);
+
+  // Smart Page Break View & Real-world Calibration State (matching user photo)
+  const [showPageBreaks, setShowPageBreaks] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('wordpad_show_page_breaks');
+      if (saved !== null) return saved === 'true';
+    } catch {}
+    return true; // Default to active matching user photo
+  });
+
+  const activeCalibrationKey = getCalibrationKey(settings.pageSize || 'a4', settings.orientation || 'portrait');
+  const paperLabel = getCalibrationLabel(settings.pageSize || 'a4', settings.orientation || 'portrait');
+
+  const [pageBreakCalibratedHeight, setPageBreakCalibratedHeight] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem(`wordpad_page_break_calibrated_height_${activeCalibrationKey}`);
+      if (saved) {
+        const val = parseInt(saved, 10);
+        if (!isNaN(val) && val >= 400 && val <= 3500) return val;
+      }
+    } catch {}
+    return DEFAULT_PAGE_BREAK_CALIBRATIONS[activeCalibrationKey] || (settings.orientation === 'landscape' ? 880 : 1250);
+  });
+
+  // Keep calibrated height synced when paper size OR orientation changes
+  useEffect(() => {
+    const key = getCalibrationKey(settings.pageSize || 'a4', settings.orientation || 'portrait');
+    try {
+      const saved = localStorage.getItem(`wordpad_page_break_calibrated_height_${key}`);
+      if (saved) {
+        const val = parseInt(saved, 10);
+        if (!isNaN(val) && val >= 400 && val <= 3500) {
+          setPageBreakCalibratedHeight(val);
+          return;
+        }
+      }
+    } catch {}
+    const defaultVal = DEFAULT_PAGE_BREAK_CALIBRATIONS[key] || (settings.orientation === 'landscape' ? 880 : 1250);
+    setPageBreakCalibratedHeight(defaultVal);
+  }, [settings.pageSize, settings.orientation]);
+
+  // Track document page height dynamically for accurate page break placement
+  useEffect(() => {
+    if (!docPageRef.current) return;
+    const updateHeight = () => {
+      if (docPageRef.current) {
+        setDocHeight(docPageRef.current.offsetHeight);
+      }
+    };
+    updateHeight();
+    const ro = new ResizeObserver(updateHeight);
+    ro.observe(docPageRef.current);
+    return () => ro.disconnect();
+  }, [editor?.state.doc]);
+
+  const handleAdjustHeight = (delta: number = 5) => {
+    setPageBreakCalibratedHeight((prev) => {
+      const next = Math.max(400, Math.min(3500, prev + delta));
+      const key = getCalibrationKey(settings.pageSize || 'a4', settings.orientation || 'portrait');
+      try {
+        localStorage.setItem(`wordpad_page_break_calibrated_height_${key}`, next.toString());
+        if (key === 'a4_portrait') {
+          localStorage.setItem('wordpad_page_break_calibrated_height', next.toString());
+          localStorage.setItem('wordpad_a4_calibration_custom_height', next.toString());
+        }
+        window.dispatchEvent(
+          new CustomEvent('page-calibration-change', { detail: { key, height: next } })
+        );
+      } catch {}
+      return next;
+    });
+  };
+
+  const handleTogglePageBreaks = () => {
+    setShowPageBreaks((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem('wordpad_show_page_breaks', String(next));
+      } catch {}
+      return next;
+    });
+  };
+
+  // Calculate page break lines
+  const pageBreakLines = useMemo(() => {
+    if (!showPageBreaks) return [];
+    const minHeight = pageDimensions.minHeight;
+    const effectiveDocHeight = Math.max(minHeight, docHeight);
+    const count = Math.max(1, Math.ceil(effectiveDocHeight / pageBreakCalibratedHeight));
+    const lines: number[] = [];
+    for (let p = 1; p <= count; p++) {
+      lines.push(p);
+    }
+    return lines;
+  }, [showPageBreaks, pageDimensions.minHeight, docHeight, pageBreakCalibratedHeight]);
+
   const handleContextMenu = (e: React.MouseEvent) => {
+    if (
+      document.querySelector('[data-word-modal="true"], .word-modal-backdrop, #word-file-backstage, .file-backstage-container')
+    ) {
+      return;
+    }
     e.preventDefault();
     setContextMenu({
       isOpen: true,
@@ -345,7 +455,7 @@ export const DocumentCanvas: React.FC<DocumentCanvasProps> = ({
       id="word-canvas-workspace"
       data-hyperlink-mode={settings.hyperLinkMode || 'navigate'}
       onContextMenu={handleContextMenu}
-      className={`flex-1 overflow-y-auto overflow-x-auto relative flex flex-col items-center py-6 px-4 transition-colors ${canvasBgClass}`}
+      className={`flex-1 overflow-y-auto overflow-x-auto relative flex flex-col items-center pt-0 pb-8 px-0 transition-colors ${canvasBgClass}`}
       style={{
         backgroundImage: settings.showGridlines
           ? `linear-gradient(to right, ${canvasGridColor} 1px, transparent 1px), linear-gradient(to bottom, ${canvasGridColor} 1px, transparent 1px)`
@@ -353,26 +463,48 @@ export const DocumentCanvas: React.FC<DocumentCanvasProps> = ({
         backgroundSize: settings.showGridlines ? '24px 24px' : undefined,
       }}
     >
-      {/* Container scaling wrapper */}
-      <div
-        style={{
-          transform: `scale(${scale})`,
-          transformOrigin: 'top center',
-          marginBottom: `${Math.max(0, (scale - 1) * 800)}px`,
-        }}
-        className="flex flex-col items-center transition-transform duration-100 ease-out"
-      >
-        {/* Top Interactive Ruler (Hidden in 2 Pages mode, shown in 1 Page mode if checked in ruler checkbox, hidden in Focus Mode) */}
-        {settings.showRuler && !settings.isFocusMode && !isTwoPages && (
-          <div className="mb-1 rounded-t-xs overflow-hidden shadow-xs">
+      {/* 1. Word-Style Sticky Horizontal Ruler Bar (Directly below Ribbon Toolbar, 0px space, full screen width) */}
+      {settings.showRuler && !settings.isFocusMode && (
+        <div
+          id="word-sticky-ruler-bar"
+          className={`no-print print:hidden sticky top-0 z-5 w-full flex-shrink-0 flex justify-center border-b select-none ${
+            isFullDark || isCanvasDark
+              ? 'border-[#333333]'
+              : isSepia
+              ? 'border-[#d8ccb8]'
+              : 'border-[#dad9d8]'
+          }`}
+          style={{
+            backgroundColor: canvasBgHex,
+            minWidth: `${pageDimensions.width * scale + 80}px`,
+            height: `${Math.round(24 * scale)}px`,
+            zIndex: 5,
+            borderBottom: `1px solid ${rulerBorderHex}`,
+          }}
+        >
+          <div
+            style={{
+              transform: `scale(${scale})`,
+              transformOrigin: 'top center',
+              width: `${pageDimensions.width}px`,
+              height: '24px',
+            }}
+            className="no-print print:hidden flex-shrink-0 transition-transform duration-100 ease-out shadow-xs relative"
+          >
             <InteractiveRuler
               editor={editor}
               margins={settings.margins}
               customMargins={settings.customMargins}
               pageWidth={pageDimensions.width}
               zoom={settings.zoom}
+              unit={settings.rulerUnit || 'inches'}
               themeMode={effectiveThemeMode}
-              onUpdateMargin={(margin) => onUpdateSettings({ margins: margin })}
+              onUpdateMargin={(margin) => onUpdateSettings({ margins: margin, customMargins: undefined })}
+              onCycleMarginCarousel={(margin) => {
+                onUpdateSettings({ margins: margin, customMargins: undefined });
+                onFocusLayoutTab?.();
+              }}
+              onFocusLayoutTab={onFocusLayoutTab}
               onUpdateCustomMargins={(custom) =>
                 onUpdateSettings({ customMargins: custom, margins: 'custom' })
               }
@@ -385,9 +517,77 @@ export const DocumentCanvas: React.FC<DocumentCanvasProps> = ({
               isNavigationOpen={!!settings.showNavigationPane}
               isFormatterOpen={!!settings.showFormatterPane}
             />
-          </div>
-        )}
 
+            {/* Smart 3 Buttons: Page Break View & Height Calibration (+ / -) */}
+            <div
+              className="absolute left-full top-0 ml-1.5 flex items-center h-6 select-none z-20"
+              style={{ height: '24px' }}
+            >
+              {/* Button 1: View Page Breaks (FileText icon, blue background when active) */}
+              <button
+                type="button"
+                onClick={handleTogglePageBreaks}
+                title={showPageBreaks ? `Hide ${paperLabel} page breaks` : `Show ${paperLabel} page breaks`}
+                className={`w-6 h-6 rounded-[3px] flex items-center justify-center cursor-pointer transition-colors shadow-2xs ${
+                  showPageBreaks
+                    ? 'bg-[#185abd] text-white border border-[#185abd] hover:bg-[#134896]'
+                    : isFullDark || isCanvasDark
+                    ? 'bg-neutral-800 text-neutral-300 border border-neutral-600 hover:border-[#185abd] hover:text-[#185abd]'
+                    : 'bg-white text-neutral-600 border border-neutral-300 hover:border-[#185abd] hover:text-[#185abd]'
+                }`}
+                aria-label={showPageBreaks ? `Hide ${paperLabel} page breaks` : `Show ${paperLabel} page breaks`}
+              >
+                <FileText size={14} className="shrink-0" />
+              </button>
+
+              {/* Buttons 2 & 3: Compact Vertical Stepper (-5 / +5) for real height calibration */}
+              <div className="flex flex-col ml-0.5 h-6 justify-between">
+                {/* Minus Button: Shorter page (-5px) */}
+                <button
+                  type="button"
+                  onClick={(e) => handleAdjustHeight(e.shiftKey ? -25 : -5)}
+                  title={`Calibrate: shorter ${paperLabel} page (${pageBreakCalibratedHeight - 5}px)`}
+                  className={`w-3.5 h-[11.5px] flex items-center justify-center border rounded-t-[2px] cursor-pointer text-[10px] font-bold leading-none select-none transition-colors ${
+                    isFullDark || isCanvasDark
+                      ? 'bg-neutral-800 hover:bg-neutral-700 border-neutral-600 text-neutral-200'
+                      : 'bg-white hover:bg-neutral-100 border-neutral-300 text-neutral-700'
+                  }`}
+                  aria-label={`Calibrate: shorter ${paperLabel} page (${pageBreakCalibratedHeight - 5}px)`}
+                >
+                  &minus;
+                </button>
+
+                {/* Plus Button: Taller page (+5px) */}
+                <button
+                  type="button"
+                  onClick={(e) => handleAdjustHeight(e.shiftKey ? 25 : 5)}
+                  title={`Calibrate: taller ${paperLabel} page (${pageBreakCalibratedHeight + 5}px)`}
+                  className={`w-3.5 h-[11.5px] flex items-center justify-center border border-t-0 rounded-b-[2px] cursor-pointer text-[10px] font-bold leading-none select-none transition-colors ${
+                    isFullDark || isCanvasDark
+                      ? 'bg-neutral-800 hover:bg-neutral-700 border-neutral-600 text-neutral-200'
+                      : 'bg-white hover:bg-neutral-100 border-neutral-300 text-neutral-700'
+                  }`}
+                  aria-label={`Calibrate: taller ${paperLabel} page (${pageBreakCalibratedHeight + 5}px)`}
+                >
+                  &#43;
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 2. Container scaling wrapper for Document Pages */}
+      <div
+        style={{
+          transform: `scale(${scale})`,
+          transformOrigin: 'top center',
+          marginBottom: `${Math.max(0, (scale - 1) * 800)}px`,
+        }}
+        className={`flex flex-col items-center px-4 transition-transform duration-100 ease-out ${
+          settings.showRuler && !settings.isFocusMode ? 'pt-4' : 'pt-6'
+        }`}
+      >
         {/* Floating Format Painter Active Banner */}
         {formatPainter && (
           <div className="fixed top-28 left-1/2 -translate-x-1/2 z-40 bg-white/95 dark:bg-neutral-800/95 backdrop-blur-md border border-amber-300 dark:border-amber-600 shadow-xl px-4 py-1.5 rounded-full flex items-center gap-3 animate-in fade-in slide-in-from-top-2">
@@ -412,8 +612,45 @@ export const DocumentCanvas: React.FC<DocumentCanvasProps> = ({
           </div>
         )}
 
+        {/* Smart Reading Mode Notification Banner at Head of Document */}
+        {settings.viewMode === 'read' && (
+          <div
+            id="word-reading-mode-banner"
+            className="w-full max-w-2xl mb-3.5 z-30 bg-blue-50/95 dark:bg-neutral-850/95 border border-blue-200 dark:border-blue-900/60 shadow-md rounded-xl px-4 py-2.5 flex items-center justify-between gap-3 animate-in fade-in slide-in-from-top-2 no-print select-none backdrop-blur-xs"
+            role="status"
+            aria-live="polite"
+          >
+            <div className="flex items-center gap-2.5 min-w-0">
+              <span className="p-1.5 rounded-lg bg-blue-100 dark:bg-blue-900/50 text-[#185abd] dark:text-blue-300 shrink-0">
+                <BookOpen size={16} />
+              </span>
+              <div className="text-xs text-blue-950 dark:text-blue-100 leading-tight">
+                <span className="font-bold">You are in reading mode</span>
+                <span className="text-blue-700 dark:text-blue-300 ml-1.5 hidden sm:inline">
+                  / switch from footer Layouts
+                </span>
+                <p className="text-[11px] text-blue-600 dark:text-blue-400 mt-0.5 sm:hidden">
+                  Switch from footer Layouts
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-1.5 shrink-0">
+              <button
+                type="button"
+                onClick={() => onUpdateSettings({ viewMode: 'print' })}
+                className="text-[11px] font-semibold px-2.5 py-1 rounded-md bg-[#185abd] hover:bg-[#114b9c] text-white shadow-2xs transition-all active:scale-95 cursor-pointer flex items-center gap-1"
+                title="Switch back to Print Layout"
+              >
+                <span>Print Layout</span>
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* The Word Document Page Sheet */}
         <div
+          ref={docPageRef}
           id="word-document-page"
           data-hyperlink-mode={settings.hyperLinkMode || 'navigate'}
           className={`print-page transition-all duration-200 rounded-[2px] relative overflow-hidden ${pageBorderClass} ${shadowClass} ${
@@ -423,7 +660,7 @@ export const DocumentCanvas: React.FC<DocumentCanvasProps> = ({
           } ${formatPainter ? 'format-painter-active' : ''}`}
           style={{
             ...marginPaddingStyle,
-            width: isTwoPages ? `${pageDimensions.width * 2 + 10}px` : `${pageDimensions.width}px`,
+            width: `${pageDimensions.width}px`,
             minHeight: `${pageDimensions.minHeight}px`,
             backgroundColor: pageBgColor,
             color: pageTextColor,
@@ -442,34 +679,8 @@ export const DocumentCanvas: React.FC<DocumentCanvasProps> = ({
             }
           }}
         >
-          {/* 2-Pages Center 10px Space / Gap between pages */}
-          {isTwoPages && (
-            <>
-              <style>{`
-                #word-document-page .ProseMirror {
-                  columns: 2 !important;
-                  column-gap: ${twoPagesColumnGap} !important;
-                  column-fill: auto;
-                }
-              `}</style>
-              <div
-                className="absolute inset-y-0 pointer-events-none select-none z-0"
-                style={{
-                  left: `${pageDimensions.width}px`,
-                  width: '10px',
-                  backgroundColor: canvasBgHex,
-                  borderLeft: isFullDark ? '1px solid #383838' : '1px solid rgba(0,0,0,0.1)',
-                  borderRight: isFullDark ? '1px solid #383838' : '1px solid rgba(0,0,0,0.1)',
-                  boxShadow: isFullDark || isCanvasDark
-                    ? 'inset 2px 0 4px rgba(0,0,0,0.6), inset -2px 0 4px rgba(0,0,0,0.6)'
-                    : 'inset 2px 0 4px rgba(0,0,0,0.06), inset -2px 0 4px rgba(0,0,0,0.06)',
-                }}
-              />
-            </>
-          )}
-
-          {/* Watermark Overlay if active (Hidden in 2 Pages mode, shown in 1 Page mode) */}
-          {settings.watermark && !isTwoPages && (
+          {/* Watermark Overlay if active */}
+          {settings.watermark && (
             <div
               className="absolute inset-0 flex items-center justify-center pointer-events-none select-none z-0 overflow-hidden"
               aria-hidden="true"
@@ -482,8 +693,8 @@ export const DocumentCanvas: React.FC<DocumentCanvasProps> = ({
             </div>
           )}
 
-          {/* Document Header (Configured via Info & Setup - Hidden in 2 Pages mode, shown in 1 Page mode) */}
-          {!isTwoPages && settings.showHeaderFooter !== false && (settings.headerLeft || settings.headerRight || settings.headerShowPages) && (
+          {/* Document Header (Configured via Info & Setup) */}
+          {settings.showHeaderFooter !== false && (settings.headerLeft || settings.headerRight || settings.headerShowPages) && (
             <div className="absolute top-5 left-10 right-10 flex items-center justify-between text-[11px] text-neutral-400/90 border-b border-neutral-200/60 pb-1 select-none pointer-events-none font-sans z-10">
               <span className="truncate max-w-[33%]">{settings.headerLeft || ''}</span>
               <span className="text-center font-medium">
@@ -503,9 +714,7 @@ export const DocumentCanvas: React.FC<DocumentCanvasProps> = ({
           <div
             data-hyperlink-mode={settings.hyperLinkMode || 'navigate'}
             className={`relative z-10 ${
-              isTwoPages
-                ? '[&_.ProseMirror]:columns-2 [&_.ProseMirror]:gap-12'
-                : settings.columns === 2
+              settings.columns === 2
                 ? '[&_.ProseMirror]:columns-2 [&_.ProseMirror]:gap-8'
                 : ''
             } ${
@@ -551,8 +760,43 @@ export const DocumentCanvas: React.FC<DocumentCanvasProps> = ({
             <EditorContent editor={editor} />
           </div>
 
-          {/* Document Footer (Configured via Info & Setup - Hidden in 2 Pages mode, shown in 1 Page mode) */}
-          {!isTwoPages && settings.showHeaderFooter !== false && (settings.footerLeft || settings.footerRight || settings.footerShowPages) && (
+          {/* Real-time Calibrated Page Break Guide Lines (Dotted Blue Line with Page end Label - Never Printed) */}
+          {pageBreakLines.map((pageNum) => {
+            const topPx = pageNum * pageBreakCalibratedHeight;
+            return (
+              <div
+                key={`page-break-${pageNum}`}
+                data-page-break-guide="true"
+                className="page-break-guide-container absolute left-0 right-0 pointer-events-none no-print z-20 group"
+                style={{ top: `${topPx}px` }}
+              >
+                {/* Horizontal dotted blue line spanning across the page */}
+                <div
+                  className="w-full border-b-[1.5px] border-dotted border-[#2563eb] dark:border-[#3b82f6] opacity-85 group-hover:opacity-100 transition-opacity"
+                  style={{
+                    borderBottomStyle: 'dotted',
+                    borderBottomColor: '#2563eb',
+                  }}
+                />
+
+                {/* Right side label: 'Page end {pageNum}' in blue + black tooltip bubble */}
+                <div className="absolute right-4 -top-5 flex flex-col items-end pointer-events-auto select-none">
+                  <span
+                    className="text-[11px] font-semibold text-[#2563eb] dark:text-[#60a5fa] cursor-help tracking-tight px-1.5 py-0.5 rounded bg-white/90 dark:bg-neutral-900/90 backdrop-blur-2xs shadow-2xs"
+                    title={`Page end ${pageNum} (Calibrated at ${topPx}px)`}
+                  >
+                    Page end {pageNum}
+                  </span>
+                  <div className="mt-1 px-2 py-0.5 bg-[#18181b] text-white text-[10px] font-medium rounded shadow-md whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                    Page end {pageNum}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+
+          {/* Document Footer (Configured via Info & Setup) */}
+          {settings.showHeaderFooter !== false && (settings.footerLeft || settings.footerRight || settings.footerShowPages) && (
             <div className="absolute bottom-5 left-10 right-10 flex items-center justify-between text-[11px] text-neutral-400/90 border-t border-neutral-200/60 pt-1 select-none pointer-events-none font-sans z-10">
               <span className="truncate max-w-[33%]">{settings.footerLeft || ''}</span>
               <span className="text-center font-medium">

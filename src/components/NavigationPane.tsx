@@ -15,7 +15,7 @@ import {
   Check,
 } from 'lucide-react';
 import { ThemeMode, PageSize, PageOrientation } from '../types';
-import { calculateDocumentPages, DocumentPageInfo } from '../utils/pageCalculator';
+import { calculateDocumentPages, DocumentPageInfo, getCalibratedPageHeight } from '../utils/pageCalculator';
 
 interface NavigationPaneProps {
   editor: Editor | null;
@@ -55,18 +55,54 @@ export const NavigationPane: React.FC<NavigationPaneProps> = ({
   const [feedbackMessage, setFeedbackMessage] = useState('');
   const [workspaceScrollTop, setWorkspaceScrollTop] = useState(0);
 
-  // Monitor canvas workspace scroll position to keep active page highlighted in sync
+  // Monitor canvas workspace scroll and cursor position with 100ms throttle
   useEffect(() => {
     const workspace = document.getElementById('word-canvas-workspace');
     if (!workspace) return;
 
+    let lastScrollTime = 0;
+    let scrollTimeout: NodeJS.Timeout | null = null;
+
     const handleScroll = () => {
-      setWorkspaceScrollTop(workspace.scrollTop);
+      const now = Date.now();
+      if (now - lastScrollTime >= 100) {
+        lastScrollTime = now;
+        setWorkspaceScrollTop(workspace.scrollTop);
+      } else {
+        if (scrollTimeout) clearTimeout(scrollTimeout);
+        scrollTimeout = setTimeout(() => {
+          lastScrollTime = Date.now();
+          setWorkspaceScrollTop(workspace.scrollTop);
+        }, 100);
+      }
     };
 
     workspace.addEventListener('scroll', handleScroll, { passive: true });
-    return () => workspace.removeEventListener('scroll', handleScroll);
-  }, []);
+
+    const handleEditorSelection = () => {
+      // Sync active page when user moves cursor
+      if (editor && editor.view) {
+        try {
+          const domPos = editor.view.coordsAtPos(editor.state.selection.$from.pos);
+          const workspaceRect = workspace.getBoundingClientRect();
+          const relativeY = domPos.top - workspaceRect.top + workspace.scrollTop;
+          setWorkspaceScrollTop(relativeY);
+        } catch {}
+      }
+    };
+
+    if (editor) {
+      editor.on('selectionUpdate', handleEditorSelection);
+    }
+
+    return () => {
+      workspace.removeEventListener('scroll', handleScroll);
+      if (scrollTimeout) clearTimeout(scrollTimeout);
+      if (editor) {
+        editor.off('selectionUpdate', handleEditorSelection);
+      }
+    };
+  }, [editor]);
 
   // 4 Theme Modes Analysis
   const isFullDark = themeMode === 'fullDark';
@@ -75,10 +111,37 @@ export const NavigationPane: React.FC<NavigationPaneProps> = ({
   const isSepia = themeMode === 'sepia';
   const isLight = !isDark && !isSepia;
 
-  // Real multi-page calculation (detects explicit page breaks and natural page height overflow)
+  // Active calibration height matching user canvas & ruler steppers (-5 / +5)
+  const [calibratedHeight, setCalibratedHeight] = useState<number>(() => {
+    return getCalibratedPageHeight(pageSize, orientation);
+  });
+
+  useEffect(() => {
+    const handleSync = (e?: any) => {
+      if (e?.detail?.height && typeof e.detail.height === 'number') {
+        setCalibratedHeight(e.detail.height);
+      } else {
+        setCalibratedHeight(getCalibratedPageHeight(pageSize, orientation));
+      }
+    };
+    handleSync();
+
+    // Event-driven calibration updates without polling
+    window.addEventListener('storage', handleSync);
+    window.addEventListener('page-calibration-change', handleSync);
+    window.addEventListener('focus', handleSync);
+
+    return () => {
+      window.removeEventListener('storage', handleSync);
+      window.removeEventListener('page-calibration-change', handleSync);
+      window.removeEventListener('focus', handleSync);
+    };
+  }, [pageSize, orientation]);
+
+  // Real multi-page calculation (detects explicit user page breaks and calibrated page height boundaries)
   const pages = useMemo(() => {
-    return calculateDocumentPages(editor, pageSize, orientation, workspaceScrollTop);
-  }, [editor?.state.doc, pageSize, orientation, workspaceScrollTop]);
+    return calculateDocumentPages(editor, pageSize, orientation, workspaceScrollTop, calibratedHeight);
+  }, [editor?.state.doc, pageSize, orientation, workspaceScrollTop, calibratedHeight]);
 
   // Notify parent of total and active page counts if needed
   useEffect(() => {
@@ -598,7 +661,7 @@ export const NavigationPane: React.FC<NavigationPaneProps> = ({
           )}`}
         >
           <Layers size={13} />
-          <span>Pages</span>
+          <span>Pages ({pages.length})</span>
         </button>
         <button
           onClick={() => setActiveTab('search')}
@@ -667,9 +730,13 @@ export const NavigationPane: React.FC<NavigationPaneProps> = ({
                 <div className="text-xs flex-1 min-w-0">
                   <div className="flex items-center justify-between">
                     <span className={`font-bold ${pageTitleClass}`}>Page {p.pageNumber}</span>
-                    {p.hasExplicitBreak && (
+                    {p.hasExplicitBreak ? (
                       <span className="text-[9px] px-1.5 py-0.2 bg-blue-500/10 text-blue-600 dark:text-blue-400 rounded font-medium border border-blue-500/20">
                         Page Break
+                      </span>
+                    ) : (
+                      <span className="text-[9px] px-1.5 py-0.2 bg-neutral-500/10 text-neutral-500 dark:text-neutral-400 rounded font-medium border border-neutral-300/40">
+                        Calibrated ({calibratedHeight}px)
                       </span>
                     )}
                   </div>

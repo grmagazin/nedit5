@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { Editor } from '@tiptap/react';
 import { Sparkles, Check, Clipboard } from 'lucide-react';
 import { isLikelyUrlOrEmail, normalizeUrlOrEmail } from '../utils/linkUtils';
@@ -159,9 +160,11 @@ export const InsertLinkModal: React.FC<InsertLinkModalProps> = ({
     }
   };
 
-  return (
+  return createPortal(
     <div
-      className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center z-50 p-4 animate-in fade-in duration-150"
+      className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center z-[99999] p-4 animate-in fade-in duration-150 word-modal-backdrop"
+      data-word-modal="true"
+      style={{ zIndex: 99999 }}
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
@@ -271,6 +274,7 @@ export const InsertLinkModal: React.FC<InsertLinkModalProps> = ({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };

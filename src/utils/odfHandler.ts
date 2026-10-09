@@ -121,11 +121,197 @@ function escapeXml(text: string): string {
 }
 
 /**
+ * Read image natural dimensions asynchronously from source or HTML element
+ */
+async function getImageDimensions(
+  src: string,
+  existingImg?: HTMLImageElement
+): Promise<{ width: number; height: number }> {
+  if (existingImg && existingImg.naturalWidth > 0 && existingImg.naturalHeight > 0) {
+    return { width: existingImg.naturalWidth, height: existingImg.naturalHeight };
+  }
+  return new Promise((resolve) => {
+    const imgObj = new Image();
+    imgObj.onload = () => {
+      resolve({ width: imgObj.naturalWidth || 600, height: imgObj.naturalHeight || 400 });
+    };
+    imgObj.onerror = () => {
+      resolve({ width: 600, height: 400 });
+    };
+    imgObj.src = src;
+  });
+}
+
+/**
+ * Computes proportional ODF dimensions in cm preserving natural aspect ratio
+ */
+function computeOdfImageDimensions(
+  naturalWidth: number,
+  naturalHeight: number,
+  explicitWidth?: number,
+  explicitHeight?: number
+): { widthCm: string; heightCm: string } {
+  let w = explicitWidth || naturalWidth || 600;
+  let h = explicitHeight || naturalHeight || 400;
+
+  // Preserve aspect ratio
+  const aspect = naturalWidth > 0 && naturalHeight > 0 ? naturalWidth / naturalHeight : w / (h || 1);
+
+  // Maximum width and height inside standard A4 margins (width: ~15.5cm, height: ~21cm)
+  const MAX_WIDTH_CM = 15.5;
+  const MAX_HEIGHT_CM = 21.0;
+
+  // 1px at 96 DPI ≈ 2.54 / 96 cm ≈ 0.0264583 cm
+  let widthCm = w * (2.54 / 96);
+  let heightCm = widthCm / (aspect || 1.5);
+
+  if (widthCm > MAX_WIDTH_CM) {
+    widthCm = MAX_WIDTH_CM;
+    heightCm = widthCm / (aspect || 1.5);
+  }
+  if (heightCm > MAX_HEIGHT_CM) {
+    heightCm = MAX_HEIGHT_CM;
+    widthCm = heightCm * (aspect || 1.5);
+  }
+
+  widthCm = Math.max(1.5, Number(widthCm.toFixed(2)));
+  heightCm = Math.max(1.5, Number(heightCm.toFixed(2)));
+
+  return {
+    widthCm: `${widthCm.toFixed(2)}cm`,
+    heightCm: `${heightCm.toFixed(2)}cm`,
+  };
+}
+
+/**
+ * Converts HTML <table> elements into valid OASIS OpenDocument <table:table> XML
+ * Guarantees required <table:table-column> definitions so tables maintain accurate grid dimensions (e.g. 3x3)
+ */
+function convertTableToOdfXml(
+  tableEl: HTMLElement,
+  imageMap: Map<string, { odfPath: string; mimeType: string; widthCm?: string; heightCm?: string }>
+): string {
+  // 1. Calculate the column count accurately across all rows and colgroups
+  const allRows = Array.from(tableEl.querySelectorAll('tr'));
+  let maxCols = 0;
+  allRows.forEach((tr) => {
+    let rowCols = 0;
+    Array.from(tr.children).forEach((cell) => {
+      const tag = cell.tagName.toLowerCase();
+      if (tag === 'td' || tag === 'th') {
+        const colspan = parseInt(cell.getAttribute('colspan') || '1', 10);
+        rowCols += isNaN(colspan) ? 1 : Math.max(1, colspan);
+      }
+    });
+    if (rowCols > maxCols) maxCols = rowCols;
+  });
+
+  // Check col elements if present
+  const colElements = tableEl.querySelectorAll('colgroup col, col');
+  if (colElements.length > maxCols) {
+    maxCols = colElements.length;
+  }
+  if (maxCols <= 0) maxCols = 1;
+
+  // 2. Generate explicit column definitions (<table:table-column>) - MANDATORY for ODF validity
+  let columnsXml = '';
+  for (let c = 0; c < maxCols; c++) {
+    columnsXml += `  <table:table-column table:style-name="Table_Col_Standard"/>\n`;
+  }
+
+  // 3. Process table rows helper
+  const renderRow = (tr: HTMLElement, isHeaderRow: boolean): string => {
+    let rowXml = `    <table:table-row>\n`;
+    const cells = Array.from(tr.children).filter(
+      (c) => c.tagName.toLowerCase() === 'td' || c.tagName.toLowerCase() === 'th'
+    ) as HTMLElement[];
+
+    cells.forEach((cell) => {
+      const isHeaderCell = isHeaderRow || cell.tagName.toLowerCase() === 'th';
+      const cellStyle = isHeaderCell ? 'Table_Header_Cell' : 'Table_Cell_Standard';
+      const pStyle = isHeaderCell ? 'Table_Header_Contents' : 'Table_Contents';
+
+      const colspan = parseInt(cell.getAttribute('colspan') || '1', 10) || 1;
+      const rowspan = parseInt(cell.getAttribute('rowspan') || '1', 10) || 1;
+
+      let spanAttr = '';
+      if (colspan > 1) {
+        spanAttr += ` table:number-columns-spanned="${colspan}"`;
+      }
+      if (rowspan > 1) {
+        spanAttr += ` table:number-rows-spanned="${rowspan}"`;
+      }
+
+      // Convert child nodes inside cell
+      let cellBody = Array.from(cell.childNodes)
+        .map((child) => htmlElementToOdfXml(child, imageMap))
+        .join('');
+
+      if (!cellBody.trim().startsWith('<text:p') && !cellBody.trim().startsWith('<text:h')) {
+        cellBody = `<text:p text:style-name="${pStyle}">${cellBody || ' '}</text:p>`;
+      }
+
+      rowXml += `      <table:table-cell table:style-name="${cellStyle}" office:value-type="string"${spanAttr}>\n        ${cellBody}\n      </table:table-cell>\n`;
+
+      // In ODF specification: spanned columns require <table:covered-table-cell/>
+      if (colspan > 1) {
+        for (let s = 1; s < colspan; s++) {
+          rowXml += `      <table:covered-table-cell/>\n`;
+        }
+      }
+    });
+
+    rowXml += `    </table:table-row>\n`;
+    return rowXml;
+  };
+
+  // 4. Assemble the table header rows vs normal body rows
+  const thead = tableEl.querySelector('thead');
+  let headerXml = '';
+  if (thead) {
+    const theadRows = Array.from(thead.querySelectorAll('tr'));
+    theadRows.forEach((tr) => {
+      headerXml += renderRow(tr as HTMLElement, true);
+    });
+  }
+
+  let bodyXml = '';
+  if (thead) {
+    const tbody = tableEl.querySelector('tbody');
+    const tbodyRows = tbody
+      ? Array.from(tbody.querySelectorAll('tr'))
+      : Array.from(tableEl.querySelectorAll(':scope > tr')).filter((r) => !thead.contains(r));
+    tbodyRows.forEach((tr) => {
+      bodyXml += renderRow(tr as HTMLElement, false);
+    });
+  } else {
+    // No explicit thead: if first row contains th, treat it as header row
+    allRows.forEach((tr, index) => {
+      const hasTh = tr.querySelector('th') !== null;
+      if (index === 0 && hasTh) {
+        headerXml += renderRow(tr as HTMLElement, true);
+      } else {
+        bodyXml += renderRow(tr as HTMLElement, false);
+      }
+    });
+  }
+
+  const tableId = Math.floor(Math.random() * 1000000);
+  let tableContent = columnsXml;
+  if (headerXml) {
+    tableContent += `  <table:table-header-rows>\n${headerXml}  </table:table-header-rows>\n`;
+  }
+  tableContent += bodyXml;
+
+  return `<table:table table:name="Table_${tableId}" table:style-name="Table_Standard">\n${tableContent}</table:table>\n`;
+}
+
+/**
  * Convert DOM nodes inside HTML into OASIS OpenDocument XML tags
  */
 function htmlElementToOdfXml(
   node: Node,
-  imageMap: Map<string, { odfPath: string; mimeType: string }>
+  imageMap: Map<string, { odfPath: string; mimeType: string; widthCm?: string; heightCm?: string }>
 ): string {
   if (node.nodeType === Node.TEXT_NODE) {
     const text = node.textContent || '';
@@ -215,9 +401,12 @@ function htmlElementToOdfXml(
     case 'pre':
       return `<text:p text:style-name="Preformatted_20_Text">${childrenXml}</text:p>\n`;
 
-    case 'table': {
-      return `<table:table table:name="Table_${Date.now()}" table:style-name="Table_Standard">\n${childrenXml}</table:table>\n`;
-    }
+    case 'table':
+      return convertTableToOdfXml(el, imageMap);
+
+    case 'colgroup':
+    case 'col':
+      return '';
 
     case 'thead':
     case 'tbody':
@@ -233,7 +422,7 @@ function htmlElementToOdfXml(
       if (!cellContent.trim().startsWith('<text:p') && !cellContent.trim().startsWith('<text:h')) {
         cellContent = `<text:p text:style-name="Table_Contents">${cellContent || ' '}</text:p>`;
       }
-      return `<table:table-cell office:value-type="string">\n${cellContent}\n</table:table-cell>\n`;
+      return `<table:table-cell table:style-name="Table_Cell_Standard" office:value-type="string">\n${cellContent}\n</table:table-cell>\n`;
     }
 
     case 'hr':
@@ -247,8 +436,8 @@ function htmlElementToOdfXml(
       const mapped = imageMap.get(src);
       if (mapped) {
         const alt = el.getAttribute('alt') || 'Embedded Picture';
-        const width = el.getAttribute('width') ? `${el.getAttribute('width')}px` : '15cm';
-        const height = el.getAttribute('height') ? `${el.getAttribute('height')}px` : '10cm';
+        const width = mapped.widthCm || '15cm';
+        const height = mapped.heightCm || '10cm';
         return `<draw:frame draw:name="${escapeXml(alt)}" draw:style-name="fr1" text:anchor-type="as-char" svg:width="${width}" svg:height="${height}">
   <draw:image xlink:href="${mapped.odfPath}" xlink:type="simple" xlink:show="embed" xlink:actuate="onLoad"/>
 </draw:frame>\n`;
@@ -427,18 +616,31 @@ function generateContentXml(bodyTextXml: string): string {
       <style:text-properties fo:color="#2563eb"/>
     </style:style>
     <style:style style:name="Table_Standard" style:family="table">
-      <style:table-properties style:width="17cm" table:align="margins"/>
+      <style:table-properties style:width="17cm" table:align="margins" fo:margin-top="0.3cm" fo:margin-bottom="0.3cm"/>
+    </style:style>
+    <style:style style:name="Table_Col_Standard" style:family="table-column">
+      <style:table-column-properties style:column-width="auto" style:rel-column-width="1*"/>
+    </style:style>
+    <style:style style:name="Table_Cell_Standard" style:family="table-cell">
+      <style:table-cell-properties fo:padding="0.2cm" fo:border="0.05pt solid #111827" fo:background-color="#ffffff"/>
+    </style:style>
+    <style:style style:name="Table_Header_Cell" style:family="table-cell">
+      <style:table-cell-properties fo:padding="0.2cm" fo:border="0.05pt solid #111827" fo:background-color="#f1f5f9"/>
     </style:style>
     <style:style style:name="Table_Contents" style:family="paragraph" style:parent-style-name="Standard">
-      <style:paragraph-properties fo:margin-top="0.1cm" fo:margin-bottom="0.1cm"/>
-      <style:text-properties fo:font-size="10pt"/>
+      <style:paragraph-properties fo:margin-top="0cm" fo:margin-bottom="0cm"/>
+      <style:text-properties fo:font-size="10pt" fo:color="#0f172a"/>
+    </style:style>
+    <style:style style:name="Table_Header_Contents" style:family="paragraph" style:parent-style-name="Standard">
+      <style:paragraph-properties fo:margin-top="0cm" fo:margin-bottom="0cm"/>
+      <style:text-properties fo:font-size="10.5pt" fo:font-weight="bold" fo:color="#0f172a"/>
     </style:style>
     <style:style style:name="Quotations" style:family="paragraph" style:parent-style-name="Standard">
       <style:paragraph-properties fo:margin-left="1cm" fo:margin-right="1cm" fo:margin-top="0.25cm" fo:margin-bottom="0.25cm" fo:border-left="0.1cm solid #cbd5e1" fo:padding-left="0.3cm"/>
       <style:text-properties fo:font-style="italic" fo:color="#475569"/>
     </style:style>
     <style:style style:name="fr1" style:family="graphic" style:parent-style-name="Graphics">
-      <style:graphic-properties style:wrap="parallel" style:number-wrapped-paragraphs="no-limit" style:vertical-pos="top" style:vertical-rel="paragraph" style:horizontal-pos="center" style:horizontal-rel="paragraph"/>
+      <style:graphic-properties style:wrap="parallel" style:number-wrapped-paragraphs="no-limit" style:vertical-pos="top" style:vertical-rel="paragraph" style:horizontal-pos="center" style:horizontal-rel="paragraph" fo:clip="rect(0cm, 0cm, 0cm, 0cm)" draw:luminance="0%" draw:contrast="0%" draw:red="0%" draw:green="0%" draw:blue="0%" draw:gamma="100%" draw:color-inversion="false" draw:image-opacity="100%" draw:color-mode="standard"/>
     </style:style>
   </office:automatic-styles>
   <office:body>
@@ -466,9 +668,9 @@ export async function exportOdfPackage(
   const parser = new DOMParser();
   const doc = parser.parseFromString(editorHtml || '<p>Empty Document</p>', 'text/html');
 
-  // Extract all images
+  // Extract all images and calculate natural dimensions to prevent stretching
   const images = Array.from(doc.querySelectorAll('img'));
-  const imageMap = new Map<string, { odfPath: string; mimeType: string; bytes: Uint8Array }>();
+  const imageMap = new Map<string, { odfPath: string; mimeType: string; bytes: Uint8Array; widthCm: string; heightCm: string }>();
   const extractedPictures: OdfExtractedPicture[] = [];
 
   let imgCounter = 1;
@@ -497,15 +699,21 @@ export async function exportOdfPackage(
         }
       }
 
-      imageMap.set(src, { odfPath, mimeType, bytes });
+      // Compute natural dimensions and proportional sizing to prevent stretching
+      const dims = await getImageDimensions(src, img);
+      const explicitWidth = parseInt(img.getAttribute('width') || img.style.width || '0', 10) || undefined;
+      const explicitHeight = parseInt(img.getAttribute('height') || img.style.height || '0', 10) || undefined;
+      const { widthCm, heightCm } = computeOdfImageDimensions(dims.width, dims.height, explicitWidth, explicitHeight);
+
+      imageMap.set(src, { odfPath, mimeType, bytes, widthCm, heightCm });
       extractedPictures.push({
         name: picName,
         relativePath: odfPath,
         dataUrl: src.startsWith('data:') ? src : `data:${mimeType};base64,${btoa(String.fromCharCode(...bytes.slice(0, 100)))}`,
         sizeBytes: bytes.byteLength,
         mimeType,
-        width: img.naturalWidth || parseInt(img.getAttribute('width') || '0', 10) || undefined,
-        height: img.naturalHeight || parseInt(img.getAttribute('height') || '0', 10) || undefined,
+        width: dims.width,
+        height: dims.height,
       });
     }
   }

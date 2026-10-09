@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Camera,
   Wand2,
@@ -228,9 +229,13 @@ export const ScreenCaptureTool: React.FC<ScreenCaptureToolProps> = ({
   const imgWidth = imgRef.current?.clientWidth || 0;
   const imgHeight = imgRef.current?.clientHeight || 0;
 
-  return (
+  const toolContent = (
     <div
-      className="fixed inset-0 z-[9999] bg-black/75 backdrop-blur-xs flex flex-col items-center justify-between p-4 select-none overflow-hidden"
+      id="screen-capture-tool-modal"
+      className="fixed inset-0 z-[99999] bg-black/75 backdrop-blur-xs flex flex-col items-center justify-between p-4 select-none overflow-hidden word-modal-backdrop"
+      data-word-modal="true"
+      data-screen-capture="true"
+      style={{ position: 'fixed', zIndex: 99999 }}
       onMouseUp={handleMouseUp}
       onMouseMove={handleMouseMove}
     >
@@ -452,4 +457,8 @@ export const ScreenCaptureTool: React.FC<ScreenCaptureToolProps> = ({
       </div>
     </div>
   );
+
+  return typeof document !== 'undefined'
+    ? createPortal(toolContent, document.body)
+    : toolContent;
 };

@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { Editor } from '@tiptap/react';
 import { DOMSerializer } from '@tiptap/pm/model';
 import { findTable } from '@tiptap/pm/tables';
@@ -64,7 +65,6 @@ import {
   RemoveFormatting,
   Globe,
   BookOpen,
-  Files,
   Combine,
   Unlink,
   ImageOff,
@@ -136,7 +136,15 @@ const EquationWizardPopup = React.lazy(() =>
   import('./EquationWizardPopup').then((m) => ({ default: m.EquationWizardPopup }))
 );
 const AboutSuiteModal = React.lazy(() => import('./AboutSuiteModal'));
-import { ScreenCaptureTool } from './ScreenCaptureTool';
+const AiImageModal = React.lazy(() => import('./AiImageModal'));
+const ScreenCaptureTool = React.lazy(() =>
+  import('./ScreenCaptureTool').then((m) => ({ default: m.ScreenCaptureTool }))
+);
+const AiRewriteModal = React.lazy(() => import('./modals/AiRewriteModal'));
+const VersionHistoryModal = React.lazy(() => import('./modals/VersionHistoryModal'));
+const KeyboardShortcutsModal = React.lazy(() => import('./modals/KeyboardShortcutsModal'));
+const QuickGuideModal = React.lazy(() => import('./modals/QuickGuideModal'));
+const KeywordDensityModal = React.lazy(() => import('./modals/KeywordDensityModal'));
 import { snapshotStore } from '../utils/snapshotStore';
 import { captureDocumentScreenSnapshot } from '../utils/screenSnapshot';
 
@@ -602,7 +610,10 @@ export const RibbonToolbar: React.FC<RibbonToolbarProps> = ({
       // 2. Save in snapshotStore (in-memory + safe storage)
       snapshotStore.setLatestSnapshot(capturedAreaUrl, 'snip');
 
-      // 3. Open Image Wizard & send captured area
+      // 3. Open Document Snapshot modal so user can save milestone or download
+      setShowSaveSnapshotModal(true);
+
+      // 4. Open Image Wizard & send captured area
       onUpdateSettings({ showImageWizardPane: true });
 
       // 4. Save to document snapshots history
@@ -1591,7 +1602,11 @@ export const RibbonToolbar: React.FC<RibbonToolbarProps> = ({
     : 'border-b border-[#e1dfdd] bg-white';
 
   return (
-    <div id="word-ribbon-toolbar" className={`${ribbonContainerBg} select-none no-print z-20`}>
+    <div
+      id="word-ribbon-toolbar"
+      className={`${ribbonContainerBg} select-none no-print relative z-50`}
+      style={{ position: 'relative', zIndex: 100 }}
+    >
       {/* Top Tab Strip (File, Home, Insert, Layout, Review, View) */}
       <div className={`flex items-center justify-between px-3 pt-1 ${tabStripBg}`}>
         <div className="flex items-center space-x-1 text-xs font-medium">
@@ -1647,13 +1662,14 @@ export const RibbonToolbar: React.FC<RibbonToolbarProps> = ({
       {/* Main Ribbon Command Bar */}
       {!isRibbonCollapsed && (
         <div
-          className={`min-h-24 px-3 pt-1.5 pb-1 flex items-start space-x-2 relative z-20 ${
+          className={`min-h-24 px-3 pt-1.5 pb-1 flex items-start space-x-2 relative z-50 ${
             isDarkUi
               ? 'bg-[#202020] text-neutral-100'
               : isSepiaUi
               ? 'bg-[#ede5d5] text-[#362b24]'
               : 'bg-[#f3f2f1] text-neutral-800'
           }`}
+          style={{ position: 'relative', zIndex: 100 }}
         >
           {/* HOME TAB */}
           {activeTab === 'home' && (
@@ -2585,7 +2601,7 @@ export const RibbonToolbar: React.FC<RibbonToolbarProps> = ({
                   {/* AI Image (Purple Sparkle as shown in image) */}
                   <button
                     onClick={() => setShowAiImageModal(true)}
-                    title="Generate or insert AI Image from prompt"
+                    title="Generate AI Image with Gemini or AI Demo Studio"
                     className="flex flex-col items-center justify-start px-2.5 py-1.5 rounded hover:bg-white hover:shadow-xs text-neutral-700 cursor-pointer group"
                   >
                     <Sparkles size={20} className="text-[#9333ea] mb-1 group-hover:scale-105 transition-transform" />
@@ -4153,8 +4169,38 @@ export const RibbonToolbar: React.FC<RibbonToolbarProps> = ({
                 </label>
               </div>
 
+              {/* SECTION 2B: Ruler Unit Selector (Inches / cm) */}
+              <div className="flex items-start px-1">
+                <button
+                  onClick={() => {
+                    const nextUnit = settings.rulerUnit === 'cm' ? 'inches' : 'cm';
+                    onUpdateSettings({ rulerUnit: nextUnit });
+                    try {
+                      localStorage.setItem('wordpad_ruler_unit', nextUnit);
+                    } catch {}
+                  }}
+                  title={`Ruler Measurement Unit: Currently ${
+                    settings.rulerUnit === 'cm' ? 'Centimeters (cm)' : 'Inches (in)'
+                  }. Click to toggle.`}
+                  className="flex flex-col items-center justify-start px-2 py-1 rounded-lg border border-transparent hover:bg-white hover:border-neutral-300 dark:hover:bg-neutral-800 transition-all cursor-pointer min-w-[54px]"
+                >
+                  <div className="flex items-center gap-1 mb-0.5">
+                    <Ruler size={15} className="text-[#185abd]" />
+                    <span className="text-[9px] font-bold px-1 py-0.2 rounded bg-[#185abd]/10 text-[#185abd]">
+                      {settings.rulerUnit === 'cm' ? 'cm' : 'in'}
+                    </span>
+                  </div>
+                  <span className="text-[11px] font-medium leading-tight text-center text-neutral-700 dark:text-neutral-200">
+                    Unit<br />
+                    <span className="text-[9px] text-neutral-500 font-normal">
+                      {settings.rulerUnit === 'cm' ? 'Metric' : 'Inches'}
+                    </span>
+                  </span>
+                </button>
+              </div>
+
               {/* DIVIDER */}
-              <div className="h-11 w-px bg-[#dad9d8] mx-3 shrink-0" />
+              <div className="h-11 w-px bg-[#dad9d8] mx-2 shrink-0" />
 
               {/* SECTION 3: Navigation Pane */}
               <div className="flex items-start px-1">
@@ -4212,82 +4258,6 @@ export const RibbonToolbar: React.FC<RibbonToolbarProps> = ({
                   <ZoomOut size={20} className="text-neutral-700 mb-0.5" />
                   <span className="text-[11px] font-medium leading-tight text-center text-neutral-700">
                     Zoom Out
-                  </span>
-                </button>
-              </div>
-
-              {/* DIVIDER */}
-              <div className="h-11 w-px bg-[#dad9d8] mx-3 shrink-0" />
-
-              {/* SECTION: Dynamic Layout Switching (1 Page / 2 Pages) */}
-              <div className="flex items-center px-1">
-                <button
-                  type="button"
-                  onClick={() => {
-                    const isTwo = (settings.layoutPages ?? 1) === 2;
-                    if (!isTwo) {
-                      // Select 2 Pages: close all currently open left and right toolbars/panels
-                      onUpdateSettings({
-                        layoutPages: 2,
-                        showNavigationPane: false,
-                        showSeoPane: false,
-                        showTableEditPane: false,
-                        showBorderEditPane: false,
-                        showHyperLinkPane: false,
-                        showTranslatePane: false,
-                        showAiAssistantPane: false,
-                        showImageWizardPane: false,
-                        showQuickBlocksPane: false,
-                        showVoiceCommandPane: false,
-                        showSpellCheckPane: false,
-                        showFormatterPane: false,
-                      });
-                    } else {
-                      // Switch back to 1 Page
-                      onUpdateSettings({
-                        layoutPages: 1,
-                      });
-                    }
-                  }}
-                  title="Dynamic Layout Switching"
-                  className={`flex flex-col items-center justify-start px-2.5 py-1 rounded-lg border transition-all cursor-pointer min-w-[62px] ${
-                    (settings.layoutPages ?? 1) === 2
-                      ? isDarkUi
-                        ? 'border-[#0078d4] bg-[#1e3a5f] text-[#60a5fa] shadow-xs'
-                        : 'border-[#c5dcfa] bg-[#deebf9] text-[#185abd]'
-                      : isDarkUi
-                      ? 'border-transparent hover:bg-white/10 text-neutral-300'
-                      : 'border-transparent hover:bg-white hover:border-neutral-300 text-neutral-700'
-                  }`}
-                >
-                  <Files
-                    size={20}
-                    className={
-                      (settings.layoutPages ?? 1) === 2
-                        ? isDarkUi
-                          ? 'text-[#60a5fa] mb-0.5'
-                          : 'text-[#185abd] mb-0.5'
-                        : isDarkUi
-                        ? 'text-neutral-300 mb-0.5'
-                        : 'text-neutral-700 mb-0.5'
-                    }
-                  />
-                  <span
-                    className={`text-[11px] font-medium leading-tight text-center ${
-                      (settings.layoutPages ?? 1) === 2
-                        ? isDarkUi
-                          ? 'text-[#60a5fa] font-semibold'
-                          : 'text-[#185abd] font-semibold'
-                        : isDarkUi
-                        ? 'text-neutral-300'
-                        : 'text-neutral-700'
-                    }`}
-                  >
-                    {(settings.layoutPages ?? 1) === 2 ? (
-                      <>2 Pages</>
-                    ) : (
-                      <>1 Page</>
-                    )}
                   </span>
                 </button>
               </div>
@@ -5201,7 +5171,7 @@ export const RibbonToolbar: React.FC<RibbonToolbarProps> = ({
                   {/* Button 2: Quick Guide */}
                   <button
                     onClick={() => setShowQuickGuideModal(true)}
-                    title="Open WordPad Quick Guide"
+                    title="Open Nedit Quick Guide"
                     className="flex flex-col items-center justify-center px-3 py-1 rounded hover:bg-neutral-100 text-neutral-700 transition-colors cursor-pointer"
                   >
                     <BookOpen size={22} className="text-[#185abd] mb-1" />
@@ -5213,12 +5183,12 @@ export const RibbonToolbar: React.FC<RibbonToolbarProps> = ({
                   {/* Button 3: About */}
                   <button
                     onClick={() => setShowAboutModal(true)}
-                    title="About WordPad Pro & Version Information"
+                    title="About Nedit v5.2 & Version Information"
                     className="flex flex-col items-center justify-center px-3 py-1 rounded hover:bg-neutral-100 text-neutral-700 transition-colors cursor-pointer"
                   >
                     <Info size={22} className="text-[#185abd] mb-1" />
                     <span className="text-[11px] leading-tight text-center text-neutral-800">
-                      About<br />Nedit5.1
+                      About<br />Nedit5.2
                     </span>
                   </button>
                 </div>
@@ -5463,67 +5433,19 @@ export const RibbonToolbar: React.FC<RibbonToolbarProps> = ({
           />
         </React.Suspense>
       )}
-      {/* Insert AI Image Modal */}
+      {/* Lazyloaded AI Image Modal */}
       {showAiImageModal && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-2xl border border-neutral-200 p-5 w-full max-w-md">
-            <div className="flex items-start space-x-2 text-[#9333ea] mb-2 font-semibold">
-              <Sparkles size={18} />
-              <h3 className="text-sm text-neutral-800 font-bold">AI Image Generation</h3>
-            </div>
-            <p className="text-xs text-neutral-500 mb-3">
-              Describe what image you would like to generate and insert into your Word document.
-            </p>
-
-            <textarea
-              rows={3}
-              placeholder="e.g., A minimalist corporate meeting room with glass windows overlooking a modern skyline, natural sunlight..."
-              value={aiImagePrompt}
-              onChange={(e) => setAiImagePrompt(e.target.value)}
-              className="w-full text-xs p-2.5 border border-neutral-300 rounded focus:outline-none focus:ring-2 focus:ring-[#9333ea] mb-3 resize-none"
-            />
-
-            <div className="mb-4">
-              <span className="text-[11px] font-medium text-neutral-500 block mb-1.5">Quick Inspiration:</span>
-              <div className="flex flex-wrap gap-1.5">
-                {[
-                  'Modern Architecture',
-                  'Financial Analytics Chart',
-                  'Natural Landscape',
-                  'Tech Workspace',
-                ].map((tag) => (
-                  <button
-                    key={tag}
-                    onClick={() => setAiImagePrompt(tag)}
-                    className="text-[10px] px-2 py-0.5 bg-neutral-100 hover:bg-purple-100 hover:text-[#9333ea] text-neutral-600 rounded transition-colors cursor-pointer"
-                  >
-                    {tag}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="flex justify-end space-x-2">
-              <button
-                onClick={() => {
-                  setShowAiImageModal(false);
-                  setAiImagePrompt('');
-                }}
-                className="px-3.5 py-1.5 text-xs text-neutral-600 hover:bg-neutral-100 rounded cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => handleInsertAiImage()}
-                disabled={!aiImagePrompt.trim()}
-                className="px-4 py-1.5 text-xs bg-[#9333ea] hover:bg-[#7e22ce] disabled:opacity-50 text-white rounded font-medium cursor-pointer flex items-center space-x-1.5"
-              >
-                <Sparkles size={13} />
-                <span>Generate &amp; Insert</span>
-              </button>
-            </div>
-          </div>
-        </div>
+        <React.Suspense fallback={null}>
+          <AiImageModal
+            isOpen={showAiImageModal}
+            onClose={() => setShowAiImageModal(false)}
+            editor={editor}
+            onNotify={(msg) => {
+              setReviewNotification(msg);
+              setTimeout(() => setReviewNotification(null), 3500);
+            }}
+          />
+        </React.Suspense>
       )}
 
       {/* Review Floating Toast Notification */}
@@ -5659,8 +5581,8 @@ export const RibbonToolbar: React.FC<RibbonToolbarProps> = ({
       )}
 
       {/* New Comment Modal */}
-      {showNewCommentModal && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+      {showNewCommentModal && createPortal(
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-xs flex items-center justify-center z-[99999] p-4 word-modal-backdrop" data-word-modal="true">
           <div className="bg-white rounded-xl shadow-2xl border border-neutral-200 p-5 w-full max-w-md">
             <div className="flex items-start space-x-2 text-[#ea580c] mb-2 font-semibold">
               <MessageSquarePlus size={20} />
@@ -5729,22 +5651,25 @@ export const RibbonToolbar: React.FC<RibbonToolbarProps> = ({
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
-      {/* Lightweight Interactive Screen Capture Tool */}
+      {/* Lightweight Interactive Screen Capture Tool (Lazy-loaded) */}
       {showScreenCaptureTool && screenCaptureBaseImage && (
-        <ScreenCaptureTool
-          isOpen={showScreenCaptureTool}
-          baseImageUrl={screenCaptureBaseImage}
-          onClose={() => setShowScreenCaptureTool(false)}
-          onConfirmCapture={handleConfirmAreaCapture}
-        />
+        <React.Suspense fallback={null}>
+          <ScreenCaptureTool
+            isOpen={showScreenCaptureTool}
+            baseImageUrl={screenCaptureBaseImage}
+            onClose={() => setShowScreenCaptureTool(false)}
+            onConfirmCapture={handleConfirmAreaCapture}
+          />
+        </React.Suspense>
       )}
 
       {/* Save Snapshot Modal */}
-      {showSaveSnapshotModal && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+      {showSaveSnapshotModal && createPortal(
+        <div id="word-snapshot-modal" data-snapshot-modal="true" className="fixed inset-0 bg-black/50 backdrop-blur-xs flex items-center justify-center z-[99999] p-4 word-modal-backdrop" data-word-modal="true" style={{ position: 'fixed', zIndex: 99999 }}>
           <div className="bg-white rounded-xl shadow-2xl border border-neutral-200 p-5 w-full max-w-md">
             <div className="flex items-start justify-between mb-2">
               <div className="flex items-center space-x-2 text-[#059669] font-semibold">
@@ -5859,483 +5784,72 @@ export const RibbonToolbar: React.FC<RibbonToolbarProps> = ({
               </div>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
-      {/* Version History Modal */}
+      {/* Version History Modal (Lazy-loaded Review tab button) */}
       {showVersionHistoryModal && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-2xl border border-neutral-200 p-6 w-full max-w-2xl max-h-[85vh] flex flex-col">
-            <div className="flex items-center justify-between pb-3 border-b border-neutral-200">
-              <div className="flex items-start space-x-2 text-[#2563eb]">
-                <History size={20} />
-                <h3 className="text-base font-bold text-neutral-800">Document Version History</h3>
-              </div>
-              <button
-                onClick={() => setShowVersionHistoryModal(false)}
-                className="text-neutral-400 hover:text-neutral-700 p-1 cursor-pointer"
-              >
-                <X size={18} />
-              </button>
-            </div>
-
-            <div className="flex-1 overflow-y-auto py-4 space-y-3">
-              {snapshots.length === 0 ? (
-                <div className="text-center py-12 text-neutral-400 text-xs">
-                  No snapshots recorded yet. Click "Save Snapshot" to record version milestones.
-                </div>
-              ) : (
-                snapshots.map((snap) => (
-                  <div
-                    key={snap.id}
-                    className="p-3.5 bg-neutral-50 hover:bg-blue-50/40 rounded-lg border border-neutral-200 flex items-center justify-between transition-colors"
-                  >
-                    <div>
-                      <div className="flex items-start space-x-2">
-                        <span className="text-xs font-bold text-neutral-800">{snap.name}</span>
-                        <span className="text-[10px] px-2 py-0.5 bg-neutral-200 text-neutral-600 rounded-full font-medium">
-                          {snap.wordCount} words
-                        </span>
-                      </div>
-                      <span className="text-[11px] text-neutral-500 block mt-0.5">{snap.timestamp}</span>
-                    </div>
-
-                    <div className="flex items-start space-x-2">
-                      <button
-                        onClick={() => {
-                          if (editor && snap.htmlContent) {
-                            editor.commands.setContent(snap.htmlContent);
-                            setShowVersionHistoryModal(false);
-                            setReviewNotification(`Document restored to "${snap.name}"`);
-                            setTimeout(() => setReviewNotification(null), 3500);
-                          }
-                        }}
-                        className="px-3 py-1 bg-[#185abd] hover:bg-[#114b9c] text-white rounded text-xs font-medium transition-colors cursor-pointer"
-                      >
-                        Restore Version
-                      </button>
-                      <button
-                        onClick={() => {
-                          const updated = snapshots.filter((s) => s.id !== snap.id);
-                          setSnapshots(updated);
-                          try {
-                            localStorage.setItem('word_doc_snapshots', JSON.stringify(updated));
-                          } catch {}
-                        }}
-                        className="p-1 text-neutral-400 hover:text-red-600 transition-colors cursor-pointer"
-                        title="Delete snapshot"
-                      >
-                        <X size={15} />
-                      </button>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-
-            <div className="flex items-center justify-between pt-3 border-t border-neutral-200 text-xs">
-              <span className="text-neutral-500">
-                Snapshots are preserved in your browser workspace.
-              </span>
-              <button
-                onClick={() => setShowVersionHistoryModal(false)}
-                className="px-4 py-1.5 bg-neutral-200 hover:bg-neutral-300 text-neutral-800 rounded font-medium cursor-pointer"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
+        <React.Suspense fallback={null}>
+          <VersionHistoryModal
+            isOpen={showVersionHistoryModal}
+            onClose={() => setShowVersionHistoryModal(false)}
+            editor={editor}
+            snapshots={snapshots}
+            onUpdateSnapshots={(updated) => setSnapshots(updated)}
+            onNotify={(msg) => {
+              setReviewNotification(msg);
+              setTimeout(() => setReviewNotification(null), 3500);
+            }}
+          />
+        </React.Suspense>
       )}
 
-      {/* AI Rewrite Modal */}
+      {/* AI Rewrite Modal (Lazy-loaded Review tab button) */}
       {showAiRewriteModal && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-2xl border border-neutral-200 p-5 w-full max-w-lg">
-            <div className="flex items-center justify-between pb-3 border-b border-neutral-200">
-              <div className="flex items-center space-x-2 text-[#9333ea]">
-                <Sparkles size={20} />
-                <h3 className="text-sm font-bold text-neutral-800">AI Document &amp; Tone Rewrite</h3>
-              </div>
-              <button
-                onClick={() => setShowAiRewriteModal(false)}
-                className="text-neutral-400 hover:text-neutral-700 p-1 cursor-pointer"
-              >
-                <X size={17} />
-              </button>
-            </div>
-
-            <div className="py-3 space-y-3">
-              <div>
-                <label className="block text-xs font-semibold text-neutral-700 mb-1.5">Select Rewrite Objective</label>
-                <div className="grid grid-cols-2 gap-2">
-                  {[
-                    { id: 'professional', label: 'Executive Professional' },
-                    { id: 'concise', label: 'Concise & High-Impact' },
-                    { id: 'formal', label: 'Formal Academic' },
-                    { id: 'greek', label: 'Greek Formal Tone (Επίσημο)' },
-                  ].map((t) => (
-                    <button
-                      key={t.id}
-                      onClick={() => setAiRewriteTone(t.id as any)}
-                      className={`p-2 text-xs rounded border text-left cursor-pointer transition-all ${
-                        aiRewriteTone === t.id
-                          ? 'border-[#9333ea] bg-purple-50 text-[#9333ea] font-semibold ring-1 ring-[#9333ea]'
-                          : 'border-neutral-200 hover:bg-neutral-50 text-neutral-700'
-                      }`}
-                    >
-                      {t.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="text-xs font-semibold text-neutral-700">Generated Preview</label>
-                  <button
-                    onClick={() => {
-                      const selected = editor?.state.doc.textBetween(
-                        editor.state.selection.from,
-                        editor.state.selection.to,
-                        ' '
-                      ) || editor?.getText() || 'This document contains essential analytical data and structured content.';
-
-                      if (aiRewriteTone === 'concise') {
-                        setAiRewriteOutput(`• Summary: Key strategic directives and executive milestones.\n• Performance: Optimized operational benchmarks across departments.\n• Recommendation: Expedite deployment schedule.`);
-                      } else if (aiRewriteTone === 'formal') {
-                        setAiRewriteOutput(`Furthermore, this comprehensive exposition delineates the methodologies, theoretical frameworks, and empirically validated indices pertinent to the present subject matter.`);
-                      } else if (aiRewriteTone === 'greek') {
-                        setAiRewriteOutput(`Το παρόν έγγραφο συνοψίζει τις στρατηγικές προτεραιότητες, τα ποσοτικά δεδομένα και τις κατευθυντήριες γραμμές για την ολοκλήρωση του έργου.`);
-                      } else {
-                        setAiRewriteOutput(`The current document encapsulates our core strategic directives, delivering clear executive benchmarks, verified findings, and actionable recommendations.`);
-                      }
-                    }}
-                    className="text-[11px] text-[#9333ea] font-medium hover:underline cursor-pointer"
-                  >
-                    Generate Rewrite
-                  </button>
-                </div>
-
-                <textarea
-                  rows={4}
-                  value={aiRewriteOutput}
-                  onChange={(e) => setAiRewriteOutput(e.target.value)}
-                  placeholder="Click 'Generate Rewrite' to craft an enhanced version of your text..."
-                  className="w-full text-xs p-2.5 border border-neutral-300 rounded focus:outline-none focus:ring-1 focus:ring-[#9333ea] resize-none"
-                />
-              </div>
-            </div>
-
-            <div className="flex justify-end space-x-2 pt-2 border-t border-neutral-200">
-              <button
-                onClick={() => setShowAiRewriteModal(false)}
-                className="px-3.5 py-1.5 text-xs text-neutral-600 hover:bg-neutral-100 rounded cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => {
-                  if (editor && aiRewriteOutput.trim()) {
-                    if (!editor.state.selection.empty) {
-                      editor.chain().focus().insertContent(aiRewriteOutput).run();
-                    } else {
-                      editor.chain().focus().insertContent(`<p>${aiRewriteOutput}</p>`).run();
-                    }
-                    setShowAiRewriteModal(false);
-                    setReviewNotification('AI rewrite applied to document');
-                    setTimeout(() => setReviewNotification(null), 3000);
-                  }
-                }}
-                disabled={!aiRewriteOutput.trim()}
-                className="px-4 py-1.5 text-xs bg-[#9333ea] hover:bg-[#7e22ce] disabled:opacity-50 text-white rounded font-medium cursor-pointer"
-              >
-                Apply to Document
-              </button>
-            </div>
-          </div>
-        </div>
+        <React.Suspense fallback={null}>
+          <AiRewriteModal
+            isOpen={showAiRewriteModal}
+            onClose={() => setShowAiRewriteModal(false)}
+            editor={editor}
+            onNotify={(msg) => {
+              setReviewNotification(msg);
+              setTimeout(() => setReviewNotification(null), 3000);
+            }}
+          />
+        </React.Suspense>
       )}
 
-      {/* SEO Keyword Density Modal */}
+      {/* SEO Keyword Density Modal (Lazy-loaded SEO tab button) */}
       {showKeywordModal && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-2xl border border-neutral-200 p-5 w-full max-w-md animate-in fade-in zoom-in-95 duration-150">
-            <div className="flex items-center justify-between pb-3 border-b border-neutral-200">
-              <div className="flex items-center space-x-2 text-[#db2777]">
-                <Target size={20} />
-                <h3 className="text-sm font-bold text-neutral-800">SEO Focus Keyword Analysis</h3>
-              </div>
-              <button
-                onClick={() => setShowKeywordModal(false)}
-                className="text-neutral-400 hover:text-neutral-700 p-1 cursor-pointer"
-              >
-                <X size={17} />
-              </button>
-            </div>
-
-            <div className="py-3 space-y-3">
-              <div>
-                <label className="block text-xs font-semibold text-neutral-700 mb-1">
-                  Focus Keyword or Keyphrase
-                </label>
-                <div className="relative">
-                  <input
-                    type="text"
-                    value={focusKeyword}
-                    onChange={(e) => setFocusKeyword(e.target.value)}
-                    placeholder="e.g., SEO, Microsoft Word, Document..."
-                    className="w-full text-xs px-3 py-2 border border-neutral-300 rounded focus:outline-none focus:ring-2 focus:ring-[#db2777]"
-                    autoFocus
-                  />
-                  {focusKeyword && (
-                    <button
-                      onClick={() => setFocusKeyword('')}
-                      className="absolute right-2.5 top-2 text-neutral-400 hover:text-neutral-600 text-xs"
-                    >
-                      Clear
-                    </button>
-                  )}
-                </div>
-              </div>
-
-              {/* Calculations */}
-              {(() => {
-                const text = editor?.getText() || '';
-                const words = text.trim() ? text.trim().split(/\s+/).length : 0;
-                let count = 0;
-                if (focusKeyword.trim()) {
-                  const regex = new RegExp(`\\b${focusKeyword.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'gi');
-                  count = (text.match(regex) || []).length;
-                }
-                const density = words > 0 && count > 0 ? ((count / words) * 100).toFixed(2) : '0.00';
-                const densityNum = parseFloat(density);
-
-                let statusColor = 'text-neutral-500 bg-neutral-100';
-                let statusText = 'Enter a keyword above to calculate density';
-                if (focusKeyword.trim()) {
-                  if (count === 0) {
-                    statusColor = 'text-rose-700 bg-rose-50 border border-rose-200';
-                    statusText = 'Keyword not found in content. Add to headings or intro paragraph.';
-                  } else if (densityNum >= 1.0 && densityNum <= 2.5) {
-                    statusColor = 'text-emerald-700 bg-emerald-50 border border-emerald-200';
-                    statusText = '✓ Optimal keyword density (1.0% - 2.5%) for search ranking!';
-                  } else if (densityNum < 1.0) {
-                    statusColor = 'text-amber-700 bg-amber-50 border border-amber-200';
-                    statusText = 'Slightly low density (< 1.0%). Consider naturally repeating in body or subheadings.';
-                  } else {
-                    statusColor = 'text-rose-700 bg-rose-50 border border-rose-200';
-                    statusText = '⚠️ High density (> 2.5%). Risk of keyword stuffing penalty.';
-                  }
-                }
-
-                return (
-                  <div className="space-y-3 pt-1">
-                    <div className="grid grid-cols-3 gap-2">
-                      <div className="bg-[#f8fafc] border border-neutral-200 rounded-lg p-2.5 text-center">
-                        <span className="text-[10px] text-neutral-400 block uppercase font-medium">Occurrences</span>
-                        <span className="text-base font-bold text-neutral-800">{count}</span>
-                      </div>
-                      <div className="bg-[#f8fafc] border border-neutral-200 rounded-lg p-2.5 text-center">
-                        <span className="text-[10px] text-neutral-400 block uppercase font-medium">Total Words</span>
-                        <span className="text-base font-bold text-neutral-800">{words}</span>
-                      </div>
-                      <div className="bg-[#f8fafc] border border-neutral-200 rounded-lg p-2.5 text-center">
-                        <span className="text-[10px] text-neutral-400 block uppercase font-medium">Density</span>
-                        <span className={`text-base font-bold ${densityNum >= 1.0 && densityNum <= 2.5 ? 'text-emerald-600' : 'text-[#db2777]'}`}>
-                          {density}%
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className={`p-2.5 rounded-lg text-xs leading-relaxed ${statusColor}`}>
-                      {statusText}
-                    </div>
-                  </div>
-                );
-              })()}
-            </div>
-
-            <div className="flex items-center justify-between pt-3 border-t border-neutral-200">
-              <button
-                onClick={() => {
-                  setShowKeywordModal(false);
-                  onUpdateSettings({ showSeoPane: true });
-                }}
-                className="text-xs text-[#185abd] hover:underline cursor-pointer font-medium"
-              >
-                Open Full SEO Toolbar →
-              </button>
-
-              <div className="flex space-x-2">
-                <button
-                  onClick={() => setShowKeywordModal(false)}
-                  className="px-3.5 py-1.5 text-xs text-neutral-600 hover:bg-neutral-100 rounded cursor-pointer"
-                >
-                  Close
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
+        <React.Suspense fallback={null}>
+          <KeywordDensityModal
+            isOpen={showKeywordModal}
+            onClose={() => setShowKeywordModal(false)}
+            editor={editor}
+            onOpenFullSeo={() => onUpdateSettings({ showSeoPane: true })}
+          />
+        </React.Suspense>
       )}
 
-      {/* 1. Keyboard Shortcuts Modal */}
+      {/* 1. Keyboard Shortcuts Modal (Lazy-loaded Help tab button) */}
       {showShortcutsModal && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-2xl border border-neutral-200 p-5 w-full max-w-lg animate-in zoom-in-95 duration-150">
-            <div className="flex items-center justify-between pb-3 border-b border-neutral-200">
-              <div className="flex items-center space-x-2 text-[#185abd]">
-                <Keyboard size={20} />
-                <h3 className="text-sm font-bold text-neutral-800">Microsoft Word Compatible Shortcuts</h3>
-              </div>
-              <button
-                onClick={() => setShowShortcutsModal(false)}
-                className="text-neutral-400 hover:text-neutral-700 p-1 rounded-md"
-              >
-                <X size={16} />
-              </button>
-            </div>
-
-            <div className="py-4 space-y-3 max-h-[65vh] overflow-y-auto text-xs text-neutral-700 pr-1">
-              <div>
-                <span className="font-semibold text-neutral-900 block mb-1 text-[11px] uppercase tracking-wider text-slate-500">
-                  Formatting
-                </span>
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="p-2 bg-slate-50 rounded border border-slate-200 flex justify-between">
-                    <span className="text-neutral-600">Bold</span>
-                    <kbd className="px-1.5 py-0.5 bg-white border border-slate-300 rounded font-mono text-[10px]">Ctrl + B</kbd>
-                  </div>
-                  <div className="p-2 bg-slate-50 rounded border border-slate-200 flex justify-between">
-                    <span className="text-neutral-600">Italic</span>
-                    <kbd className="px-1.5 py-0.5 bg-white border border-slate-300 rounded font-mono text-[10px]">Ctrl + I</kbd>
-                  </div>
-                  <div className="p-2 bg-slate-50 rounded border border-slate-200 flex justify-between">
-                    <span className="text-neutral-600">Underline</span>
-                    <kbd className="px-1.5 py-0.5 bg-white border border-slate-300 rounded font-mono text-[10px]">Ctrl + U</kbd>
-                  </div>
-                  <div className="p-2 bg-slate-50 rounded border border-slate-200 flex justify-between">
-                    <span className="text-neutral-600">Strikethrough</span>
-                    <kbd className="px-1.5 py-0.5 bg-white border border-slate-300 rounded font-mono text-[10px]">Ctrl + Shift + X</kbd>
-                  </div>
-                </div>
-              </div>
-
-              <div>
-                <span className="font-semibold text-neutral-900 block mb-1 text-[11px] uppercase tracking-wider text-slate-500">
-                  Document Actions
-                </span>
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="p-2 bg-slate-50 rounded border border-slate-200 flex justify-between">
-                    <span className="text-neutral-600">Save Document</span>
-                    <kbd className="px-1.5 py-0.5 bg-white border border-slate-300 rounded font-mono text-[10px]">Ctrl + S</kbd>
-                  </div>
-                  <div className="p-2 bg-slate-50 rounded border border-slate-200 flex justify-between">
-                    <span className="text-neutral-600">Print / PDF</span>
-                    <kbd className="px-1.5 py-0.5 bg-white border border-slate-300 rounded font-mono text-[10px]">Ctrl + P</kbd>
-                  </div>
-                  <div className="p-2 bg-slate-50 rounded border border-slate-200 flex justify-between">
-                    <span className="text-neutral-600">Find</span>
-                    <kbd className="px-1.5 py-0.5 bg-white border border-slate-300 rounded font-mono text-[10px]">Ctrl + F</kbd>
-                  </div>
-                  <div className="p-2 bg-slate-50 rounded border border-slate-200 flex justify-between">
-                    <span className="text-neutral-600">Replace</span>
-                    <kbd className="px-1.5 py-0.5 bg-white border border-slate-300 rounded font-mono text-[10px]">Ctrl + H</kbd>
-                  </div>
-                  <div className="p-2 bg-slate-50 rounded border border-slate-200 flex justify-between">
-                    <span className="text-neutral-600">Undo</span>
-                    <kbd className="px-1.5 py-0.5 bg-white border border-slate-300 rounded font-mono text-[10px]">Ctrl + Z</kbd>
-                  </div>
-                  <div className="p-2 bg-slate-50 rounded border border-slate-200 flex justify-between">
-                    <span className="text-neutral-600">Redo</span>
-                    <kbd className="px-1.5 py-0.5 bg-white border border-slate-300 rounded font-mono text-[10px]">Ctrl + Y</kbd>
-                  </div>
-                </div>
-              </div>
-
-              <div>
-                <span className="font-semibold text-neutral-900 block mb-1 text-[11px] uppercase tracking-wider text-slate-500">
-                  Tables
-                </span>
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="p-2 bg-slate-50 rounded border border-slate-200 flex justify-between">
-                    <span className="text-neutral-600">Next Cell</span>
-                    <kbd className="px-1.5 py-0.5 bg-white border border-slate-300 rounded font-mono text-[10px]">Tab</kbd>
-                  </div>
-                  <div className="p-2 bg-slate-50 rounded border border-slate-200 flex justify-between">
-                    <span className="text-neutral-600">Previous Cell</span>
-                    <kbd className="px-1.5 py-0.5 bg-white border border-slate-300 rounded font-mono text-[10px]">Shift + Tab</kbd>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="pt-3 border-t border-neutral-200 flex justify-end">
-              <button
-                onClick={() => setShowShortcutsModal(false)}
-                className="px-4 py-1.5 text-xs bg-[#185abd] hover:bg-[#114b9c] text-white rounded font-medium cursor-pointer"
-              >
-                Got It
-              </button>
-            </div>
-          </div>
-        </div>
+        <React.Suspense fallback={null}>
+          <KeyboardShortcutsModal
+            isOpen={showShortcutsModal}
+            onClose={() => setShowShortcutsModal(false)}
+          />
+        </React.Suspense>
       )}
 
-      {/* 2. Quick Guide Modal */}
+      {/* 2. Quick Guide Modal (Lazy-loaded Help tab button) */}
       {showQuickGuideModal && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-2xl border border-neutral-200 p-5 w-full max-w-lg animate-in zoom-in-95 duration-150">
-            <div className="flex items-center justify-between pb-3 border-b border-neutral-200">
-              <div className="flex items-center space-x-2 text-[#185abd]">
-                <BookOpen size={20} />
-                <h3 className="text-sm font-bold text-neutral-800">WordPad Quick Guide</h3>
-              </div>
-              <button
-                onClick={() => setShowQuickGuideModal(false)}
-                className="text-neutral-400 hover:text-neutral-700 p-1 rounded-md"
-              >
-                <X size={16} />
-              </button>
-            </div>
-
-            <div className="py-4 space-y-3.5 max-h-[65vh] overflow-y-auto text-xs text-neutral-700">
-              <div className="p-3 bg-purple-50/60 border border-purple-200 rounded-lg">
-                <div className="font-semibold text-purple-900 mb-1 flex items-center space-x-1.5">
-                  <Sparkles size={14} className="text-purple-600" />
-                  <span>AI Writing Assistant</span>
-                </div>
-                <p className="text-purple-800 leading-relaxed text-[11px]">
-                  Click the <strong>AI Assistant</strong> button in the Help tab to toggle the right toolbar. Powered by Gemini, you can summarize selections, improve writing flow, fix grammar mistakes, and translate into any language with your own Gemini API key.
-                </p>
-              </div>
-
-              <div className="p-3 bg-blue-50/60 border border-blue-200 rounded-lg">
-                <div className="font-semibold text-blue-900 mb-1">Interactive Table &amp; Border Toolbar</div>
-                <p className="text-blue-800 leading-relaxed text-[11px]">
-                  Insert tables from the <strong>Insert</strong> or <strong>Table</strong> tab. Use the floating context menu or the <strong>Border Edit</strong> toolbar to apply presets (Outline, Inside, All, Borders None) and customize line style, thickness, and fill.
-                </p>
-              </div>
-
-              <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg">
-                <div className="font-semibold text-slate-800 mb-1">Full-Fidelity File Export</div>
-                <p className="text-slate-600 leading-relaxed text-[11px]">
-                  Under the <strong>File</strong> Backstage, export to Microsoft Word <code>.docx</code>, PDF document, HTML web page, or Markdown with all formatting, tables, and images preserved.
-                </p>
-              </div>
-            </div>
-
-            <div className="pt-3 border-t border-neutral-200 flex justify-end">
-              <button
-                onClick={() => setShowQuickGuideModal(false)}
-                className="px-4 py-1.5 text-xs bg-[#185abd] hover:bg-[#114b9c] text-white rounded font-medium cursor-pointer"
-              >
-                Close Guide
-              </button>
-            </div>
-          </div>
-        </div>
+        <React.Suspense fallback={null}>
+          <QuickGuideModal
+            isOpen={showQuickGuideModal}
+            onClose={() => setShowQuickGuideModal(false)}
+          />
+        </React.Suspense>
       )}
 
       {/* 3. About Modal (Lazy-loaded 90% Screen Popup with 7 Interactive Tabs) */}
@@ -6346,7 +5860,7 @@ export const RibbonToolbar: React.FC<RibbonToolbarProps> = ({
               <div className="bg-white dark:bg-[#1e1e1e] rounded-2xl p-6 shadow-2xl flex flex-col items-center space-y-3">
                 <div className="w-8 h-8 border-3 border-[#0062ff] border-t-transparent rounded-full animate-spin" />
                 <span className="text-xs font-semibold text-neutral-700 dark:text-neutral-300">
-                  Loading Nedit v5.1 Suite Information...
+                  Loading Nedit v5.2 Suite Information...
                 </span>
               </div>
             </div>

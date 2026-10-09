@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { Editor } from '@tiptap/react';
 import {
   Image as ImageIcon,
@@ -526,8 +527,8 @@ export const InsertPictureModal: React.FC<InsertPictureModalProps> = ({
     return matchesCat && matchesQuery;
   });
 
-  return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-xs flex items-center justify-center z-50 p-4 animate-in fade-in duration-150">
+  return createPortal(
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-xs flex items-center justify-center z-[99999] p-4 animate-in fade-in duration-150 word-modal-backdrop" data-word-modal="true" style={{ zIndex: 99999 }}>
       <div className="bg-white rounded-xl shadow-2xl border border-neutral-300 w-full max-w-3xl overflow-hidden flex flex-col max-h-[92vh]">
         {/* Header Bar matching Photo (Solid Blue with Title and Close X) */}
         <div className="bg-[#185abd] text-white px-5 py-3.5 flex items-center justify-between select-none shrink-0 shadow-xs">
@@ -1120,7 +1121,8 @@ export const InsertPictureModal: React.FC<InsertPictureModalProps> = ({
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
 

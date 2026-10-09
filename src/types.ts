@@ -18,6 +18,8 @@ export type PageSize =
 
 export type PageMargin = 'normal' | 'narrow' | 'moderate' | 'wide' | 'custom';
 
+export type RulerUnit = 'inches' | 'cm';
+
 export interface CustomMarginValues {
   left: number; // in inches
   right: number; // in inches
@@ -51,6 +53,7 @@ export interface DocumentSettings {
   themeMode?: ThemeMode;
   author?: string;
   tags?: string;
+  category?: string;
   version?: string;
   createdDate?: string;
   updatedDate?: string;
@@ -68,6 +71,8 @@ export interface DocumentSettings {
   footerPageTotal?: number;
   footerPageSeparator?: string;
   showHeaderFooter?: boolean;
+  showHeader?: boolean;
+  showFooter?: boolean;
   orientation: PageOrientation;
   pageSize: PageSize;
   margins: PageMargin;
@@ -75,6 +80,7 @@ export interface DocumentSettings {
   pageColor: string;
   zoom: number; // e.g. 100
   showRuler: boolean;
+  rulerUnit?: RulerUnit; // 'inches' or 'cm'
   showGridlines: boolean;
   showParagraphMarks?: boolean;
   showNavigationPane?: boolean;
@@ -98,11 +104,12 @@ export interface DocumentSettings {
   viewMode: 'print' | 'read' | 'web';
   isDarkMode: boolean;
   columns?: 1 | 2;
-  layoutPages?: 1 | 2;
   showShadow?: boolean;
   pageBorderStyle?: PageBorderStyle;
   watermark?: string;
   customWatermark?: string;
+  doNotAddHeaderFooterToPrintArea?: boolean;
+  kickOverflowPx?: number;
 }
 
 export interface TableDimensions {

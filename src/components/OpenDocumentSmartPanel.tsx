@@ -433,7 +433,7 @@ export const OpenDocumentSmartPanel: React.FC<OpenDocumentSmartPanelProps> = ({
               onClick={() => onSwitchTab('print')}
               className="w-full py-1.5 bg-neutral-50 hover:bg-red-50/60 text-neutral-700 hover:text-[#dc2626] border border-neutral-200 rounded-lg text-[11px] font-semibold flex items-center justify-center space-x-1 transition-colors cursor-pointer"
             >
-              <span>Open Print Workstation</span>
+              <span>Open ULTIMATE Print Workstation</span>
               <ArrowRight size={12} />
             </button>
           </div>

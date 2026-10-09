@@ -541,22 +541,101 @@ body.table-dragging * {
 }
 
 /* Image Alignments */
-.ProseMirror img[data-alignment="left"] {
-  display: block;
-  margin-left: 0;
-  margin-right: auto;
+.ProseMirror img[data-alignment="left"],
+.print-preview-body img[data-alignment="left"],
+.print-page-body img[data-alignment="left"],
+.ProseMirror img[style*="margin-left: 0"],
+.print-preview-body img[style*="margin-left: 0"],
+.print-page-body img[style*="margin-left: 0"],
+.print-preview-body p[style*="text-align: left"] img,
+.print-page-body p[style*="text-align: left"] img,
+.print-preview-body .has-text-align-left img,
+.print-page-body .has-text-align-left img {
+  display: block !important;
+  margin-left: 0 !important;
+  margin-right: auto !important;
 }
 
-.ProseMirror img[data-alignment="center"] {
-  display: block;
-  margin-left: auto;
-  margin-right: auto;
+.ProseMirror img[data-alignment="center"],
+.print-preview-body img[data-alignment="center"],
+.print-page-body img[data-alignment="center"],
+.ProseMirror img[style*="margin-left: auto"][style*="margin-right: auto"],
+.print-preview-body img[style*="margin-left: auto"][style*="margin-right: auto"],
+.print-page-body img[style*="margin-left: auto"][style*="margin-right: auto"],
+.print-preview-body p[style*="text-align: center"] img,
+.print-page-body p[style*="text-align: center"] img,
+.print-preview-body .has-text-align-center img,
+.print-page-body .has-text-align-center img {
+  display: block !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
 }
 
-.ProseMirror img[data-alignment="right"] {
-  display: block;
-  margin-left: auto;
-  margin-right: 0;
+.ProseMirror img[data-alignment="right"],
+.print-preview-body img[data-alignment="right"],
+.print-page-body img[data-alignment="right"],
+.ProseMirror img[style*="margin-right: 0"],
+.print-preview-body img[style*="margin-right: 0"],
+.print-page-body img[style*="margin-right: 0"],
+.print-preview-body p[style*="text-align: right"] img,
+.print-page-body p[style*="text-align: right"] img,
+.print-preview-body .has-text-align-right img,
+.print-page-body .has-text-align-right img {
+  display: block !important;
+  margin-left: auto !important;
+  margin-right: 0 !important;
+}
+
+/* Image Width Support */
+.ProseMirror img[data-width],
+.print-preview-body img[data-width],
+.print-page-body img[data-width] {
+  max-width: 100% !important;
+}
+
+/* Image Floats / Text Wrap */
+.ProseMirror img[data-float="left"],
+.print-preview-body img[data-float="left"],
+.print-page-body img[data-float="left"] {
+  float: left !important;
+  margin: 0.5rem 1.25rem 0.75rem 0 !important;
+  display: inline-block !important;
+}
+
+.ProseMirror img[data-float="right"],
+.print-preview-body img[data-float="right"],
+.print-page-body img[data-float="right"] {
+  float: right !important;
+  margin: 0.5rem 0 0.75rem 1.25rem !important;
+  display: inline-block !important;
+}
+
+.ProseMirror img[data-float="none"],
+.print-preview-body img[data-float="none"],
+.print-page-body img[data-float="none"] {
+  float: none !important;
+}
+
+/* Paragraph Text Alignments across preview and print */
+.print-preview-body p[style*="text-align: center"],
+.print-page-body p[style*="text-align: center"],
+.print-preview-body .has-text-align-center,
+.print-page-body .has-text-align-center {
+  text-align: center !important;
+}
+
+.print-preview-body p[style*="text-align: right"],
+.print-page-body p[style*="text-align: right"],
+.print-preview-body .has-text-align-right,
+.print-page-body .has-text-align-right {
+  text-align: right !important;
+}
+
+.print-preview-body p[style*="text-align: left"],
+.print-page-body p[style*="text-align: left"],
+.print-preview-body .has-text-align-left,
+.print-page-body .has-text-align-left {
+  text-align: left !important;
 }
 
 /* Image Floats / Text Wrap */
@@ -717,7 +796,8 @@ body.table-dragging * {
 
   /* 2. Workspace and Canvas: Disable scrolling & zoom transforms */
   #word-canvas-workspace,
-  #word-canvas-workspace > div {
+  #word-page-zoom-container,
+  #word-canvas-workspace > div:not(#word-sticky-ruler-bar):not(.no-print):not([id*="ruler"]) {
     height: auto !important;
     min-height: auto !important;
     max-height: none !important;
@@ -731,8 +811,10 @@ body.table-dragging * {
     box-shadow: none !important;
   }
 
-  /* 3. Hide all UI chrome, toolbars, sidebars, context menus, and rulers */
+  /* 3. Hide all UI chrome, toolbars, sidebars, context menus, and rulers completely */
   .no-print,
+  .no-print *,
+  [data-no-print],
   #word-ribbon-header,
   #word-ribbon-toolbar,
   #word-status-bar,
@@ -741,8 +823,26 @@ body.table-dragging * {
   header,
   footer,
   .floating-format-painter,
-  .interactive-ruler {
+  .interactive-ruler,
+  .interactive-ruler *,
+  #word-sticky-ruler-bar,
+  #word-sticky-ruler-bar * {
     display: none !important;
+    visibility: hidden !important;
+    height: 0 !important;
+    min-height: 0 !important;
+    max-height: 0 !important;
+    width: 0 !important;
+    min-width: 0 !important;
+    border: none !important;
+    border-bottom: none !important;
+    border-top: none !important;
+    border-left: none !important;
+    border-right: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    opacity: 0 !important;
+    overflow: hidden !important;
   }
 
   /* 4. Document Page: Full width, transparent margins for printer margins */
@@ -1224,4 +1324,205 @@ body.table-dragging * {
 .format-painter-active .ProseMirror * {
   cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%23185abd' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m14.6 2.6 6.8 6.8-9.8 9.8H4.8v-6.8z' fill='%23bfdbfe'/%3E%3Cpath d='m18 6 2-2' stroke='%23ea580c'/%3E%3Cpath d='m15 9 2-2' stroke='%23ea580c'/%3E%3C/svg%3E") 3 22, copy !important;
 }
+
+/* Critical z-index hierarchy: Ribbon Header > Ribbon Toolbar > Ruler */
+#word-ribbon-header {
+  position: relative !important;
+  z-index: 200 !important;
+}
+
+#word-ribbon-header .absolute {
+  z-index: 99999 !important;
+}
+
+#word-ribbon-toolbar {
+  position: relative !important;
+  z-index: 100 !important;
+}
+
+#word-ribbon-toolbar .absolute {
+  z-index: 1000 !important;
+}
+
+/* Ruler lower line left and right: theme-compatible border matching toolbar (Screen only) */
+@media screen {
+  #word-sticky-ruler-bar {
+    position: sticky !important;
+    top: 0 !important;
+    z-index: 5 !important;
+    border-bottom: 1px solid #dad9d8 !important;
+  }
+
+  .theme-fullDark #word-sticky-ruler-bar,
+  .dark #word-sticky-ruler-bar,
+  .theme-canvasDark #word-sticky-ruler-bar {
+    border-bottom: 1px solid #333333 !important;
+  }
+
+  .theme-sepia #word-sticky-ruler-bar,
+  .sepia-theme #word-sticky-ruler-bar {
+    border-bottom: 1px solid #d8ccb8 !important;
+  }
+
+  .interactive-ruler {
+    position: relative !important;
+    z-index: 5 !important;
+    border-bottom: 1px solid #dad9d8 !important;
+  }
+
+  .theme-fullDark .interactive-ruler,
+  .dark .interactive-ruler,
+  .theme-canvasDark .interactive-ruler {
+    border-bottom: 1px solid #333333 !important;
+  }
+
+  .theme-sepia .interactive-ruler,
+  .sepia-theme .interactive-ruler {
+    border-bottom: 1px solid #d8ccb8 !important;
+  }
+}
+
+/* All application modal dialogs and backdrops must ALWAYS float on the very top of everything */
+.word-modal-backdrop,
+[data-word-modal="true"],
+.modal-backdrop,
+.modal-overlay,
+#equation-wizard-modal,
+[data-equation-wizard="true"],
+#screen-capture-tool-modal,
+[data-screen-capture="true"],
+#word-snapshot-modal,
+[data-snapshot-modal="true"] {
+  position: fixed !important;
+  z-index: 99999 !important;
+}
+
+/* File Tab Backstage (full-screen Microsoft Word Backstage view) */
+#word-file-backstage,
+#word-file-backstage-loading,
+.file-backstage-container {
+  position: fixed !important;
+  z-index: 99990 !important;
+}
+
+/* Page break orientation guide lines never print on physical printer */
+@media print {
+  .page-break-guide-container,
+  [data-page-break-guide],
+  .page-break-guide-line {
+    display: none !important;
+  }
+}
+
+/* Natural Math Formulas & Fx Text (Zero-buttonize, Theme-compatible, Print-ready) */
+.tiptap-math-inline,
+span[data-type="math-inline"] {
+  display: inline-flex !important;
+  align-items: center !important;
+  vertical-align: middle !important;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  color: inherit !important;
+  line-height: normal !important;
+}
+
+.tiptap-math-block,
+div[data-type="math-block"] {
+  display: block !important;
+  text-align: center !important;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  color: inherit !important;
+}
+
+/* Ensure KaTeX symbols inherit theme text colors correctly */
+.tiptap-math-inline .katex,
+.tiptap-math-block .katex {
+  color: inherit !important;
+  text-rendering: auto;
+}
+
+.theme-fullDark .tiptap-math-inline,
+.dark .tiptap-math-inline,
+.theme-fullDark .tiptap-math-block,
+.dark .tiptap-math-block {
+  color: #f3f4f6 !important;
+}
+
+.theme-canvasDark .tiptap-math-inline,
+.theme-canvasDark .tiptap-math-block {
+  color: #1f2937 !important;
+}
+
+.theme-sepia .tiptap-math-inline,
+.theme-sepia .tiptap-math-block {
+  color: #3e2c1c !important;
+}
+
+/* Print Mode: Pure natural mathematical typography on paper with no borders or backgrounds */
+@media print {
+  .tiptap-math-inline,
+  span[data-type="math-inline"],
+  .tiptap-math-block,
+  div[data-type="math-block"] {
+    background: transparent !important;
+    background-color: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    outline: none !important;
+    color: #000000 !important;
+    cursor: default !important;
+    text-decoration: none !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  .tiptap-math-inline,
+  span[data-type="math-inline"] {
+    display: inline-flex !important;
+    padding: 0 !important;
+    margin: 0 0.15em !important;
+    vertical-align: middle !important;
+  }
+  .tiptap-math-block,
+  div[data-type="math-block"] {
+    display: block !important;
+    padding: 0.35em 0 !important;
+    margin: 0.5em 0 !important;
+    text-align: center !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+  .tiptap-math-inline .katex,
+  .tiptap-math-block .katex {
+    color: #000000 !important;
+  }
+}
+
+/* Document Page Multi-Column Modes (1, 2, 3 Columns) */
+.ProseMirror {
+  column-fill: auto;
+}
+
+.ProseMirror table,
+.ProseMirror .image-resizer-container,
+.ProseMirror .tiptap-math-block,
+.ProseMirror blockquote,
+.ProseMirror pre,
+.ProseMirror .table-wrapper {
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+.ProseMirror h1,
+.ProseMirror h2,
+.ProseMirror h3 {
+  break-after: avoid;
+  page-break-after: avoid;
+}
+
+
+
+
 

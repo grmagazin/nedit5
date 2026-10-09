@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Editor } from '@tiptap/react';
-import { GoogleGenAI } from '@google/genai';
 import {
   Sparkles,
   X,
@@ -205,15 +204,21 @@ export const AiAssistantSidebar: React.FC<AiAssistantSidebarProps> = ({
     setLoading(true);
 
     try {
-      const ai = new GoogleGenAI({ apiKey });
-      const fullPrompt = `${systemInstruction}\n\nCONTENT:\n${userPrompt}`;
-
-      const response = await ai.models.generateContent({
-        model: 'gemini-3.8-flash',
-        contents: fullPrompt,
+      const response = await fetch('/api/gemini/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          prompt: userPrompt,
+          systemInstruction,
+        }),
       });
 
-      const responseText = response.text || 'No response generated.';
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to generate response from Gemini API');
+      }
+
+      const responseText = data.text || 'No response generated.';
 
       setMessages((prev) => [
         ...prev,

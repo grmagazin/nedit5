@@ -157,7 +157,11 @@ ${editor.getHTML()}
   };
 
   return (
-    <div className="fixed inset-0 bg-[#f3f2f1] z-50 flex select-none no-print animate-in fade-in duration-150">
+    <div
+      id="word-file-backstage"
+      className="fixed inset-0 bg-[#f3f2f1] z-[99990] flex select-none no-print animate-in fade-in duration-150"
+      style={{ position: 'fixed', zIndex: 99990 }}
+    >
       {/* Left Backstage Navigation (Microsoft Word deep blue) */}
       <div className="w-56 bg-[#185abd] text-white flex flex-col justify-between p-3 shrink-0 shadow-lg">
         <div>
@@ -285,7 +289,13 @@ ${editor.getHTML()}
             </button>
 
             <button
-              onClick={() => setActiveTab('print')}
+              onClick={() => {
+                if (onSaveToLocalStorage) {
+                  onSaveToLocalStorage();
+                }
+                setActiveTab('print');
+              }}
+              title="ULTIMATE Print Workstation"
               className={`w-full flex items-center space-x-2.5 px-3 py-2 rounded cursor-pointer transition-colors ${
                 activeTab === 'print' ? 'bg-white/25 text-white font-bold' : 'hover:bg-white/10 text-white/90'
               }`}
@@ -697,7 +707,7 @@ ${editor.getHTML()}
               <div className="flex-1 flex items-center justify-center p-12 text-xs text-neutral-500">
                 <div className="flex flex-col items-center space-y-3">
                   <div className="w-8 h-8 border-2 border-[#185abd] border-t-transparent rounded-full animate-spin" />
-                  <span>Loading Print Workstation...</span>
+                  <span>Loading ULTIMATE Print Workstation...</span>
                 </div>
               </div>
             }
@@ -708,6 +718,7 @@ ${editor.getHTML()}
               stats={stats}
               onClose={onClose}
               onUpdateSettings={onUpdateSettings}
+              onSaveToLocalStorage={onSaveToLocalStorage}
               onPrint={onPrint}
               onSwitchToPdfTab={() => setActiveTab('pdf')}
             />

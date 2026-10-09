@@ -1,4 +1,5 @@
 import React from 'react';
+import { createPortal } from 'react-dom';
 import { Editor } from '@tiptap/react';
 import {
   Rows,
@@ -24,8 +25,11 @@ export const TableContextMenu: React.FC<TableContextMenuProps> = ({
     return null;
   }
 
-  return (
-    <div className="fixed bottom-10 left-1/2 -translate-x-1/2 bg-white/95 backdrop-blur-sm border border-[#185abd]/30 shadow-xl rounded-lg px-3 py-1.5 flex items-center space-x-1 z-30 text-xs select-none no-print animate-in fade-in slide-in-from-bottom-2">
+  return createPortal(
+    <div
+      style={{ zIndex: 999998 }}
+      className="fixed bottom-10 left-1/2 -translate-x-1/2 bg-white/95 backdrop-blur-sm border border-[#185abd]/30 shadow-2xl rounded-lg px-3 py-1.5 flex items-center space-x-1 z-[999998] text-xs select-none no-print animate-in fade-in slide-in-from-bottom-2"
+    >
       <button
         onClick={onOpenTableEdit}
         title="Open Table Edit Right Toolbar"
@@ -111,6 +115,7 @@ export const TableContextMenu: React.FC<TableContextMenuProps> = ({
           <Trash2 size={13} />
         </button>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };

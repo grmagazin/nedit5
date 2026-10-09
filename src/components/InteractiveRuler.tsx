@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Editor } from '@tiptap/react';
-import { PageMargin, CustomMarginValues, ThemeMode } from '../types';
+import { PageMargin, CustomMarginValues, ThemeMode, RulerUnit } from '../types';
 
 interface InteractiveRulerProps {
   editor?: Editor | null;
@@ -8,6 +8,7 @@ interface InteractiveRulerProps {
   customMargins?: CustomMarginValues;
   pageWidth: number; // in px, e.g. 816
   zoom?: number; // 100 is 1.0
+  unit?: RulerUnit;
   onUpdateMargin: (margin: PageMargin) => void;
   onUpdateCustomMargins: (custom: CustomMarginValues) => void;
   onUpdateIndent?: (indent: { firstLine?: number; left?: number }) => void;
@@ -16,6 +17,8 @@ interface InteractiveRulerProps {
   onToggleFormatter?: () => void;
   isNavigationOpen?: boolean;
   isFormatterOpen?: boolean;
+  onFocusLayoutTab?: () => void;
+  onCycleMarginCarousel?: (margin: PageMargin) => void;
 }
 
 type DragTarget =
@@ -63,6 +66,7 @@ export const InteractiveRuler: React.FC<InteractiveRulerProps> = ({
   customMargins,
   pageWidth,
   zoom = 100,
+  unit = 'inches',
   onUpdateMargin,
   onUpdateCustomMargins,
   onUpdateIndent,
@@ -71,20 +75,88 @@ export const InteractiveRuler: React.FC<InteractiveRulerProps> = ({
   onToggleFormatter,
   isNavigationOpen = false,
   isFormatterOpen = false,
+  onFocusLayoutTab,
+  onCycleMarginCarousel,
 }) => {
   const rulerRef = useRef<HTMLDivElement>(null);
+  const [carouselFeedback, setCarouselFeedback] = useState<string | null>(null);
+  const feedbackTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (feedbackTimerRef.current) clearTimeout(feedbackTimerRef.current);
+    };
+  }, []);
+
+  const handleCycleMargins = useCallback(() => {
+    // Carousel order: Normal -> Narrow -> Moderate -> Wide -> Normal
+    const sequence: PageMargin[] = ['normal', 'narrow', 'moderate', 'wide'];
+    const currentIdx = sequence.indexOf(margins);
+    const nextIdx = currentIdx >= 0 ? (currentIdx + 1) % sequence.length : 0;
+    const nextMargin = sequence[nextIdx];
+
+    const displayLabels: Record<PageMargin, string> = {
+      normal: 'Normal (1.0")',
+      narrow: 'Narrow (0.5")',
+      moderate: 'Moderate (0.75")',
+      wide: 'Wide (1.5")',
+      custom: 'Custom',
+    };
+
+    setCarouselFeedback(displayLabels[nextMargin]);
+    if (feedbackTimerRef.current) clearTimeout(feedbackTimerRef.current);
+    feedbackTimerRef.current = setTimeout(() => {
+      setCarouselFeedback(null);
+    }, 1800);
+
+    if (onCycleMarginCarousel) {
+      onCycleMarginCarousel(nextMargin);
+    } else {
+      onUpdateMargin(nextMargin);
+    }
+
+    // Smart focus to Layout tab
+    onFocusLayoutTab?.();
+  }, [margins, onCycleMarginCarousel, onUpdateMargin, onFocusLayoutTab]);
+
+  const isMetric = unit === 'cm';
+  // 96px per inch, or ~37.795px per cm (96 / 2.54)
+  const pxPerUnit = isMetric ? 96 / 2.54 : 96;
+
+  const formatMeasure = (inchesVal: number) => {
+    if (isMetric) {
+      const cm = inchesVal * 2.54;
+      return `${cm.toFixed(1)} cm`;
+    }
+    return `${inchesVal.toFixed(2)}"`;
+  };
+
+  const formatPxMeasure = (pxVal: number) => {
+    if (isMetric) {
+      const cm = (pxVal / 96) * 2.54;
+      return `${cm.toFixed(1)} cm`;
+    }
+    const inVal = pxVal / 96;
+    return `${inVal.toFixed(2)}"`;
+  };
 
   const isFullDark = themeMode === 'fullDark';
   const isCanvasDark = themeMode === 'canvasDark';
   const isSepia = themeMode === 'sepia';
+
+  const rulerBorderHex = isFullDark || isCanvasDark
+    ? '#333333'
+    : isSepia
+    ? '#d8ccb8'
+    : '#dad9d8';
 
   const rulerBgClass = isFullDark
     ? 'bg-[#1e1e1e] border-b border-[#333333]'
     : isCanvasDark
     ? 'bg-[#222222] border-b border-[#333333]'
     : isSepia
-    ? 'bg-[#ddd3c1] border-b border-[#c8bba6]'
-    : 'bg-[#e2e8f0] border-b border-[#cbd5e1]';
+    ? 'bg-[#ddd3c1] border-b border-[#d8ccb8]'
+    : 'bg-[#e2e8f0] border-b border-[#dad9d8]';
 
   const marginShadeClass = isFullDark
     ? 'bg-[#181818] border-[#383838]'
@@ -197,9 +269,13 @@ export const InteractiveRuler: React.FC<InteractiveRulerProps> = ({
     if (!editor) return;
     updateParagraphIndentsFromEditor();
 
+    let animId: number | null = null;
     const handleEditorChange = () => {
       if (!isDraggingIndentRef.current) {
-        updateParagraphIndentsFromEditor();
+        if (animId) cancelAnimationFrame(animId);
+        animId = requestAnimationFrame(() => {
+          updateParagraphIndentsFromEditor();
+        });
       }
     };
 
@@ -207,6 +283,7 @@ export const InteractiveRuler: React.FC<InteractiveRulerProps> = ({
     editor.on('transaction', handleEditorChange);
 
     return () => {
+      if (animId) cancelAnimationFrame(animId);
       editor.off('selectionUpdate', handleEditorChange);
       editor.off('transaction', handleEditorChange);
     };
@@ -246,6 +323,9 @@ export const InteractiveRuler: React.FC<InteractiveRulerProps> = ({
     const currentRightPx = initialMarginRightInches * pxPerInch;
     const printableWidthPx = Math.max(100, pageWidth - currentLeftPx - currentRightPx);
 
+    let latestLeftMarginInches = initialMarginLeftInches;
+    let latestRightMarginInches = initialMarginRightInches;
+
     const handleMouseMove = (moveEvent: MouseEvent) => {
       const deltaPx = (moveEvent.clientX - startClientX) / scale;
       const deltaInches = deltaPx / pxPerInch;
@@ -257,9 +337,10 @@ export const InteractiveRuler: React.FC<InteractiveRulerProps> = ({
         );
         if (!moveEvent.shiftKey) newLeft = snapToEighthInches(newLeft);
 
+        latestLeftMarginInches = newLeft;
         setDragMarginInches((prev) => ({ ...prev, left: newLeft }));
         setTooltip({
-          text: `Left Margin: ${newLeft.toFixed(2)}"`,
+          text: `Left Margin: ${formatMeasure(newLeft)}`,
           x: newLeft * pxPerInch,
         });
       } else if (target === 'right-margin') {
@@ -269,9 +350,10 @@ export const InteractiveRuler: React.FC<InteractiveRulerProps> = ({
         );
         if (!moveEvent.shiftKey) newRight = snapToEighthInches(newRight);
 
+        latestRightMarginInches = newRight;
         setDragMarginInches((prev) => ({ ...prev, right: newRight }));
         setTooltip({
-          text: `Right Margin: ${newRight.toFixed(2)}"`,
+          text: `Right Margin: ${formatMeasure(newRight)}`,
           x: pageWidth - newRight * pxPerInch,
         });
       } else if (target === 'paragraph-left-indent') {
@@ -294,7 +376,7 @@ export const InteractiveRuler: React.FC<InteractiveRulerProps> = ({
         }
 
         setTooltip({
-          text: `Paragraph Left Indent: ${(newLeftPx / pxPerInch).toFixed(2)}"`,
+          text: `Paragraph Left Indent: ${formatPxMeasure(newLeftPx)}`,
           x: currentLeftPx + newLeftPx,
         });
       } else if (target === 'paragraph-right-indent') {
@@ -318,7 +400,7 @@ export const InteractiveRuler: React.FC<InteractiveRulerProps> = ({
         }
 
         setTooltip({
-          text: `Paragraph Right Indent: ${(newRightPx / pxPerInch).toFixed(2)}"`,
+          text: `Paragraph Right Indent: ${formatPxMeasure(newRightPx)}`,
           x: pageWidth - currentRightPx - newRightPx,
         });
       }
@@ -345,15 +427,16 @@ export const InteractiveRuler: React.FC<InteractiveRulerProps> = ({
         }
       }
 
-      // Commit page margin changes if a page margin was dragged
+      // Commit page margin changes cleanly if a page margin was dragged
       if (target === 'left-margin' || target === 'right-margin') {
-        setDragMarginInches((latest) => {
-          onUpdateMargin('custom');
-          onUpdateCustomMargins({
-            left: latest.left,
-            right: latest.right,
-          });
-          return latest;
+        setDragMarginInches({
+          left: latestLeftMarginInches,
+          right: latestRightMarginInches,
+        });
+        onUpdateMargin('custom');
+        onUpdateCustomMargins({
+          left: latestLeftMarginInches,
+          right: latestRightMarginInches,
         });
       }
     };
@@ -370,8 +453,8 @@ export const InteractiveRuler: React.FC<InteractiveRulerProps> = ({
   return (
     <div
       ref={rulerRef}
-      className={`h-6 ${rulerBgClass} flex items-center select-none no-print overflow-visible relative shadow-2xs`}
-      style={{ width: `${pageWidth}px` }}
+      className={`h-6 ${rulerBgClass} flex items-center select-none no-print print:hidden overflow-visible relative shadow-2xs interactive-ruler`}
+      style={{ width: `${pageWidth}px`, zIndex: 5, borderBottom: `1px solid ${rulerBorderHex}` }}
     >
       {/* Left 1px vertical purple line: Click to open/close Left NAVIGATION TOOLBAR */}
       <div
@@ -387,7 +470,7 @@ export const InteractiveRuler: React.FC<InteractiveRulerProps> = ({
             onToggleNavigation?.();
           }
         }}
-        className="absolute left-0 top-0 bottom-0 w-2.5 z-40 cursor-pointer flex items-center justify-start group focus:outline-none select-none"
+        className="absolute left-0 top-0 bottom-0 w-2.5 z-10 cursor-pointer flex items-center justify-start group focus:outline-none select-none no-print print:hidden"
         title="Left Navigation Toolbar (Click to open/close)"
         aria-label="Toggle Left Navigation Toolbar"
       >
@@ -402,18 +485,77 @@ export const InteractiveRuler: React.FC<InteractiveRulerProps> = ({
 
       {/* 1. Left Shaded Margin */}
       <div
-        className={`h-full ${marginShadeClass} border-r relative flex-shrink-0`}
+        className={`h-full ${marginShadeClass} border-r relative flex-shrink-0 flex items-center justify-center`}
         style={{ width: `${leftMarginPx}px` }}
-      />
+      >
+        {(() => {
+          const sequence: PageMargin[] = ['normal', 'narrow', 'moderate', 'wide'];
+          const currentIdx = sequence.indexOf(margins);
+          const nextIdx = currentIdx >= 0 ? (currentIdx + 1) % sequence.length : 0;
+          const nextMargin = sequence[nextIdx];
+
+          const marginNames: Record<PageMargin, { name: string; desc: string }> = {
+            normal: { name: 'Normal', desc: '1.0"' },
+            narrow: { name: 'Narrow', desc: '0.5"' },
+            moderate: { name: 'Moderate', desc: '0.75"' },
+            wide: { name: 'Wide', desc: '1.5"' },
+            custom: { name: 'Custom', desc: 'Custom' },
+          };
+
+          const currentInfo = marginNames[margins] || marginNames.normal;
+          const nextInfo = marginNames[nextMargin];
+
+          return (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                handleCycleMargins();
+              }}
+              onMouseDown={(e) => {
+                // Prevent drag initialization when clicking the unit button
+                e.stopPropagation();
+              }}
+              className={`group flex items-center justify-center px-1.5 py-0.5 rounded transition-all duration-150 cursor-pointer select-none border shadow-2xs ${
+                isFullDark
+                  ? 'border-neutral-700/70 hover:border-blue-500 bg-neutral-800/80 hover:bg-neutral-700 text-neutral-300 hover:text-white'
+                  : isCanvasDark
+                  ? 'border-neutral-600/60 hover:border-blue-400 bg-neutral-700/60 hover:bg-neutral-600 text-neutral-200 hover:text-white'
+                  : isSepia
+                  ? 'border-[#c8b99f] hover:border-[#8f7455] bg-[#ede5d6]/80 hover:bg-[#ede5d6] text-[#5c4a39]'
+                  : 'border-neutral-300/90 hover:border-blue-500 bg-white/80 hover:bg-white text-neutral-700 hover:text-blue-600 hover:shadow-xs'
+              } active:scale-95`}
+              title={`Unit: ${isMetric ? 'cm' : 'in'} | View: ${currentInfo.name} (${currentInfo.desc})\nClick to switch to ${nextInfo.name} (${nextInfo.desc}) & focus Layout tab`}
+              aria-label={`Ruler unit ${isMetric ? 'cm' : 'in'}, current margin ${currentInfo.name}. Click to cycle margin carousel and focus Layout tab.`}
+            >
+              <span className="text-[9px] font-mono font-bold tracking-tight leading-none">
+                {isMetric ? 'cm' : 'in'}
+              </span>
+              <span className="ml-0.5 text-[8px] opacity-40 group-hover:opacity-100 group-hover:text-blue-500 transition-opacity leading-none">
+                ⇄
+              </span>
+            </button>
+          );
+        })()}
+
+        {/* Temporary floating feedback badge indicating active margin carousel switch */}
+        {carouselFeedback && (
+          <div className="absolute top-full left-1 mt-1 z-40 bg-neutral-900/95 text-white text-[10px] px-2 py-0.5 rounded shadow-xl backdrop-blur-xs flex items-center space-x-1 whitespace-nowrap animate-in fade-in zoom-in-95 duration-100 pointer-events-none border border-neutral-700">
+            <span className="text-blue-400 font-semibold">Layout:</span>
+            <span className="font-bold">{carouselFeedback}</span>
+          </div>
+        )}
+      </div>
 
       {/* 2. Active Printable Document Area */}
       <div
         className={`h-full ${activeAreaBgClass} relative flex items-center flex-shrink-0`}
         style={{ width: `${activeWidthPx}px` }}
       >
-        {/* Render Inch numbers and tick marks starting at 0 from the left margin */}
-        {Array.from({ length: Math.ceil(totalInches) + 1 }).map((_, i) => {
-          const tickPos = i * pxPerInch;
+        {/* Render numbers and tick marks starting at 0 from the left margin */}
+        {Array.from({ length: Math.ceil(activeWidthPx / pxPerUnit) + 1 }).map((_, i) => {
+          const tickPos = i * pxPerUnit;
           if (tickPos > activeWidthPx + 4) return null;
 
           return (
@@ -429,38 +571,54 @@ export const InteractiveRuler: React.FC<InteractiveRulerProps> = ({
                 {i}
               </span>
 
-              {/* Major Inch Tick */}
+              {/* Major Unit Tick */}
               <div className={`w-px h-2.5 ${majorTickClass}`} />
 
-              {/* 1/8, 1/4, 3/8, 1/2, 5/8, 3/4, 7/8 Sub-Ticks */}
-              <div
-                className={`absolute w-px h-1 ${subTickClass} top-3.5`}
-                style={{ left: `${pxPerInch * 0.125}px` }}
-              />
-              <div
-                className={`absolute w-px h-1.5 ${majorTickClass} top-3`}
-                style={{ left: `${pxPerInch * 0.25}px` }}
-              />
-              <div
-                className={`absolute w-px h-1 ${subTickClass} top-3.5`}
-                style={{ left: `${pxPerInch * 0.375}px` }}
-              />
-              <div
-                className={`absolute w-px h-2 ${majorTickClass} top-2.5`}
-                style={{ left: `${pxPerInch * 0.5}px` }}
-              />
-              <div
-                className={`absolute w-px h-1 ${subTickClass} top-3.5`}
-                style={{ left: `${pxPerInch * 0.625}px` }}
-              />
-              <div
-                className={`absolute w-px h-1.5 ${majorTickClass} top-3`}
-                style={{ left: `${pxPerInch * 0.75}px` }}
-              />
-              <div
-                className={`absolute w-px h-1 ${subTickClass} top-3.5`}
-                style={{ left: `${pxPerInch * 0.875}px` }}
-              />
+              {/* Sub-Ticks */}
+              {isMetric ? (
+                <>
+                  <div className={`absolute w-px h-1 ${subTickClass} top-3.5`} style={{ left: `${pxPerUnit * 0.1}px` }} />
+                  <div className={`absolute w-px h-1 ${subTickClass} top-3.5`} style={{ left: `${pxPerUnit * 0.2}px` }} />
+                  <div className={`absolute w-px h-1 ${subTickClass} top-3.5`} style={{ left: `${pxPerUnit * 0.3}px` }} />
+                  <div className={`absolute w-px h-1 ${subTickClass} top-3.5`} style={{ left: `${pxPerUnit * 0.4}px` }} />
+                  <div className={`absolute w-px h-2 ${majorTickClass} top-2.5`} style={{ left: `${pxPerUnit * 0.5}px` }} />
+                  <div className={`absolute w-px h-1 ${subTickClass} top-3.5`} style={{ left: `${pxPerUnit * 0.6}px` }} />
+                  <div className={`absolute w-px h-1 ${subTickClass} top-3.5`} style={{ left: `${pxPerUnit * 0.7}px` }} />
+                  <div className={`absolute w-px h-1 ${subTickClass} top-3.5`} style={{ left: `${pxPerUnit * 0.8}px` }} />
+                  <div className={`absolute w-px h-1 ${subTickClass} top-3.5`} style={{ left: `${pxPerUnit * 0.9}px` }} />
+                </>
+              ) : (
+                <>
+                  <div
+                    className={`absolute w-px h-1 ${subTickClass} top-3.5`}
+                    style={{ left: `${pxPerUnit * 0.125}px` }}
+                  />
+                  <div
+                    className={`absolute w-px h-1.5 ${majorTickClass} top-3`}
+                    style={{ left: `${pxPerUnit * 0.25}px` }}
+                  />
+                  <div
+                    className={`absolute w-px h-1 ${subTickClass} top-3.5`}
+                    style={{ left: `${pxPerUnit * 0.375}px` }}
+                  />
+                  <div
+                    className={`absolute w-px h-2 ${majorTickClass} top-2.5`}
+                    style={{ left: `${pxPerUnit * 0.5}px` }}
+                  />
+                  <div
+                    className={`absolute w-px h-1 ${subTickClass} top-3.5`}
+                    style={{ left: `${pxPerUnit * 0.625}px` }}
+                  />
+                  <div
+                    className={`absolute w-px h-1.5 ${majorTickClass} top-3`}
+                    style={{ left: `${pxPerUnit * 0.75}px` }}
+                  />
+                  <div
+                    className={`absolute w-px h-1 ${subTickClass} top-3.5`}
+                    style={{ left: `${pxPerUnit * 0.875}px` }}
+                  />
+                </>
+              )}
             </div>
           );
         })}
@@ -486,7 +644,7 @@ export const InteractiveRuler: React.FC<InteractiveRulerProps> = ({
             onToggleFormatter?.();
           }
         }}
-        className="absolute right-0 top-0 bottom-0 w-2.5 z-40 cursor-pointer flex items-center justify-end group focus:outline-none select-none"
+        className="absolute right-0 top-0 bottom-0 w-2.5 z-10 cursor-pointer flex items-center justify-end group focus:outline-none select-none no-print print:hidden"
         title="Ultimate Formatter (Click to open/close)"
         aria-label="Toggle Ultimate Formatter"
       >
@@ -504,9 +662,9 @@ export const InteractiveRuler: React.FC<InteractiveRulerProps> = ({
       {/* ========================================================= */}
       <div
         onMouseDown={(e) => handleStartDrag('left-margin', e)}
-        className="absolute top-0 bottom-0 w-3 -translate-x-1/2 cursor-ew-resize hover:bg-[#185abd]/20 transition-colors z-20 group"
+        className="absolute top-0 bottom-0 w-3 -translate-x-1/2 cursor-ew-resize hover:bg-[#185abd]/20 transition-colors z-5 group"
         style={{ left: `${leftMarginPx}px` }}
-        title={`Left Page Margin: ${dragMarginInches.left.toFixed(2)}"`}
+        title={`Left Page Margin: ${formatMeasure(dragMarginInches.left)}`}
       >
         <div className="w-[1.5px] h-full bg-neutral-400/80 group-hover:bg-[#185abd] mx-auto transition-colors" />
       </div>
@@ -516,9 +674,9 @@ export const InteractiveRuler: React.FC<InteractiveRulerProps> = ({
       {/* ========================================================= */}
       <div
         onMouseDown={(e) => handleStartDrag('right-margin', e)}
-        className="absolute top-0 bottom-0 w-3 -translate-x-1/2 cursor-ew-resize hover:bg-[#185abd]/20 transition-colors z-20 group"
+        className="absolute top-0 bottom-0 w-3 -translate-x-1/2 cursor-ew-resize hover:bg-[#185abd]/20 transition-colors z-5 group"
         style={{ left: `${pageWidth - rightMarginPx}px` }}
-        title={`Right Page Margin: ${dragMarginInches.right.toFixed(2)}"`}
+        title={`Right Page Margin: ${formatMeasure(dragMarginInches.right)}`}
       >
         <div className="w-[1.5px] h-full bg-neutral-400/80 group-hover:bg-[#185abd] mx-auto transition-colors" />
       </div>
@@ -529,7 +687,7 @@ export const InteractiveRuler: React.FC<InteractiveRulerProps> = ({
       {/* LEFT memo line = last LEFT paragraph indent position */}
       {memoLeftIndentPx !== null && (
         <div
-          className="absolute top-0 bottom-0 pointer-events-none select-none z-20 -translate-x-1/2 flex flex-col items-center justify-between"
+          className="absolute top-0 bottom-0 pointer-events-none select-none z-5 -translate-x-1/2 flex flex-col items-center justify-between no-print print:hidden"
           style={{ left: `${leftMarginPx + memoLeftIndentPx}px` }}
           aria-hidden="true"
         >
@@ -566,7 +724,7 @@ export const InteractiveRuler: React.FC<InteractiveRulerProps> = ({
       {/* RIGHT memo line = last RIGHT paragraph indent position */}
       {memoRightIndentPx !== null && (
         <div
-          className="absolute top-0 bottom-0 pointer-events-none select-none z-20 -translate-x-1/2 flex flex-col items-center justify-between"
+          className="absolute top-0 bottom-0 pointer-events-none select-none z-5 -translate-x-1/2 flex flex-col items-center justify-between no-print print:hidden"
           style={{ left: `${pageWidth - rightMarginPx - memoRightIndentPx}px` }}
           aria-hidden="true"
         >
@@ -605,9 +763,9 @@ export const InteractiveRuler: React.FC<InteractiveRulerProps> = ({
       {/* ========================================================= */}
       <div
         onMouseDown={(e) => handleStartDrag('paragraph-left-indent', e)}
-        className="absolute top-0 bottom-0 z-30 cursor-ew-resize -translate-x-1/2 flex flex-col justify-between items-center py-[0.5px] px-1 group select-none"
+        className="absolute top-0 bottom-0 z-8 cursor-ew-resize -translate-x-1/2 flex flex-col justify-between items-center py-[0.5px] px-1 group select-none"
         style={{ left: `${leftMarginPx + paragraphLeftIndentPx}px` }}
-        title={`Paragraph Left Indent: ${(paragraphLeftIndentPx / pxPerInch).toFixed(2)}"`}
+        title={`Paragraph Left Indent: ${formatPxMeasure(paragraphLeftIndentPx)}`}
       >
         {/* Top Downward Triangle */}
         <div className="w-0 h-0 border-l-[4px] border-l-transparent border-r-[4px] border-r-transparent border-t-[5.5px] border-t-[#185abd] drop-shadow-xs group-hover:scale-125 transition-transform" />
@@ -627,9 +785,9 @@ export const InteractiveRuler: React.FC<InteractiveRulerProps> = ({
       {/* ========================================================= */}
       <div
         onMouseDown={(e) => handleStartDrag('paragraph-right-indent', e)}
-        className="absolute bottom-0 z-30 cursor-ew-resize -translate-x-1/2 flex flex-col items-center pb-[0.5px] px-1 group select-none"
+        className="absolute bottom-0 z-8 cursor-ew-resize -translate-x-1/2 flex flex-col items-center pb-[0.5px] px-1 group select-none"
         style={{ left: `${pageWidth - rightMarginPx - paragraphRightIndentPx}px` }}
-        title={`Paragraph Right Indent: ${(paragraphRightIndentPx / pxPerInch).toFixed(2)}"`}
+        title={`Paragraph Right Indent: ${formatPxMeasure(paragraphRightIndentPx)}`}
       >
         <div className="w-0 h-0 border-l-[4.5px] border-l-transparent border-r-[4.5px] border-r-transparent border-b-[6px] border-b-[#185abd] drop-shadow-xs group-hover:scale-125 transition-transform" />
         <div className="w-[8px] h-[3px] bg-[#185abd] rounded-[0.5px] drop-shadow-xs mt-[0.5px] group-hover:scale-125 transition-transform" />
@@ -640,7 +798,7 @@ export const InteractiveRuler: React.FC<InteractiveRulerProps> = ({
       {/* ========================================================= */}
       {tooltip && (
         <div
-          className="absolute -top-7 px-2 py-0.5 bg-[#1e295d] text-white text-[11px] font-bold rounded shadow-md pointer-events-none -translate-x-1/2 z-50 whitespace-nowrap"
+          className="absolute -top-7 px-2 py-0.5 bg-[#1e295d] text-white text-[11px] font-bold rounded shadow-md pointer-events-none -translate-x-1/2 z-15 whitespace-nowrap"
           style={{ left: `${tooltip.x}px` }}
         >
           {tooltip.text}

@@ -3,6 +3,7 @@ import { HorizontalRule } from '@tiptap/extension-horizontal-rule';
 import { Table } from '@tiptap/extension-table';
 import { TableCell } from '@tiptap/extension-table-cell';
 import { TableHeader } from '@tiptap/extension-table-header';
+import Image from '@tiptap/extension-image';
 import '@tiptap/extension-text-style';
 
 export const CustomDiv = Node.create({
@@ -784,6 +785,121 @@ export const ParagraphFormatting = Extension.create({
             return commands.resetAttributes(type, 'paragraphSpacingBottom');
           });
         },
+    };
+  },
+});
+
+export const CustomImage = Image.extend({
+  addAttributes() {
+    return {
+      ...this.parent?.(),
+      width: {
+        default: null,
+        parseHTML: (element: HTMLElement) =>
+          element.getAttribute('width') ||
+          element.style.width ||
+          element.getAttribute('data-width') ||
+          null,
+        renderHTML: (attributes: Record<string, any>) => {
+          if (!attributes.width) return {};
+          return {
+            width: attributes.width,
+            'data-width': attributes.width,
+          };
+        },
+      },
+      height: {
+        default: null,
+        parseHTML: (element: HTMLElement) =>
+          element.getAttribute('height') || element.style.height || null,
+        renderHTML: (attributes: Record<string, any>) => {
+          if (!attributes.height) return {};
+          return {
+            height: attributes.height,
+          };
+        },
+      },
+      alignment: {
+        default: null,
+        parseHTML: (element: HTMLElement) => {
+          const dataAlign = element.getAttribute('data-alignment');
+          if (dataAlign) return dataAlign;
+          const marginLeft = element.style.marginLeft;
+          const marginRight = element.style.marginRight;
+          if (marginLeft === 'auto' && marginRight === 'auto') return 'center';
+          if (marginLeft === 'auto' && (marginRight === '0px' || marginRight === '0')) return 'right';
+          if ((marginLeft === '0px' || marginLeft === '0') && marginRight === 'auto') return 'left';
+          return null;
+        },
+        renderHTML: (attributes: Record<string, any>) => {
+          if (!attributes.alignment) return {};
+          return {
+            'data-alignment': attributes.alignment,
+          };
+        },
+      },
+      float: {
+        default: null,
+        parseHTML: (element: HTMLElement) =>
+          element.getAttribute('data-float') || element.style.float || null,
+        renderHTML: (attributes: Record<string, any>) => {
+          if (!attributes.float || attributes.float === 'none') return {};
+          return {
+            'data-float': attributes.float,
+          };
+        },
+      },
+      style: {
+        default: null,
+        parseHTML: (element: HTMLElement) => element.getAttribute('style') || null,
+        renderHTML: (attributes: Record<string, any>) => {
+          const styles: string[] = [];
+          if (attributes.style) {
+            styles.push(attributes.style);
+          }
+          if (attributes.width) {
+            styles.push(`width: ${attributes.width}`);
+            styles.push('max-width: 100%');
+          }
+          if (attributes.alignment === 'center') {
+            styles.push('display: block');
+            styles.push('margin-left: auto');
+            styles.push('margin-right: auto');
+          } else if (attributes.alignment === 'right') {
+            styles.push('display: block');
+            styles.push('margin-left: auto');
+            styles.push('margin-right: 0');
+          } else if (attributes.alignment === 'left') {
+            styles.push('display: block');
+            styles.push('margin-left: 0');
+            styles.push('margin-right: auto');
+          }
+          if (attributes.float === 'left') {
+            styles.push('float: left');
+            styles.push('margin: 0.5rem 1.25rem 0.75rem 0');
+            styles.push('display: inline-block');
+          } else if (attributes.float === 'right') {
+            styles.push('float: right');
+            styles.push('margin: 0.5rem 0 0.75rem 1.25rem');
+            styles.push('display: inline-block');
+          }
+          const map = new Map<string, string>();
+          styles
+            .join(';')
+            .split(';')
+            .forEach((item) => {
+              const [k, ...v] = item.split(':');
+              if (k && v.length > 0) {
+                map.set(k.trim().toLowerCase(), v.join(':').trim());
+              }
+            });
+          const combined = Array.from(map.entries())
+            .map(([k, v]) => `${k}: ${v}`)
+            .join('; ');
+
+          return combined ? { style: combined } : {};
+        },
+      },
     };
   },
 });

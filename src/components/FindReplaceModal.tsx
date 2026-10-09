@@ -153,7 +153,10 @@ export const FindReplaceModal: React.FC<FindReplaceModalProps> = ({ editor, onCl
   };
 
   return (
-    <div className="fixed top-28 right-8 bg-white dark:bg-[#202023] border border-neutral-300 dark:border-[#383838] rounded-lg shadow-2xl p-4 w-80 z-40 text-xs no-print animate-in fade-in slide-in-from-top-2 select-none">
+    <div
+      className="fixed top-28 right-8 bg-white dark:bg-[#202023] border border-neutral-300 dark:border-[#383838] rounded-lg shadow-2xl p-4 w-80 z-[9999] text-xs no-print animate-in fade-in slide-in-from-top-2 select-none"
+      style={{ zIndex: 9999 }}
+    >
       {/* Header */}
       <div className="flex items-center justify-between pb-2 border-b border-neutral-200 dark:border-neutral-700 mb-3">
         <div className="flex items-center space-x-1.5 font-semibold text-neutral-800 dark:text-neutral-100">

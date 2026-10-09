@@ -11,9 +11,9 @@ export interface DocumentPageInfo {
   isCurrent?: boolean;
 }
 
-// Standard 96 DPI pixel dimensions for page sizes
+// Standard 96 DPI pixel dimensions for page sizes, calibrated for physical printer production
 export const PAGE_HEIGHT_LOOKUP: Record<PageSize, number> = {
-  a4: 1123, // 11.69" × 96
+  a4: 1415, // Calibrated for Epson L3250 / real A4 printers (1415px safe fit, prevents single line overflow)
   letter: 1056, // 11" × 96
   legal: 1344, // 14" × 96
   a3: 1588, // 16.54" × 96
@@ -51,16 +51,83 @@ export function getPageDimensionsPx(size: PageSize = 'a4', orientation: PageOrie
   return { width, height };
 }
 
+// 8 Standard Calibrations matching physical web print & canvas ruler steppers
+export const DEFAULT_PAGE_BREAK_CALIBRATIONS: Record<string, number> = {
+  'a4_portrait': 1250,      // Normal A4 Portrait = 1250px (exact web print calibration requested by user)
+  'a4_landscape': 880,       // A4 Ls = 880px
+  'letter_portrait': 1180,   // Letter Portrait = 1180px
+  'letter_landscape': 910,   // Letter Ls = 910px
+  'legal_portrait': 1500,    // Legal Portrait = 1500px
+  'legal_landscape': 910,    // Legal Ls = 910px
+  'a3_portrait': 1770,       // A3 Portrait = 1770px
+  'a3_landscape': 1250,      // A3 Ls = 1250px
+  'a5_portrait': 800,
+  'a5_landscape': 560,
+  'executive_portrait': 1010,
+  'executive_landscape': 700,
+  'tabloid_portrait': 1630,
+  'tabloid_landscape': 1060,
+  'b5_portrait': 960,
+  'b5_landscape': 690,
+  'a6_portrait': 560,
+  'a6_landscape': 400,
+  'folio_portrait': 1250,
+  'folio_landscape': 820,
+  'statement_portrait': 820,
+  'statement_landscape': 530,
+  'ledger_portrait': 1060,
+  'ledger_landscape': 1630,
+};
+
+export const getCalibrationKey = (size: string = 'a4', orientation: string = 'portrait'): string => {
+  return `${size.toLowerCase()}_${orientation.toLowerCase()}`;
+};
+
+export const getCalibrationLabel = (size: string = 'a4', orientation: string = 'portrait'): string => {
+  const s = size.toUpperCase();
+  return orientation === 'landscape' ? `${s} Ls` : s;
+};
+
+export function getCalibratedPageHeight(
+  pageSize: PageSize = 'a4',
+  orientation: PageOrientation = 'portrait'
+): number {
+  const key = getCalibrationKey(pageSize, orientation);
+  if (typeof window !== 'undefined' && window.localStorage) {
+    try {
+      const saved = localStorage.getItem(`wordpad_page_break_calibrated_height_${key}`);
+      if (saved) {
+        const val = parseInt(saved, 10);
+        if (!isNaN(val) && val >= 400 && val <= 3500) return val;
+      }
+      if (key === 'a4_portrait') {
+        const legacy = localStorage.getItem('wordpad_page_break_calibrated_height');
+        if (legacy) {
+          const val = parseInt(legacy, 10);
+          if (!isNaN(val) && val >= 400 && val <= 3500) return val;
+        }
+        const customA4 = localStorage.getItem('wordpad_a4_calibration_custom_height');
+        if (customA4) {
+          const val = parseInt(customA4, 10);
+          if (!isNaN(val) && val >= 400 && val <= 3500) return val;
+        }
+      }
+    } catch {}
+  }
+  return DEFAULT_PAGE_BREAK_CALIBRATIONS[key] || (orientation === 'landscape' ? 880 : 1250);
+}
+
 /**
  * Calculates real printable document pages by inspecting:
- * 1. Explicit page breaks (.word-page-break, hr.word-page-break, .word-blank-page)
- * 2. Natural physical height overflow based on page dimensions (A4, Letter, etc.)
+ * 1. Explicit user page breaks (.word-page-break, hr.word-page-break, .word-blank-page, break-after)
+ * 2. Exact user calibrated height per paper size & orientation (+5/-5 calibration adjustments)
  */
 export function calculateDocumentPages(
   editor: Editor | null,
   pageSize: PageSize = 'a4',
   orientation: PageOrientation = 'portrait',
-  currentScrollTop: number = 0
+  currentScrollTop: number = 0,
+  customCalibratedHeight?: number
 ): DocumentPageInfo[] {
   if (!editor) {
     return [
@@ -76,9 +143,8 @@ export function calculateDocumentPages(
     ];
   }
 
-  const { height: pageHeightPx } = getPageDimensionsPx(pageSize, orientation);
-  // Printable content height after reserving typical margins (~160px for top/bottom margins)
-  const effectivePrintableHeight = Math.max(500, pageHeightPx - 160);
+  const calibratedHeight =
+    customCalibratedHeight || getCalibratedPageHeight(pageSize, orientation);
 
   const pmEl = document.querySelector('.ProseMirror') as HTMLElement | null;
 
@@ -90,10 +156,9 @@ export function calculateDocumentPages(
     let currentPageChars = 0;
     let currentPageSnippet = '';
     let currentPageStartTop = 0;
-    let lastElementTop = 0;
     let hasExplicitBreakOnPage = false;
 
-    const finalizePage = (domTop: number, isBreak: boolean) => {
+    const finalizePage = (nextDomTop: number, isBreak: boolean) => {
       pages.push({
         pageNumber: currentPageNumber,
         wordCount: currentPageWords,
@@ -107,23 +172,36 @@ export function calculateDocumentPages(
       currentPageWords = 0;
       currentPageChars = 0;
       currentPageSnippet = '';
-      currentPageStartTop = domTop;
+      currentPageStartTop = nextDomTop;
       hasExplicitBreakOnPage = isBreak;
+    };
+
+    const isExplicitBreakElement = (el: HTMLElement): boolean => {
+      if (
+        el.classList.contains('word-page-break') ||
+        el.classList.contains('word-blank-page') ||
+        (el.tagName.toLowerCase() === 'hr' && el.className.includes('word-page-break')) ||
+        el.hasAttribute('data-page-break') ||
+        Boolean(el.querySelector('.word-page-break, .word-blank-page, hr.word-page-break, [data-page-break]'))
+      ) {
+        return true;
+      }
+      const st = el.getAttribute('style') || '';
+      return (
+        st.includes('page-break-after: always') ||
+        st.includes('break-after: page') ||
+        st.includes('page-break-before: always') ||
+        st.includes('break-before: page')
+      );
     };
 
     const children = Array.from(pmEl.children) as HTMLElement[];
 
     for (let i = 0; i < children.length; i++) {
       const child = children[i];
-      const isPageBreak =
-        child.classList.contains('word-page-break') ||
-        child.tagName.toLowerCase() === 'hr' && child.className.includes('word-page-break') ||
-        Boolean(child.querySelector('.word-page-break')) ||
-        child.classList.contains('word-blank-page');
-
+      const isBreak = isExplicitBreakElement(child);
       const elTop = child.offsetTop;
       const elHeight = child.offsetHeight || 24;
-      lastElementTop = elTop + elHeight;
 
       // Extract text content from this block
       const text = child.innerText || child.textContent || '';
@@ -131,26 +209,30 @@ export function calculateDocumentPages(
       const words = cleanText ? cleanText.split(/\s+/).length : 0;
       const chars = cleanText.length;
 
-      // Check if natural page height exceeded before this element
+      // Check distance from current page start
       const distanceFromPageStart = elTop - currentPageStartTop;
-      if (distanceFromPageStart > effectivePrintableHeight && i > 0) {
-        // Natural page overflow split
+      const isHeading = /^H[1-6]$/i.test(child.tagName);
+      const wouldOrphanHeading = isHeading && (calibratedHeight - distanceFromPageStart < 110);
+
+      // Natural page overflow: if distance exceeds calibrated page height
+      if (i > 0 && (distanceFromPageStart >= calibratedHeight || wouldOrphanHeading)) {
         finalizePage(elTop, false);
       }
 
-      // Add to current page totals
-      currentPageWords += words;
-      currentPageChars += chars;
-      if (!currentPageSnippet && cleanText && cleanText !== 'PAGE BREAK') {
-        currentPageSnippet = cleanText.substring(0, 90);
+      // Add to current page totals (unless it's just the break marker label)
+      if (cleanText && cleanText !== 'PAGE BREAK') {
+        currentPageWords += words;
+        currentPageChars += chars;
+        if (!currentPageSnippet) {
+          currentPageSnippet = cleanText.substring(0, 90);
+        }
       }
 
-      // Check if this element triggers an explicit page break
-      if (isPageBreak) {
+      // Explicit page break: immediately splits into the next page
+      if (isBreak) {
         hasExplicitBreakOnPage = true;
-        // The element after the page break will start on the next page
-        const nextTop = elTop + elHeight + 16;
-        finalizePage(nextTop, true);
+        const nextTop = elTop + elHeight + 12;
+        finalizePage(nextTop, false);
       }
     }
 
@@ -164,24 +246,29 @@ export function calculateDocumentPages(
       domTopPx: currentPageStartTop,
     });
 
-    // Mark current active page based on scroll or caret
-    markActivePage(pages, currentScrollTop, effectivePrintableHeight);
-
-    return pages.length > 0 ? pages : [
-      {
-        pageNumber: 1,
+    // Also verify against overall scrollHeight vs calibratedHeight:
+    // If there is significant extra vertical content beyond the DOM blocks identified
+    const totalContentHeight = Math.max(pmEl.scrollHeight || 0, pmEl.offsetHeight || 0);
+    const calibratedTotalPages = Math.max(1, Math.ceil(totalContentHeight / calibratedHeight));
+    while (pages.length < calibratedTotalPages) {
+      const nextNum = pages.length + 1;
+      const estimatedTop = (nextNum - 1) * calibratedHeight;
+      pages.push({
+        pageNumber: nextNum,
         wordCount: 0,
         characterCount: 0,
-        snippet: 'Page 1',
+        snippet: `Page ${nextNum} content`,
         hasExplicitBreak: false,
-        domTopPx: 0,
-        isCurrent: true,
-      },
-    ];
+        domTopPx: estimatedTop,
+      });
+    }
+
+    markActivePage(pages, currentScrollTop, calibratedHeight);
+    return pages;
   }
 
   // 2. ProseMirror document node structure fallback
-  return calculatePagesFromProseMirrorDoc(editor, effectivePrintableHeight);
+  return calculatePagesFromProseMirrorDoc(editor, calibratedHeight);
 }
 
 function markActivePage(pages: DocumentPageInfo[], scrollTop: number, pageHeight: number) {

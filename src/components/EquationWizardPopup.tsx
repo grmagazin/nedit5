@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { Editor } from '@tiptap/react';
 import { X, Plus, Hash, ListFilter, Sparkles, Check, Copy } from 'lucide-react';
 import katex from 'katex';
@@ -175,7 +176,7 @@ export const EquationWizardPopup: React.FC<EquationWizardPopupProps> = ({
         throwOnError: false,
         displayMode,
       });
-      return <div dangerouslySetInnerHTML={{ __html: html }} className="overflow-x-auto" />;
+      return <div dangerouslySetInnerHTML={{ __html: html }} className="overflow-x-auto text-neutral-900 dark:text-neutral-100 select-text font-serif" />;
     } catch (err: any) {
       return (
         <span className="text-red-500 font-mono text-xs">
@@ -185,15 +186,19 @@ export const EquationWizardPopup: React.FC<EquationWizardPopupProps> = ({
     }
   };
 
-  return (
+  const modalContent = (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/40 backdrop-blur-2xs animate-in fade-in"
+      id="equation-wizard-modal"
+      className="fixed inset-0 z-[99999] flex items-center justify-center p-3 sm:p-4 bg-black/50 backdrop-blur-xs animate-in fade-in word-modal-backdrop"
+      data-word-modal="true"
+      data-equation-wizard="true"
+      style={{ position: 'fixed', zIndex: 99999 }}
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
     >
       <div
-        className="w-full max-w-[380px] max-h-[92vh] bg-white dark:bg-neutral-900 rounded-2xl shadow-2xl border border-sky-200/80 dark:border-neutral-700 flex flex-col overflow-hidden text-neutral-800 dark:text-neutral-100 select-none animate-in zoom-in-95 duration-150"
+        className="w-full max-w-[380px] max-h-[92vh] bg-white dark:bg-neutral-900 rounded-2xl shadow-2xl border border-sky-200/80 dark:border-neutral-700 flex flex-col overflow-hidden text-neutral-800 dark:text-neutral-100 select-none animate-in zoom-in-95 duration-150 relative z-[100000]"
         role="dialog"
         aria-modal="true"
         aria-label="Fx Wizard — Κατασκευαστής Τύπων"
@@ -252,7 +257,15 @@ export const EquationWizardPopup: React.FC<EquationWizardPopupProps> = ({
               value={inlineLatex}
               onFocus={() => setActiveTarget('inline')}
               onChange={(e) => setInlineLatex(e.target.value)}
-              placeholder="π.χ. x^2 + 2x + 1"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && (!e.shiftKey || e.ctrlKey || e.metaKey)) {
+                  e.preventDefault();
+                  if (inlineLatex.trim()) {
+                    handleInsertInline();
+                  }
+                }
+              }}
+              placeholder="π.χ. x^2 + 2x + 1 (Enter για εισαγωγή)"
               className={`w-full p-2.5 rounded-xl border text-xs font-mono transition-all resize-y placeholder:text-neutral-400 focus:outline-hidden ${
                 activeTarget === 'inline'
                   ? 'border-sky-500 ring-2 ring-sky-200 dark:ring-sky-900/60 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100'
@@ -294,7 +307,15 @@ export const EquationWizardPopup: React.FC<EquationWizardPopupProps> = ({
               value={blockLatex}
               onFocus={() => setActiveTarget('block')}
               onChange={(e) => setBlockLatex(e.target.value)}
-              placeholder="π.χ. \int_a^b f(x) dx"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && (!e.shiftKey || e.ctrlKey || e.metaKey)) {
+                  e.preventDefault();
+                  if (blockLatex.trim()) {
+                    handleInsertBlock();
+                  }
+                }
+              }}
+              placeholder="π.χ. \int_a^b f(x) dx (Enter για εισαγωγή)"
               className={`w-full p-2.5 rounded-xl border text-xs font-mono transition-all resize-y placeholder:text-neutral-400 focus:outline-hidden ${
                 activeTarget === 'block'
                   ? 'border-indigo-500 ring-2 ring-indigo-200 dark:ring-indigo-900/60 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100'
@@ -385,4 +406,8 @@ export const EquationWizardPopup: React.FC<EquationWizardPopupProps> = ({
       </div>
     </div>
   );
+
+  return typeof document !== 'undefined'
+    ? createPortal(modalContent, document.body)
+    : modalContent;
 };

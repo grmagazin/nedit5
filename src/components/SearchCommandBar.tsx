@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { Editor } from '@tiptap/react';
 import { 
   Search, 
@@ -102,7 +103,36 @@ export const SearchCommandBar: React.FC<SearchCommandBarProps> = ({
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
   const feedbackTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  const [dropdownPosition, setDropdownPosition] = useState<{ top: number; left: number; width: number }>({
+    top: 0,
+    left: 0,
+    width: 0,
+  });
+
+  // Calculate and sync absolute/fixed position when dropdown is opened
+  useEffect(() => {
+    if (isOpen && containerRef.current) {
+      const updatePosition = () => {
+        if (!containerRef.current) return;
+        const rect = containerRef.current.getBoundingClientRect();
+        setDropdownPosition({
+          top: rect.bottom + 4,
+          left: rect.left,
+          width: Math.max(rect.width, 340),
+        });
+      };
+      updatePosition();
+      window.addEventListener('resize', updatePosition);
+      window.addEventListener('scroll', updatePosition, true);
+      return () => {
+        window.removeEventListener('resize', updatePosition);
+        window.removeEventListener('scroll', updatePosition, true);
+      };
+    }
+  }, [isOpen]);
 
   const showNotification = (msg: string) => {
     if (feedbackTimeoutRef.current) clearTimeout(feedbackTimeoutRef.current);
@@ -155,7 +185,12 @@ export const SearchCommandBar: React.FC<SearchCommandBarProps> = ({
   // Outside click listener to close dropdown
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+      const target = e.target as Node;
+      if (
+        containerRef.current &&
+        !containerRef.current.contains(target) &&
+        (!dropdownRef.current || !dropdownRef.current.contains(target))
+      ) {
         setIsOpen(false);
       }
     };
@@ -343,7 +378,7 @@ export const SearchCommandBar: React.FC<SearchCommandBarProps> = ({
   };
 
   return (
-    <div className="relative hidden md:block w-72 lg:w-96" ref={containerRef}>
+    <div className="relative hidden md:block w-72 lg:w-96 z-[160]" ref={containerRef}>
       {/* Toast execution notification */}
       {feedbackMessage && (
         <div className="absolute -bottom-8 left-1/2 -translate-x-1/2 z-50 whitespace-nowrap px-3 py-1 rounded-full text-[11px] font-medium shadow-lg animate-in fade-in slide-in-from-top-1 bg-[#0078d4] text-white flex items-center space-x-1.5 pointer-events-none">
@@ -401,10 +436,18 @@ export const SearchCommandBar: React.FC<SearchCommandBarProps> = ({
         )}
       </div>
 
-      {/* Commands Dropdown Results */}
-      {isOpen && (
+      {/* Commands Dropdown Results (Portaled to document.body to guarantee floating upper all toolbars and rulers) */}
+      {isOpen && typeof document !== 'undefined' && createPortal(
         <div
-          className={`absolute top-full left-0 mt-1 w-full rounded-lg shadow-2xl z-50 text-xs overflow-hidden border animate-in fade-in zoom-in-98 duration-100 ${
+          ref={dropdownRef}
+          style={{
+            position: 'fixed',
+            top: `${dropdownPosition.top}px`,
+            left: `${dropdownPosition.left}px`,
+            width: `${dropdownPosition.width}px`,
+            zIndex: 999999,
+          }}
+          className={`rounded-lg shadow-2xl text-xs overflow-hidden border animate-in fade-in zoom-in-98 duration-100 ${
             isDarkHeader
               ? 'bg-[#202020] text-neutral-100 border-[#383838]'
               : isSepiaHeader
@@ -536,7 +579,8 @@ export const SearchCommandBar: React.FC<SearchCommandBarProps> = ({
             </div>
             <span><kbd className="font-mono bg-black/10 px-1 rounded">Alt+Q</kbd> to focus anytime</span>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, Suspense } from 'react';
+import { createPortal } from 'react-dom';
 import { Editor } from '@tiptap/react';
 import {
   Smile,
@@ -106,8 +107,8 @@ export const SymbolsPickerModal: React.FC<SymbolsPickerModalProps> = ({
 
   const categories: SymbolCategory[] = ['Arrows', 'Math', 'Currency', 'Legal', 'Greek', 'Emoji'];
 
-  return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-2xs flex items-center justify-center z-50 p-4 animate-in fade-in duration-150">
+  return createPortal(
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-2xs flex items-center justify-center z-[99999] p-4 animate-in fade-in duration-150 word-modal-backdrop" data-word-modal="true" style={{ zIndex: 99999 }}>
       {/* Modal Card with Dark Mode support */}
       <div
         className={`rounded-2xl shadow-2xl border w-full max-w-[540px] overflow-hidden flex flex-col animate-in zoom-in-95 duration-150 ${
@@ -373,7 +374,8 @@ export const SymbolsPickerModal: React.FC<SymbolsPickerModalProps> = ({
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
 

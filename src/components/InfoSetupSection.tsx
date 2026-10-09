@@ -3,6 +3,11 @@ import { Editor } from '@tiptap/react';
 import { DocumentSettings, DocumentStats, DocumentSnapshot } from '../types';
 import { calculateDocumentPages, formatSmartPageText } from '../utils/pageCalculator';
 import {
+  SmartHeaderFooterInput,
+  SmartDocValues,
+  resolveSmartText,
+} from './SmartHeaderFooterInput';
+import {
   Save,
   Clock,
   Check,
@@ -135,24 +140,45 @@ export const InfoSetupSection: React.FC<InfoSetupSectionProps> = ({
   const footerMaxState = settings.footerPageTotal !== undefined ? (settings.footerPageTotal === 0 ? 0 : 1) : 1;
   const footerPageSeparator = settings.footerPageSeparator !== undefined ? settings.footerPageSeparator : '-';
 
-  // Formatted smart page strings for visual preview
-  const headerPreviewText = formatSmartPageText({
-    showPages: headerShowPages,
-    pageState: headerPageState,
-    maxState: headerMaxState,
-    separator: headerPageSeparator,
-    currentPage: 1,
-    totalPages: realTotalPages,
-  });
+  // Smart Document Info values for dropdown insert
+  const smartDocValues: SmartDocValues = useMemo(() => {
+    const now = new Date();
+    const t = settings.title || 'Untitled Document.docx';
+    return {
+      title: t,
+      author: settings.author || 'Author',
+      date: now.toLocaleDateString(),
+      filename: `${(t || 'Document').replace(/[^\w\s-]/g, '').trim().replace(/\s+/g, '_') || 'document'}.docx`,
+      tag: settings.tags || settings.category || 'Draft',
+      created: settings.createdDate || now.toLocaleDateString(),
+      updated: settings.updatedDate || now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    };
+  }, [settings.title, settings.author, settings.tags, settings.category, settings.createdDate, settings.updatedDate]);
 
-  const footerPreviewText = formatSmartPageText({
-    showPages: footerShowPages,
-    pageState: footerPageState,
-    maxState: footerMaxState,
-    separator: footerPageSeparator,
-    currentPage: 1,
-    totalPages: realTotalPages,
-  });
+  // Formatted smart page strings for visual preview (prints pagination if middle field val is 1)
+  const headerHasPagination = headerPageState === 1 || headerMaxState === 1;
+  const headerPreviewText = headerHasPagination
+    ? formatSmartPageText({
+        showPages: true,
+        pageState: headerPageState,
+        maxState: headerMaxState,
+        separator: headerPageSeparator,
+        currentPage: 1,
+        totalPages: realTotalPages,
+      })
+    : '';
+
+  const footerHasPagination = footerPageState === 1 || footerMaxState === 1;
+  const footerPreviewText = footerHasPagination
+    ? formatSmartPageText({
+        showPages: true,
+        pageState: footerPageState,
+        maxState: footerMaxState,
+        separator: footerPageSeparator,
+        currentPage: 1,
+        totalPages: realTotalPages,
+      })
+    : '';
 
   // State for feedback indicator
   const [justSaved, setJustSaved] = useState(false);
@@ -582,23 +608,35 @@ export const InfoSetupSection: React.FC<InfoSetupSectionProps> = ({
           </h2>
 
           <div className="w-full max-w-[440px] flex flex-col items-center space-y-4">
-            {/* TOP HEADER CONTROLS (Add Left Text | Pages 1 - 44 | Add Right Text) */}
+            {/* TOP HEADER CONTROLS (Header Left | Pages 1 - 44 | Header Right) */}
             <div className="w-full flex items-center justify-between gap-1.5">
-              {/* Header Left Text Input */}
-              <input
-                type="text"
-                placeholder="Add Left Text"
+              {/* Header Left Smart Dropdown Textbox */}
+              <SmartHeaderFooterInput
                 value={headerLeft}
-                onChange={(e) => onUpdateSettings({ headerLeft: e.target.value })}
-                className="border border-neutral-400 bg-white hover:bg-neutral-50 focus:bg-white focus:border-[#185abd] text-neutral-800 text-xs px-2.5 py-1 rounded w-28 md:w-32 focus:outline-hidden text-center placeholder:text-neutral-500 shadow-2xs transition-all"
-                title="Header Left Text"
+                onChange={(val) => onUpdateSettings({ headerLeft: val })}
+                placeholder="Header Left"
+                title="Header Left Text (Type or Quick Insert)"
+                className="w-28 md:w-34"
+                dropdownAlign="left"
+                smartValues={smartDocValues}
               />
 
               {/* Pages Center Controls */}
               <div className="flex items-center space-x-1" title="Smart Page Numbering Configuration">
                 <button
                   type="button"
-                  onClick={() => onUpdateSettings({ headerShowPages: !headerShowPages })}
+                  onClick={() => {
+                    if (headerPageState === 0 && headerMaxState === 0) {
+                      onUpdateSettings({ headerShowPages: true, headerPageStart: 1, headerPageTotal: 1 });
+                    } else {
+                      const next = !headerShowPages;
+                      onUpdateSettings({
+                        headerShowPages: next,
+                        headerPageStart: next ? 1 : 0,
+                        headerPageTotal: next ? 1 : 0,
+                      });
+                    }
+                  }}
                   className={`border text-xs px-2 py-1 rounded font-medium cursor-pointer transition-colors shadow-2xs ${
                     headerShowPages
                       ? 'bg-[#185abd] border-[#185abd] text-white font-semibold'
@@ -616,10 +654,18 @@ export const InfoSetupSection: React.FC<InfoSetupSectionProps> = ({
                   value={headerPageState}
                   onChange={(e) => {
                     const v = parseInt(e.target.value);
-                    onUpdateSettings({ headerPageStart: isNaN(v) || v <= 0 ? 0 : 1 });
+                    const next = isNaN(v) || v <= 0 ? 0 : 1;
+                    onUpdateSettings({
+                      headerPageStart: next,
+                      headerShowPages: next === 1 || headerMaxState === 1,
+                    });
                   }}
                   onClick={() => {
-                    onUpdateSettings({ headerPageStart: headerPageState === 1 ? 0 : 1 });
+                    const next = headerPageState === 1 ? 0 : 1;
+                    onUpdateSettings({
+                      headerPageStart: next,
+                      headerShowPages: next === 1 || headerMaxState === 1,
+                    });
                   }}
                   className={`border text-xs px-1.5 py-1 rounded w-9 text-center font-bold transition-colors cursor-pointer shadow-2xs select-none ${
                     headerPageState === 1
@@ -646,10 +692,18 @@ export const InfoSetupSection: React.FC<InfoSetupSectionProps> = ({
                   value={headerMaxState}
                   onChange={(e) => {
                     const v = parseInt(e.target.value);
-                    onUpdateSettings({ headerPageTotal: isNaN(v) || v <= 0 ? 0 : 1 });
+                    const next = isNaN(v) || v <= 0 ? 0 : 1;
+                    onUpdateSettings({
+                      headerPageTotal: next,
+                      headerShowPages: headerPageState === 1 || next === 1,
+                    });
                   }}
                   onClick={() => {
-                    onUpdateSettings({ headerPageTotal: headerMaxState === 1 ? 0 : 1 });
+                    const next = headerMaxState === 1 ? 0 : 1;
+                    onUpdateSettings({
+                      headerPageTotal: next,
+                      headerShowPages: headerPageState === 1 || next === 1,
+                    });
                   }}
                   className={`border text-xs px-1.5 py-1 rounded w-9 text-center font-bold transition-colors cursor-pointer shadow-2xs select-none ${
                     headerMaxState === 1
@@ -660,14 +714,15 @@ export const InfoSetupSection: React.FC<InfoSetupSectionProps> = ({
                 />
               </div>
 
-              {/* Header Right Text Input */}
-              <input
-                type="text"
-                placeholder="Add Right Text"
+              {/* Header Right Smart Dropdown Textbox */}
+              <SmartHeaderFooterInput
                 value={headerRight}
-                onChange={(e) => onUpdateSettings({ headerRight: e.target.value })}
-                className="border border-neutral-400 bg-white hover:bg-neutral-50 focus:bg-white focus:border-[#185abd] text-neutral-800 text-xs px-2.5 py-1 rounded w-28 md:w-32 focus:outline-hidden text-center placeholder:text-neutral-500 shadow-2xs transition-all"
-                title="Header Right Text"
+                onChange={(val) => onUpdateSettings({ headerRight: val })}
+                placeholder="Header Right"
+                title="Header Right Text (Type or Quick Insert)"
+                className="w-28 md:w-34"
+                dropdownAlign="right"
+                smartValues={smartDocValues}
               />
             </div>
 
@@ -679,15 +734,17 @@ export const InfoSetupSection: React.FC<InfoSetupSectionProps> = ({
               }}
             >
               {/* Top Header Live Render */}
-              <div className="flex items-center justify-between text-[10px] text-neutral-500 border-b border-neutral-200/80 pb-1.5 font-sans h-5">
+              <div className={`flex items-center justify-between text-[10px] text-neutral-500 font-sans h-5 transition-opacity ${
+                (headerLeft || headerPreviewText || headerRight) ? 'border-b border-neutral-200/80 pb-1.5 opacity-100' : 'opacity-0 border-b border-transparent pb-1.5'
+              }`}>
                 <span className="truncate max-w-[35%] font-medium">
-                  {headerLeft || <span className="opacity-0">Header Left</span>}
+                  {resolveSmartText(headerLeft, smartDocValues)}
                 </span>
                 <span className="text-center font-medium">
                   {headerPreviewText}
                 </span>
                 <span className="truncate max-w-[35%] text-right font-medium">
-                  {headerRight || <span className="opacity-0">Header Right</span>}
+                  {resolveSmartText(headerRight, smartDocValues)}
                 </span>
               </div>
 
@@ -761,36 +818,50 @@ export const InfoSetupSection: React.FC<InfoSetupSectionProps> = ({
               </div>
 
               {/* Bottom Footer Live Render */}
-              <div className="flex items-center justify-between text-[10px] text-neutral-500 border-t border-neutral-200/80 pt-1.5 font-sans h-5">
+              <div className={`flex items-center justify-between text-[10px] text-neutral-500 font-sans h-5 transition-opacity ${
+                (footerLeft || footerPreviewText || footerRight) ? 'border-t border-neutral-200/80 pt-1.5 opacity-100' : 'opacity-0 border-t border-transparent pt-1.5'
+              }`}>
                 <span className="truncate max-w-[35%] font-medium">
-                  {footerLeft || <span className="opacity-0">Footer Left</span>}
+                  {resolveSmartText(footerLeft, smartDocValues)}
                 </span>
                 <span className="text-center font-medium">
                   {footerPreviewText}
                 </span>
                 <span className="truncate max-w-[35%] text-right font-medium">
-                  {footerRight || <span className="opacity-0">Footer Right</span>}
+                  {resolveSmartText(footerRight, smartDocValues)}
                 </span>
               </div>
             </div>
 
-            {/* BOTTOM FOOTER CONTROLS (Add Left Text | Pages 1 - 44 | Add Right Text) */}
+            {/* BOTTOM FOOTER CONTROLS (Footer Left | Pages 1 - 44 | Footer Right) */}
             <div className="w-full flex items-center justify-between gap-1.5">
-              {/* Footer Left Text Input */}
-              <input
-                type="text"
-                placeholder="Add Left Text"
+              {/* Footer Left Smart Dropdown Textbox */}
+              <SmartHeaderFooterInput
                 value={footerLeft}
-                onChange={(e) => onUpdateSettings({ footerLeft: e.target.value })}
-                className="border border-neutral-400 bg-white hover:bg-neutral-50 focus:bg-white focus:border-[#185abd] text-neutral-800 text-xs px-2.5 py-1 rounded w-28 md:w-32 focus:outline-hidden text-center placeholder:text-neutral-500 shadow-2xs transition-all"
-                title="Footer Left Text"
+                onChange={(val) => onUpdateSettings({ footerLeft: val })}
+                placeholder="Footer Left"
+                title="Footer Left Text (Type or Quick Insert)"
+                className="w-28 md:w-34"
+                dropdownAlign="left"
+                smartValues={smartDocValues}
               />
 
               {/* Pages Center Controls */}
               <div className="flex items-center space-x-1" title="Smart Page Numbering Configuration">
                 <button
                   type="button"
-                  onClick={() => onUpdateSettings({ footerShowPages: !footerShowPages })}
+                  onClick={() => {
+                    if (footerPageState === 0 && footerMaxState === 0) {
+                      onUpdateSettings({ footerShowPages: true, footerPageStart: 1, footerPageTotal: 1 });
+                    } else {
+                      const next = !footerShowPages;
+                      onUpdateSettings({
+                        footerShowPages: next,
+                        footerPageStart: next ? 1 : 0,
+                        footerPageTotal: next ? 1 : 0,
+                      });
+                    }
+                  }}
                   className={`border text-xs px-2 py-1 rounded font-medium cursor-pointer transition-colors shadow-2xs ${
                     footerShowPages
                       ? 'bg-[#185abd] border-[#185abd] text-white font-semibold'
@@ -808,10 +879,18 @@ export const InfoSetupSection: React.FC<InfoSetupSectionProps> = ({
                   value={footerPageState}
                   onChange={(e) => {
                     const v = parseInt(e.target.value);
-                    onUpdateSettings({ footerPageStart: isNaN(v) || v <= 0 ? 0 : 1 });
+                    const next = isNaN(v) || v <= 0 ? 0 : 1;
+                    onUpdateSettings({
+                      footerPageStart: next,
+                      footerShowPages: next === 1 || footerMaxState === 1,
+                    });
                   }}
                   onClick={() => {
-                    onUpdateSettings({ footerPageStart: footerPageState === 1 ? 0 : 1 });
+                    const next = footerPageState === 1 ? 0 : 1;
+                    onUpdateSettings({
+                      footerPageStart: next,
+                      footerShowPages: next === 1 || footerMaxState === 1,
+                    });
                   }}
                   className={`border text-xs px-1.5 py-1 rounded w-9 text-center font-bold transition-colors cursor-pointer shadow-2xs select-none ${
                     footerPageState === 1
@@ -838,10 +917,18 @@ export const InfoSetupSection: React.FC<InfoSetupSectionProps> = ({
                   value={footerMaxState}
                   onChange={(e) => {
                     const v = parseInt(e.target.value);
-                    onUpdateSettings({ footerPageTotal: isNaN(v) || v <= 0 ? 0 : 1 });
+                    const next = isNaN(v) || v <= 0 ? 0 : 1;
+                    onUpdateSettings({
+                      footerPageTotal: next,
+                      footerShowPages: footerPageState === 1 || next === 1,
+                    });
                   }}
                   onClick={() => {
-                    onUpdateSettings({ footerPageTotal: footerMaxState === 1 ? 0 : 1 });
+                    const next = footerMaxState === 1 ? 0 : 1;
+                    onUpdateSettings({
+                      footerPageTotal: next,
+                      footerShowPages: footerPageState === 1 || next === 1,
+                    });
                   }}
                   className={`border text-xs px-1.5 py-1 rounded w-9 text-center font-bold transition-colors cursor-pointer shadow-2xs select-none ${
                     footerMaxState === 1
@@ -852,15 +939,44 @@ export const InfoSetupSection: React.FC<InfoSetupSectionProps> = ({
                 />
               </div>
 
-              {/* Footer Right Text Input */}
-              <input
-                type="text"
-                placeholder="Add Right Text"
+              {/* Footer Right Smart Dropdown Textbox */}
+              <SmartHeaderFooterInput
                 value={footerRight}
-                onChange={(e) => onUpdateSettings({ footerRight: e.target.value })}
-                className="border border-neutral-400 bg-white hover:bg-neutral-50 focus:bg-white focus:border-[#185abd] text-neutral-800 text-xs px-2.5 py-1 rounded w-28 md:w-32 focus:outline-hidden text-center placeholder:text-neutral-500 shadow-2xs transition-all"
-                title="Footer Right Text"
+                onChange={(val) => onUpdateSettings({ footerRight: val })}
+                placeholder="Footer Right"
+                title="Footer Right Text (Type or Quick Insert)"
+                className="w-28 md:w-34"
+                dropdownAlign="right"
+                smartValues={smartDocValues}
               />
+            </div>
+
+            {/* Checkbox: do not add header and footer to printing area */}
+            <div className="w-full pt-3 mt-2 border-t border-neutral-200">
+              <label className="flex items-start space-x-2.5 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={settings.doNotAddHeaderFooterToPrintArea ?? true}
+                  onChange={(e) => {
+                    const checked = e.target.checked;
+                    onUpdateSettings({ doNotAddHeaderFooterToPrintArea: checked });
+                    try {
+                      localStorage.setItem('wordpad_do_not_add_hf_to_print_area', String(checked));
+                    } catch {
+                      // ignore
+                    }
+                  }}
+                  className="rounded text-[#185abd] focus:ring-[#185abd] cursor-pointer mt-0.5"
+                />
+                <div className="flex-1">
+                  <span className="font-semibold text-xs text-neutral-800 block">
+                    do not add header and footer to printing area
+                  </span>
+                  <span className="text-[11px] text-neutral-500 block">
+                    Puts header text inside top margin &amp; footer text inside bottom margin (browser print method)
+                  </span>
+                </div>
+              </label>
             </div>
           </div>
         </div>

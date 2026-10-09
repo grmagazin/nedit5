@@ -866,7 +866,7 @@ export const DocxEngineBackstageSection: React.FC<DocxEngineBackstageSectionProp
                 <span>Local Storage vs. In-Memory Private Session</span>
               </h2>
               <p className="text-xs text-neutral-600 mb-4">
-                Understand how WordPad securely retains your work without transmitting data to third-party cloud servers.
+                Understand how Nedit securely retains your work without transmitting data to third-party cloud servers.
               </p>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

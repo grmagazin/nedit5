@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { Editor } from '@tiptap/react';
 import {
   AlignLeft,
@@ -164,16 +165,99 @@ export const ImageClickMenu: React.FC<ImageClickMenuProps> = ({
     return null;
   }
 
+  // Helper to locate exact ProseMirror position of the image node
+  const findImageNodePos = (img: HTMLImageElement): number | null => {
+    if (!editor) return null;
+    const targetSrc = img.getAttribute('src');
+
+    try {
+      const rawPos = editor.view.posAtDOM(img, 0);
+      if (editor.state.doc.nodeAt(rawPos)?.type.name === 'image') {
+        return rawPos;
+      }
+      if (rawPos > 0 && editor.state.doc.nodeAt(rawPos - 1)?.type.name === 'image') {
+        return rawPos - 1;
+      }
+    } catch {
+      // ignore
+    }
+
+    let found: number | null = null;
+    editor.state.doc.descendants((node, pos) => {
+      if (node.type.name === 'image') {
+        if (!targetSrc || node.attrs.src === targetSrc) {
+          found = pos;
+          return false;
+        }
+      }
+    });
+    return found;
+  };
+
+  // Helper to ensure TipTap node selection is set on the active image
+  const ensureNodeSelection = (img: HTMLImageElement) => {
+    try {
+      const pos = findImageNodePos(img);
+      if (editor && pos !== null && pos >= 0) {
+        editor.commands.setNodeSelection(pos);
+      }
+    } catch {
+      // ignore
+    }
+  };
+
+  // Direct attribute updater on the TipTap/ProseMirror image node
+  const updateTipTapImageNode = (
+    img: HTMLImageElement,
+    attrs: {
+      width?: string;
+      alignment?: 'left' | 'center' | 'right';
+      float?: 'none' | 'left' | 'right';
+      style?: string;
+    }
+  ) => {
+    if (!editor) return;
+    const pos = findImageNodePos(img);
+    if (pos !== null) {
+      const currentNode = editor.state.doc.nodeAt(pos);
+      if (currentNode) {
+        const mergedAttrs = {
+          ...currentNode.attrs,
+          ...attrs,
+        };
+        const { tr } = editor.state;
+        tr.setNodeMarkup(pos, undefined, mergedAttrs);
+        editor.view.dispatch(tr);
+        return;
+      }
+    }
+
+    // Fallback: try updateAttributes via standard command
+    ensureNodeSelection(img);
+    editor.commands.updateAttributes('image', attrs);
+  };
+
   // Width Slider Handler
   const handleSliderChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = parseInt(e.target.value, 10);
     setWidthPx(val);
     if (selectedImg) {
-      selectedImg.style.width = `${val}px`;
+      const widthVal = `${val}px`;
+      selectedImg.style.width = widthVal;
       selectedImg.style.maxWidth = '100%';
       selectedImg.removeAttribute('width');
-      selectedImg.setAttribute('data-width', `${val}px`);
-      editor?.commands.updateAttributes('image', { width: `${val}px` });
+      selectedImg.setAttribute('data-width', widthVal);
+
+      const align = (selectedImg.getAttribute('data-alignment') as 'left' | 'center' | 'right') || alignment || 'left';
+      const marginLeft = align === 'center' ? 'auto' : align === 'right' ? 'auto' : '0';
+      const marginRight = align === 'center' ? 'auto' : align === 'right' ? '0' : 'auto';
+      const newStyle = `width: ${widthVal}; max-width: 100%; display: block; margin-left: ${marginLeft}; margin-right: ${marginRight};`;
+      selectedImg.setAttribute('style', newStyle);
+
+      updateTipTapImageNode(selectedImg, {
+        width: widthVal,
+        style: newStyle,
+      });
       updatePosition(selectedImg);
     }
   };
@@ -181,24 +265,46 @@ export const ImageClickMenu: React.FC<ImageClickMenuProps> = ({
   // Preset Width Percentages
   const handleSetPercentWidth = (percent: number) => {
     if (!selectedImg) return;
-    selectedImg.style.width = `${percent}%`;
+    const widthVal = `${percent}%`;
+    selectedImg.style.width = widthVal;
     selectedImg.style.maxWidth = '100%';
-    selectedImg.setAttribute('data-width', `${percent}%`);
+    selectedImg.setAttribute('data-width', widthVal);
     const newPx = Math.round(selectedImg.offsetWidth);
     setWidthPx(newPx);
-    editor?.commands.updateAttributes('image', { width: `${percent}%` });
+
+    const align = (selectedImg.getAttribute('data-alignment') as 'left' | 'center' | 'right') || alignment || 'left';
+    const marginLeft = align === 'center' ? 'auto' : align === 'right' ? 'auto' : '0';
+    const marginRight = align === 'center' ? 'auto' : align === 'right' ? '0' : 'auto';
+    const newStyle = `width: ${widthVal}; max-width: 100%; display: block; margin-left: ${marginLeft}; margin-right: ${marginRight};`;
+    selectedImg.setAttribute('style', newStyle);
+
+    updateTipTapImageNode(selectedImg, {
+      width: widthVal,
+      style: newStyle,
+    });
     updatePosition(selectedImg);
   };
 
   // Maximize / Full Width
   const handleFullWidth = () => {
     if (!selectedImg) return;
-    selectedImg.style.width = '100%';
+    const widthVal = '100%';
+    selectedImg.style.width = widthVal;
     selectedImg.style.maxWidth = '100%';
-    selectedImg.setAttribute('data-width', '100%');
+    selectedImg.setAttribute('data-width', widthVal);
     const newPx = Math.round(selectedImg.offsetWidth);
     setWidthPx(newPx);
-    editor?.commands.updateAttributes('image', { width: '100%' });
+
+    const align = (selectedImg.getAttribute('data-alignment') as 'left' | 'center' | 'right') || alignment || 'left';
+    const marginLeft = align === 'center' ? 'auto' : align === 'right' ? 'auto' : '0';
+    const marginRight = align === 'center' ? 'auto' : align === 'right' ? '0' : 'auto';
+    const newStyle = `width: ${widthVal}; max-width: 100%; display: block; margin-left: ${marginLeft}; margin-right: ${marginRight};`;
+    selectedImg.setAttribute('style', newStyle);
+
+    updateTipTapImageNode(selectedImg, {
+      width: widthVal,
+      style: newStyle,
+    });
     updatePosition(selectedImg);
   };
 
@@ -208,21 +314,41 @@ export const ImageClickMenu: React.FC<ImageClickMenuProps> = ({
     setAlignment(align);
     selectedImg.setAttribute('data-alignment', align);
 
+    const widthVal = selectedImg.style.width || selectedImg.getAttribute('data-width') || '100%';
+    let marginLeft = '0';
+    let marginRight = 'auto';
+
     if (align === 'left') {
       selectedImg.style.display = 'block';
       selectedImg.style.marginLeft = '0';
       selectedImg.style.marginRight = 'auto';
+      marginLeft = '0';
+      marginRight = 'auto';
     } else if (align === 'center') {
       selectedImg.style.display = 'block';
       selectedImg.style.marginLeft = 'auto';
       selectedImg.style.marginRight = 'auto';
+      marginLeft = 'auto';
+      marginRight = 'auto';
     } else if (align === 'right') {
       selectedImg.style.display = 'block';
       selectedImg.style.marginLeft = 'auto';
       selectedImg.style.marginRight = '0';
+      marginLeft = 'auto';
+      marginRight = '0';
     }
 
-    editor?.commands.updateAttributes('image', { alignment: align });
+    if (selectedImg.parentElement && selectedImg.parentElement.tagName === 'P') {
+      selectedImg.parentElement.style.textAlign = align;
+    }
+
+    const newStyle = `width: ${widthVal}; max-width: 100%; display: block; margin-left: ${marginLeft}; margin-right: ${marginRight};`;
+    selectedImg.setAttribute('style', newStyle);
+
+    updateTipTapImageNode(selectedImg, {
+      alignment: align,
+      style: newStyle,
+    });
     updatePosition(selectedImg);
   };
 
@@ -232,34 +358,49 @@ export const ImageClickMenu: React.FC<ImageClickMenuProps> = ({
     setFloatWrap(mode);
     selectedImg.setAttribute('data-float', mode);
 
+    let floatStyle = '';
     if (mode === 'left') {
       selectedImg.style.float = 'left';
       selectedImg.style.margin = '0.5rem 1.25rem 0.75rem 0';
       selectedImg.style.display = 'inline-block';
+      floatStyle = 'float: left; margin: 0.5rem 1.25rem 0.75rem 0; display: inline-block;';
     } else if (mode === 'right') {
       selectedImg.style.float = 'right';
       selectedImg.style.margin = '0.5rem 0 0.75rem 1.25rem';
       selectedImg.style.display = 'inline-block';
+      floatStyle = 'float: right; margin: 0.5rem 0 0.75rem 1.25rem; display: inline-block;';
     } else {
       selectedImg.style.float = 'none';
       selectedImg.style.margin = '0.5rem 0';
-      selectedImg.style.display = 'inline-block';
+      selectedImg.style.display = 'block';
+      floatStyle = 'float: none; margin: 0.5rem 0; display: block;';
     }
 
-    editor?.commands.updateAttributes('image', { float: mode });
+    updateTipTapImageNode(selectedImg, {
+      float: mode,
+      style: floatStyle,
+    });
     updatePosition(selectedImg);
   };
 
   // Delete Image
   const handleDeleteImage = () => {
     if (!selectedImg) return;
-    selectedImg.remove();
+    const pos = findImageNodePos(selectedImg);
+    if (editor && pos !== null) {
+      const node = editor.state.doc.nodeAt(pos);
+      if (node) {
+        editor.view.dispatch(editor.state.tr.delete(pos, pos + node.nodeSize));
+      }
+    } else {
+      selectedImg.remove();
+    }
     setSelectedImg(null);
     setMenuPosition(null);
     editor?.commands.focus();
   };
 
-  return (
+  return createPortal(
     <div
       ref={menuRef}
       id="nedit4-image-click-menu"
@@ -267,9 +408,9 @@ export const ImageClickMenu: React.FC<ImageClickMenuProps> = ({
         position: 'fixed',
         top: `${menuPosition.top}px`,
         left: `${menuPosition.left}px`,
-        zIndex: 9999,
+        zIndex: 999998,
       }}
-      className="bg-white/95 backdrop-blur-md border border-neutral-200/90 shadow-[0_8px_30px_rgba(0,0,0,0.12)] rounded-xl px-2.5 py-1.5 flex items-center space-x-2 text-xs select-none transition-all duration-75 animate-in fade-in zoom-in-95"
+      className="bg-white/95 backdrop-blur-md border border-neutral-200/90 shadow-[0_8px_30px_rgba(0,0,0,0.12)] rounded-xl px-2.5 py-1.5 flex items-center space-x-2 text-xs select-none transition-all duration-75 animate-in fade-in zoom-in-95 z-[999998]"
     >
       {/* 1. Width Slider */}
       <div className="flex items-center space-x-2">
@@ -426,6 +567,7 @@ export const ImageClickMenu: React.FC<ImageClickMenuProps> = ({
           <Trash2 size={14} />
         </button>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };

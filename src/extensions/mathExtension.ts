@@ -82,7 +82,7 @@ export const MathInline = Node.create({
     return ({ node, getPos, editor }) => {
       const dom = document.createElement('span');
       dom.className =
-        'tiptap-math-inline inline-flex items-center align-middle mx-1 px-1.5 py-0.5 rounded cursor-pointer transition-all border border-sky-300/80 bg-sky-50/70 hover:bg-sky-100 dark:bg-sky-950/40 dark:border-sky-700 text-neutral-900 dark:text-neutral-100 hover:ring-2 hover:ring-sky-400 select-none';
+        'tiptap-math-inline inline-flex items-center align-middle mx-0.5 px-0.5 py-0 rounded-xs cursor-pointer transition-colors text-inherit hover:bg-sky-500/10 hover:underline hover:decoration-dotted hover:decoration-sky-500/60 select-none no-underline print:p-0 print:m-0 print:border-0 print:bg-transparent print:shadow-none print:text-black';
       dom.title = `Equation: ${node.attrs.latex} (Click to edit in Fx Wizard)`;
 
       const render = () => {
@@ -186,7 +186,7 @@ export const MathBlock = Node.create({
     return ({ node, getPos, editor }) => {
       const dom = document.createElement('div');
       dom.className =
-        'tiptap-math-block my-3 py-3 px-4 rounded-xl cursor-pointer transition-all border border-indigo-200/90 hover:border-indigo-400 bg-indigo-50/40 hover:bg-indigo-50/70 dark:bg-indigo-950/30 dark:border-indigo-800 text-center hover:ring-2 hover:ring-indigo-400 select-none overflow-x-auto';
+        'tiptap-math-block my-2.5 py-1 px-2 text-center cursor-pointer transition-colors text-inherit hover:bg-indigo-500/10 rounded-md select-none overflow-x-auto print:p-0 print:m-0 print:border-0 print:bg-transparent print:shadow-none print:text-black';
       dom.title = `Math Block: ${node.attrs.latex} (Click to edit in Fx Wizard)`;
 
       const render = () => {

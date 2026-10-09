@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { Editor } from '@tiptap/react';
 import { cleanAllSpacing } from '../utils/spacingUtils';
 import {
@@ -69,10 +70,12 @@ export const EditorContextMenu: React.FC<EditorContextMenuProps> = ({
 
     window.addEventListener('mousedown', handlePointerDown);
     window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('resize', onClose);
 
     return () => {
       window.removeEventListener('mousedown', handlePointerDown);
       window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('resize', onClose);
     };
   }, [isOpen, onClose]);
 
@@ -220,21 +223,26 @@ export const EditorContextMenu: React.FC<EditorContextMenuProps> = ({
     { label: 'Pound', symbol: '£' },
   ];
 
-  return (
+  const isCol1Active = activeSubmenu && activeSubmenu !== 'typography';
+  const isCol2Active = activeSubmenu === 'typography';
+
+  return createPortal(
     <div
       ref={menuRef}
-      className="fixed z-[9999] flex flex-row bg-white rounded-xl shadow-[0_16px_48px_rgba(0,0,0,0.18)] border border-neutral-200/90 text-[#374151] select-none no-print divide-x divide-neutral-100 font-sans text-[13px] animate-in fade-in zoom-in-95 duration-75"
+      className="fixed flex flex-row bg-white rounded-xl shadow-[0_20px_60px_rgba(0,0,0,0.25)] border border-neutral-300 text-[#374151] select-none no-print divide-x divide-neutral-100 font-sans text-[13px] animate-in fade-in zoom-in-95 duration-75"
       style={{
+        position: 'fixed',
         top: `${top}px`,
         left: `${left}px`,
         width: '470px',
+        zIndex: 1000000,
       }}
       onContextMenu={(e) => e.preventDefault()}
     >
       {/* ========================================================= */}
       {/* COLUMN 1: LEFT COLUMN                                      */}
       {/* ========================================================= */}
-      <div className="w-[235px] p-2 flex flex-col justify-start relative">
+      <div className={`w-[235px] p-2 flex flex-col justify-start relative ${isCol1Active ? 'z-30' : 'z-10'}`}>
         {/* Undo / Redo Header */}
         <div className="flex items-center justify-between px-2 py-1 pb-2 border-b border-neutral-100">
           <button
@@ -409,7 +417,7 @@ export const EditorContextMenu: React.FC<EditorContextMenuProps> = ({
             </button>
 
             {activeSubmenu === 'format' && (
-              <div className="absolute left-[95%] top-0 w-44 bg-white rounded-lg shadow-xl border border-neutral-200 p-1.5 z-50 flex flex-col space-y-0.5 animate-in fade-in duration-75">
+              <div className="absolute left-[95%] top-0 w-44 bg-white rounded-lg shadow-xl border border-neutral-200 p-1.5 z-[100] flex flex-col space-y-0.5 animate-in fade-in duration-75" style={{ zIndex: 100 }}>
                 <button
                   onClick={() => {
                     editor.chain().focus().setParagraph().run();
@@ -479,7 +487,7 @@ export const EditorContextMenu: React.FC<EditorContextMenuProps> = ({
             </button>
 
             {activeSubmenu === 'list' && (
-              <div className="absolute left-[95%] top-0 w-44 bg-white rounded-lg shadow-xl border border-neutral-200 p-1.5 z-50 flex flex-col space-y-0.5 animate-in fade-in duration-75">
+              <div className="absolute left-[95%] top-0 w-44 bg-white rounded-lg shadow-xl border border-neutral-200 p-1.5 z-[100] flex flex-col space-y-0.5 animate-in fade-in duration-75" style={{ zIndex: 100 }}>
                 <button
                   onClick={() => {
                     editor.chain().focus().toggleBulletList().run();
@@ -531,7 +539,7 @@ export const EditorContextMenu: React.FC<EditorContextMenuProps> = ({
             </button>
 
             {activeSubmenu === 'spacing' && (
-              <div className="absolute left-[95%] top-0 w-36 bg-white rounded-lg shadow-xl border border-neutral-200 p-1.5 z-50 flex flex-col space-y-0.5 animate-in fade-in duration-75">
+              <div className="absolute left-[95%] top-0 w-36 bg-white rounded-lg shadow-xl border border-neutral-200 p-1.5 z-[100] flex flex-col space-y-0.5 animate-in fade-in duration-75" style={{ zIndex: 100 }}>
                 {[
                   { val: '0', label: '0' },
                   { val: '0.5', label: '0,5' },
@@ -590,7 +598,7 @@ export const EditorContextMenu: React.FC<EditorContextMenuProps> = ({
             </button>
 
             {activeSubmenu === 'fontSize' && (
-              <div className="absolute left-[95%] top-0 w-32 bg-white rounded-lg shadow-xl border border-neutral-200 p-1.5 z-50 flex flex-col space-y-0.5 max-h-48 overflow-y-auto animate-in fade-in duration-75">
+              <div className="absolute left-[95%] top-0 w-32 bg-white rounded-lg shadow-xl border border-neutral-200 p-1.5 z-[100] flex flex-col space-y-0.5 max-h-48 overflow-y-auto animate-in fade-in duration-75" style={{ zIndex: 100 }}>
                 {[9, 10, 11, 12, 14, 16, 18, 20, 24, 28, 36].map((sz) => (
                   <button
                     key={sz}
@@ -612,7 +620,7 @@ export const EditorContextMenu: React.FC<EditorContextMenuProps> = ({
       {/* ========================================================= */}
       {/* COLUMN 2: RIGHT COLUMN                                     */}
       {/* ========================================================= */}
-      <div className="w-[235px] p-2 flex flex-col justify-start relative">
+      <div className={`w-[235px] p-2 flex flex-col justify-start relative ${isCol2Active ? 'z-30' : 'z-10'}`}>
         {/* INSERT Header */}
         <div className="px-2 pt-1 pb-1 text-[10px] font-bold text-neutral-400 tracking-wider uppercase">
           Insert
@@ -690,7 +698,7 @@ export const EditorContextMenu: React.FC<EditorContextMenuProps> = ({
           </button>
 
           {activeSubmenu === 'typography' && (
-            <div className="absolute right-[95%] top-0 w-48 bg-white rounded-lg shadow-xl border border-neutral-200 p-1.5 z-50 grid grid-cols-2 gap-1 animate-in fade-in duration-75">
+            <div className="absolute right-[95%] top-0 w-48 bg-white rounded-lg shadow-xl border border-neutral-200 p-1.5 z-[100] grid grid-cols-2 gap-1 animate-in fade-in duration-75" style={{ zIndex: 100 }}>
               {typographyList.map((item) => (
                 <button
                   key={item.symbol}
@@ -820,6 +828,7 @@ export const EditorContextMenu: React.FC<EditorContextMenuProps> = ({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
