@@ -943,6 +943,33 @@ body.table-dragging * {
     page-break-inside: avoid !important;
   }
 
+  /* Prevent orphaned headings and sliced blocks in print */
+  .ProseMirror h1,
+  .ProseMirror h2,
+  .ProseMirror h3,
+  .ProseMirror h4,
+  .ProseMirror h5,
+  .ProseMirror h6,
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    break-after: avoid !important;
+    page-break-after: avoid !important;
+  }
+
+  .ProseMirror img,
+  .ProseMirror figure,
+  .ProseMirror .math-block,
+  img,
+  figure,
+  .math-block {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
   .ProseMirror th,
   .tiptap th,
   th {

@@ -93,8 +93,6 @@ import {
   Heading2,
   Heading3,
   SearchCheck,
-  FileSpreadsheet,
-  FileCode,
   Scan,
   RotateCw,
   Square,
@@ -135,16 +133,15 @@ const InsertLinkModal = React.lazy(() =>
 const EquationWizardPopup = React.lazy(() =>
   import('./EquationWizardPopup').then((m) => ({ default: m.EquationWizardPopup }))
 );
-const AboutSuiteModal = React.lazy(() => import('./AboutSuiteModal'));
 const AiImageModal = React.lazy(() => import('./AiImageModal'));
 const ScreenCaptureTool = React.lazy(() =>
   import('./ScreenCaptureTool').then((m) => ({ default: m.ScreenCaptureTool }))
 );
 const AiRewriteModal = React.lazy(() => import('./modals/AiRewriteModal'));
 const VersionHistoryModal = React.lazy(() => import('./modals/VersionHistoryModal'));
-const KeyboardShortcutsModal = React.lazy(() => import('./modals/KeyboardShortcutsModal'));
-const QuickGuideModal = React.lazy(() => import('./modals/QuickGuideModal'));
-const KeywordDensityModal = React.lazy(() => import('./modals/KeywordDensityModal'));
+const ChartGeneratorModal = React.lazy(() => import('./modals/ChartGeneratorModal'));
+const SeoTab = React.lazy(() => import('./ribbon/tabs/SeoTab'));
+const HelpTab = React.lazy(() => import('./ribbon/tabs/HelpTab'));
 import { snapshotStore } from '../utils/snapshotStore';
 import { captureDocumentScreenSnapshot } from '../utils/screenSnapshot';
 
@@ -189,7 +186,7 @@ interface RibbonToolbarProps {
   onToggleAutoCorrect?: () => void;
 }
 
-export const RibbonToolbar: React.FC<RibbonToolbarProps> = ({
+const RibbonToolbarComponent: React.FC<RibbonToolbarProps> = ({
   editor,
   activeTab,
   onSelectTab,
@@ -269,6 +266,7 @@ export const RibbonToolbar: React.FC<RibbonToolbarProps> = ({
 
   // New states for image prompt, symbols, quick blocks, and voice dictation
   const [showAiImageModal, setShowAiImageModal] = useState(false);
+  const [showChartModal, setShowChartModal] = useState(false);
   const [aiImagePrompt, setAiImagePrompt] = useState('');
   const [showSymbolsPicker, setShowSymbolsPicker] = useState(false);
   const [showQuickBlocksPicker, setShowQuickBlocksPicker] = useState(false);
@@ -325,184 +323,6 @@ export const RibbonToolbar: React.FC<RibbonToolbarProps> = ({
   const [newCommentAuthor, setNewCommentAuthor] = useState('Reviewer');
   const [newCommentText, setNewCommentText] = useState('');
   const [commentTargetSelection, setCommentTargetSelection] = useState('');
-
-  // Help tab modal states
-  const [showShortcutsModal, setShowShortcutsModal] = useState(false);
-  const [showQuickGuideModal, setShowQuickGuideModal] = useState(false);
-  const [showAboutModal, setShowAboutModal] = useState(false);
-
-  // Document Read (Text-to-Speech) System & Browser Voices State
-  const [speechVoices, setSpeechVoices] = useState<SpeechSynthesisVoice[]>([]);
-  const [selectedSpeechVoice, setSelectedSpeechVoice] = useState<string>('');
-  const [speechRate, setSpeechRate] = useState<number>(1.0);
-  const [isSpeaking, setIsSpeaking] = useState<boolean>(false);
-  const [isSpeechPaused, setIsSpeechPaused] = useState<boolean>(false);
-  const [currentSpeechSentence, setCurrentSpeechSentence] = useState<string>('');
-  const speechChunksRef = useRef<string[]>([]);
-  const currentSpeechIndexRef = useRef<number>(0);
-
-  useEffect(() => {
-    if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
-
-    const loadVoices = () => {
-      try {
-        const available = window.speechSynthesis.getVoices();
-        if (available && available.length > 0) {
-          setSpeechVoices(available);
-          setSelectedSpeechVoice((curr) => {
-            if (curr && available.some((v) => v.name === curr)) return curr;
-            const def = available.find((v) => v.default) || available[0];
-            return def ? def.name : '';
-          });
-        }
-      } catch (err) {
-        console.warn('Voice loading error:', err);
-      }
-    };
-
-    loadVoices();
-    if (window.speechSynthesis.onvoiceschanged !== undefined) {
-      window.speechSynthesis.onvoiceschanged = loadVoices;
-    }
-
-    return () => {
-      if ('speechSynthesis' in window) {
-        window.speechSynthesis.cancel();
-      }
-    };
-  }, []);
-
-  const stopDocumentReading = useCallback(() => {
-    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-      window.speechSynthesis.cancel();
-    }
-    setIsSpeaking(false);
-    setIsSpeechPaused(false);
-    setCurrentSpeechSentence('');
-    speechChunksRef.current = [];
-    currentSpeechIndexRef.current = 0;
-  }, []);
-
-  const pauseDocumentReading = useCallback(() => {
-    if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
-    if (window.speechSynthesis.speaking) {
-      if (window.speechSynthesis.paused) {
-        window.speechSynthesis.resume();
-        setIsSpeechPaused(false);
-      } else {
-        window.speechSynthesis.pause();
-        setIsSpeechPaused(true);
-      }
-    }
-  }, []);
-
-  const speakSpeechChunk = useCallback(
-    (index: number) => {
-      if (
-        typeof window === 'undefined' ||
-        !('speechSynthesis' in window) ||
-        index >= speechChunksRef.current.length
-      ) {
-        setIsSpeaking(false);
-        setIsSpeechPaused(false);
-        setCurrentSpeechSentence('');
-        return;
-      }
-
-      currentSpeechIndexRef.current = index;
-      const chunk = speechChunksRef.current[index];
-      setCurrentSpeechSentence(chunk);
-
-      const utterance = new SpeechSynthesisUtterance(chunk);
-      if (selectedSpeechVoice && speechVoices.length > 0) {
-        const voiceObj = speechVoices.find((v) => v.name === selectedSpeechVoice);
-        if (voiceObj) utterance.voice = voiceObj;
-      }
-      utterance.rate = speechRate;
-
-      utterance.onend = () => {
-        if (currentSpeechIndexRef.current + 1 < speechChunksRef.current.length) {
-          speakSpeechChunk(currentSpeechIndexRef.current + 1);
-        } else {
-          setIsSpeaking(false);
-          setIsSpeechPaused(false);
-          setCurrentSpeechSentence('');
-          speechChunksRef.current = [];
-          currentSpeechIndexRef.current = 0;
-        }
-      };
-
-      utterance.onerror = (e) => {
-        if (e.error !== 'interrupted' && e.error !== 'canceled') {
-          console.warn('Speech error:', e.error);
-        }
-        setIsSpeaking(false);
-        setIsSpeechPaused(false);
-        setCurrentSpeechSentence('');
-      };
-
-      window.speechSynthesis.speak(utterance);
-    },
-    [speechVoices, selectedSpeechVoice, speechRate]
-  );
-
-  const startDocumentReading = useCallback(() => {
-    if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
-      setReviewNotification('Text-to-Speech is not supported in this browser.');
-      setTimeout(() => setReviewNotification(null), 3000);
-      return;
-    }
-
-    if (isSpeaking && isSpeechPaused) {
-      window.speechSynthesis.resume();
-      setIsSpeechPaused(false);
-      return;
-    }
-
-    window.speechSynthesis.cancel();
-
-    let textToRead = '';
-    if (editor) {
-      const { from, to } = editor.state.selection;
-      if (from !== to) {
-        textToRead = editor.state.doc.textBetween(from, to, ' ');
-      }
-      if (!textToRead.trim()) {
-        textToRead = editor.getText();
-      }
-    }
-
-    const clean = textToRead.trim();
-    if (!clean) {
-      setReviewNotification('No text in document or selection to read.');
-      setTimeout(() => setReviewNotification(null), 3000);
-      return;
-    }
-
-    const rawChunks = clean.match(/[^.!?\n\r]+[.!?\n\r]+|[^.!?\n\r]+$/g) || [clean];
-    const chunks: string[] = [];
-    rawChunks.forEach((c) => {
-      const trimmed = c.trim();
-      if (!trimmed) return;
-      if (trimmed.length > 200) {
-        const parts = trimmed.match(/.{1,180}(\s|$)/g) || [trimmed];
-        parts.forEach((p) => {
-          if (p.trim()) chunks.push(p.trim());
-        });
-      } else {
-        chunks.push(trimmed);
-      }
-    });
-
-    if (chunks.length === 0) return;
-
-    speechChunksRef.current = chunks;
-    currentSpeechIndexRef.current = 0;
-    setIsSpeaking(true);
-    setIsSpeechPaused(false);
-
-    speakSpeechChunk(0);
-  }, [editor, isSpeaking, isSpeechPaused, speakSpeechChunk]);
 
   // Force re-render on any editor selection or content update so formatting buttons reflect active states immediately
   const [, setEditorUpdateTrigger] = useState(0);
@@ -669,13 +489,15 @@ export const RibbonToolbar: React.FC<RibbonToolbarProps> = ({
       }
       setShowEquationPopup(true);
     };
-    window.addEventListener('open-fx-wizard', handleOpenFx);
-    return () => window.removeEventListener('open-fx-wizard', handleOpenFx);
-  }, []);
+    const handleOpenChart = () => setShowChartModal(true);
 
-  // SEO Modals & State
-  const [showKeywordModal, setShowKeywordModal] = useState(false);
-  const [focusKeyword, setFocusKeyword] = useState('');
+    window.addEventListener('open-fx-wizard', handleOpenFx);
+    window.addEventListener('open-chart-modal', handleOpenChart);
+    return () => {
+      window.removeEventListener('open-fx-wizard', handleOpenFx);
+      window.removeEventListener('open-chart-modal', handleOpenChart);
+    };
+  }, []);
 
   // References for outside click detection to close open dropdowns
   const highlightPickerRef = useRef<HTMLDivElement>(null);
@@ -693,6 +515,25 @@ export const RibbonToolbar: React.FC<RibbonToolbarProps> = ({
   const watermarkDropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    const hasAnyDropdownOpen =
+      showHighlightPicker ||
+      showColorPicker ||
+      showLineHeightPicker ||
+      showTablePicker ||
+      showSymbolsPicker ||
+      showQuickBlocksPicker ||
+      showTableTabPicker ||
+      showTableEditMenu ||
+      showMarginsDropdown ||
+      showOrientationDropdown ||
+      showSizeDropdown ||
+      showColorDropdown ||
+      showWatermarkDropdown ||
+      showShadowDropdown ||
+      showLanguageDropdown;
+
+    if (!hasAnyDropdownOpen) return;
+
     const handleClickOutside = (event: MouseEvent) => {
       const target = event.target as Node;
       if (showHighlightPicker && highlightPickerRef.current && !highlightPickerRef.current.contains(target)) {
@@ -1140,155 +981,6 @@ export const RibbonToolbar: React.FC<RibbonToolbarProps> = ({
     setTimeout(() => setReviewNotification(null), 3500);
   };
 
-  // SEO Tab Handlers
-  const handleSeoKeywords = () => {
-    setShowKeywordModal(true);
-  };
-
-  const handleSeoHeadings = () => {
-    if (!editor) return;
-    const json = editor.getJSON();
-    let h1 = 0;
-    let h2 = 0;
-    let h3 = 0;
-    const traverse = (node: any) => {
-      if (node.type === 'heading') {
-        if (node.attrs?.level === 1) h1++;
-        else if (node.attrs?.level === 2) h2++;
-        else if (node.attrs?.level === 3) h3++;
-      }
-      if (node.content) node.content.forEach(traverse);
-    };
-    if (json.content) json.content.forEach(traverse);
-
-    let status = '';
-    if (h1 === 0) status = 'Warning: Missing H1 tag (essential for SEO ranking).';
-    else if (h1 > 1) status = `Notice: ${h1} H1 tags found (search engines prefer 1 H1).`;
-    else status = `Optimal: 1 H1 title, ${h2} H2, and ${h3} H3 headings.`;
-
-    setReviewNotification(`Headings Audit: ${status}`);
-    setTimeout(() => setReviewNotification(null), 4000);
-    onUpdateSettings({ showSeoPane: true });
-  };
-
-  const handleSeoLinks = () => {
-    if (!editor) return;
-    const html = editor.getHTML();
-    const links = html.match(/<a\b[^>]*>([\s\S]*?)<\/a>/gi) || [];
-    const emptyLinks = links.filter((a) => a.replace(/<[^>]*>/g, '').trim().length === 0);
-
-    let msg = '';
-    if (links.length === 0) msg = 'Links Audit: No links detected. Consider linking to authoritative sources.';
-    else if (emptyLinks.length > 0) msg = `Links Audit: ${links.length} links found (${emptyLinks.length} empty anchor text).`;
-    else msg = `Links Audit: ${links.length} links found with valid anchor text.`;
-
-    setReviewNotification(msg);
-    setTimeout(() => setReviewNotification(null), 4000);
-    onUpdateSettings({ showSeoPane: true });
-  };
-
-  const handleSeoImages = () => {
-    if (!editor) return;
-    const html = editor.getHTML();
-    const images = html.match(/<img\b[^>]*>/gi) || [];
-    const missingAlt = images.filter((img) => !img.includes('alt=') || /alt=["']\s*["']/i.test(img));
-
-    let msg = '';
-    if (images.length === 0) msg = 'Images Audit: No images found. Rich media improves user engagement.';
-    else if (missingAlt.length > 0) msg = `Images Audit: ${missingAlt.length} of ${images.length} images are missing ALT text description.`;
-    else msg = `Images Audit: All ${images.length} images have ALT descriptions.`;
-
-    setReviewNotification(msg);
-    setTimeout(() => setReviewNotification(null), 4000);
-    onUpdateSettings({ showSeoPane: true });
-  };
-
-  const handleSeoReadability = () => {
-    if (!editor) return;
-    const text = editor.getText().trim();
-    if (!text) {
-      setReviewNotification('Readability: Document is empty.');
-      setTimeout(() => setReviewNotification(null), 3000);
-      return;
-    }
-
-    const words = text.split(/\s+/).filter(Boolean);
-    const sentences = text.split(/[.!?]+/).filter(Boolean);
-    const syllables = words.reduce((acc, w) => {
-      const clean = w.toLowerCase().replace(/[^a-z]/g, '');
-      const count = clean.replace(/(?:[^laeiouy]|ed|es|e)$/, '').match(/[aeiouy]{1,2}/g)?.length || 1;
-      return acc + count;
-    }, 0);
-
-    const totalWords = Math.max(1, words.length);
-    const totalSentences = Math.max(1, sentences.length);
-    const flesch = Math.round(206.835 - 1.015 * (totalWords / totalSentences) - 84.6 * (syllables / totalWords));
-    const score = Math.max(0, Math.min(100, flesch));
-
-    let grade = 'Standard';
-    if (score >= 90) grade = 'Very Easy (5th grade)';
-    else if (score >= 80) grade = 'Easy (6th grade)';
-    else if (score >= 70) grade = 'Fairly Easy (7th grade)';
-    else if (score >= 60) grade = 'Standard (8th-9th grade)';
-    else if (score >= 50) grade = 'Fairly Difficult (High School)';
-    else if (score >= 30) grade = 'Difficult (College)';
-    else grade = 'Very Confusing (Professional/Academic)';
-
-    setReviewNotification(`Readability Score: ${score}/100 — ${grade} (${Math.round(totalWords / totalSentences)} words/sentence)`);
-    setTimeout(() => setReviewNotification(null), 5000);
-    onUpdateSettings({ showSeoPane: true });
-  };
-
-  const handleSeoOptimize = () => {
-    if (!editor) return;
-    let modified = false;
-    const doc = editor.getJSON();
-
-    // 1. Promote first heading or paragraph to H1 if no H1 exists
-    let h1Count = 0;
-    const countH1 = (node: any) => {
-      if (node.type === 'heading' && node.attrs?.level === 1) h1Count++;
-      if (node.content) node.content.forEach(countH1);
-    };
-    if (doc.content) doc.content.forEach(countH1);
-
-    if (h1Count === 0 && doc.content && doc.content.length > 0) {
-      for (let i = 0; i < doc.content.length; i++) {
-        if (doc.content[i].type === 'paragraph' || doc.content[i].type === 'heading') {
-          doc.content[i] = {
-            ...doc.content[i],
-            type: 'heading',
-            attrs: { level: 1 },
-          };
-          modified = true;
-          break;
-        }
-      }
-    }
-
-    if (modified) {
-      editor.commands.setContent(doc);
-    }
-
-    // 2. Clean consecutive spaces and empty paragraphs
-    let html = editor.getHTML();
-    const prevHtml = html;
-    html = html.replace(/(&nbsp;|\s){2,}/g, ' ');
-    html = html.replace(/(<p><\/p>\s*){3,}/g, '<p></p>');
-    html = html.replace(/<img\b(?![^>]*\balt=)[^>]*>/gi, (tag) => tag.replace('<img', '<img alt="Document image"'));
-    if (html !== prevHtml) {
-      editor.commands.setContent(html);
-    }
-
-    setReviewNotification('SEO Optimizer: Heading hierarchy normalized & ALT tags verified!');
-    setTimeout(() => setReviewNotification(null), 4000);
-    onUpdateSettings({ showSeoPane: true });
-  };
-
-  const handleToggleSeoCheck = () => {
-    onUpdateSettings({ showSeoPane: !settings.showSeoPane });
-  };
-
   const handleInsertTable = (rows: number, cols: number) => {
     if (!editor) return;
     editor.chain().focus().insertTable({ rows, cols, withHeaderRow: true }).run();
@@ -1601,6 +1293,15 @@ export const RibbonToolbar: React.FC<RibbonToolbarProps> = ({
     ? 'border-b border-[#ded4c1] bg-[#f8f3e9]'
     : 'border-b border-[#e1dfdd] bg-white';
 
+  // Smart background preloading for non-basic tabs on hover
+  const preloadTab = useCallback((tab: RibbonTab) => {
+    if (tab === 'seo') {
+      import('./ribbon/tabs/SeoTab');
+    } else if (tab === 'help') {
+      import('./ribbon/tabs/HelpTab');
+    }
+  }, []);
+
   return (
     <div
       id="word-ribbon-toolbar"
@@ -1635,6 +1336,8 @@ export const RibbonToolbar: React.FC<RibbonToolbarProps> = ({
             return (
               <button
                 key={tab}
+                onMouseEnter={() => preloadTab(tab)}
+                onFocus={() => preloadTab(tab)}
                 onClick={() => {
                   onSelectTab(tab);
                   if (isRibbonCollapsed) setIsRibbonCollapsed(false);
@@ -2607,6 +2310,18 @@ export const RibbonToolbar: React.FC<RibbonToolbarProps> = ({
                     <Sparkles size={20} className="text-[#9333ea] mb-1 group-hover:scale-105 transition-transform" />
                     <span className="text-[11px] font-medium leading-tight text-center">
                       AI<br />Image
+                    </span>
+                  </button>
+
+                  {/* Chart (BarChart3 - Standalone Lazy-Loaded Independent Chart Generator) */}
+                  <button
+                    onClick={() => setShowChartModal(true)}
+                    title="Insert Chart — Generate Bar, Column, Line, or Pie chart from table values and insert as WebP image"
+                    className="flex flex-col items-center justify-start px-2.5 py-1.5 rounded hover:bg-white hover:shadow-xs text-neutral-700 cursor-pointer group"
+                  >
+                    <BarChart3 size={20} className="text-[#2563eb] mb-1 group-hover:scale-105 transition-transform" />
+                    <span className="text-[11px] font-medium leading-tight text-center">
+                      Chart
                     </span>
                   </button>
 
@@ -4960,435 +4675,53 @@ export const RibbonToolbar: React.FC<RibbonToolbarProps> = ({
                   HTML
                 </span>
               </div>
-
-              {/* DIVIDER */}
-              <div className="h-12 w-px bg-[#dad9d8] mx-3 shrink-0 self-start mt-0.5" />
-
-              {/* Export Documents */}
-              <div className="flex flex-col justify-start pr-3">
-                <div className="flex items-start space-x-1.5">
-                  <button
-                    onClick={() => {
-                      const content = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${settings.title}</title></head><body>${editor?.getHTML()}</body></html>`;
-                      const blob = new Blob([content], { type: 'application/msword' });
-                      const url = URL.createObjectURL(blob);
-                      const a = document.createElement('a');
-                      a.href = url;
-                      a.download = `${settings.title || 'document'}.doc`;
-                      a.click();
-                      URL.revokeObjectURL(url);
-                    }}
-                    title="Export as Microsoft Word (.doc)"
-                    className="flex flex-col items-center justify-start px-2 py-1 rounded-lg border border-transparent hover:bg-white hover:border-neutral-300 text-neutral-700 cursor-pointer transition-all"
-                  >
-                    <FileSpreadsheet size={18} className="text-[#185abd] mb-0.5" />
-                    <span className="text-[10px] font-medium leading-tight">Word (.doc)</span>
-                  </button>
-
-                  <button
-                    onClick={() => window.print()}
-                    title="Export as PDF Document"
-                    className="flex flex-col items-center justify-start px-2 py-1 rounded-lg border border-transparent hover:bg-white hover:border-neutral-300 text-neutral-700 cursor-pointer transition-all"
-                  >
-                    <Download size={18} className="text-rose-600 mb-0.5" />
-                    <span className="text-[10px] font-medium leading-tight">PDF Export</span>
-                  </button>
-
-                  <button
-                    onClick={() => {
-                      const content = editor?.getHTML() || '';
-                      const blob = new Blob([content], { type: 'text/html' });
-                      const url = URL.createObjectURL(blob);
-                      const a = document.createElement('a');
-                      a.href = url;
-                      a.download = `${settings.title || 'document'}.html`;
-                      a.click();
-                      URL.revokeObjectURL(url);
-                    }}
-                    title="Export as Clean HTML"
-                    className="flex flex-col items-center justify-start px-2 py-1 rounded-lg border border-transparent hover:bg-white hover:border-neutral-300 text-neutral-700 cursor-pointer transition-all"
-                  >
-                    <FileCode size={18} className="text-emerald-600 mb-0.5" />
-                    <span className="text-[10px] font-medium leading-tight">HTML Web</span>
-                  </button>
-                </div>
-                <span className="text-[10px] text-center text-neutral-400 font-normal mt-1.5 tracking-normal">Export</span>
-              </div>
             </div>
           )}
 
-          {/* SEO TAB (MATCHING USER PHOTO 1: Keywords, Headings, Links, Images, Readability, Optimize | Analyze SEO Check) */}
+          {/* SEO TAB (Lazy Loaded with Fast Preload) */}
           {activeTab === 'seo' && (
-            <div className="flex items-start space-x-0 w-full select-none pt-0.5">
-              {/* GROUP 1: SEO Tools (Keywords, Headings, Links, Images, Readability, Optimize) */}
-              <div className="flex flex-col items-center pr-3">
-                <div className="flex items-start space-x-1.5">
-                  {/* 1. Keywords */}
-                  <button
-                    onClick={handleSeoKeywords}
-                    title="Keywords — Focus keyword density & frequency"
-                    className="p-2 rounded-lg border border-transparent hover:bg-white hover:border-neutral-300 text-neutral-700 hover:text-neutral-900 cursor-pointer transition-all flex items-center justify-center min-w-[34px] min-h-[34px]"
-                  >
-                    <Target size={20} className="text-[#db2777]" />
-                  </button>
-
-                  {/* 2. Headings */}
-                  <button
-                    onClick={handleSeoHeadings}
-                    title="Headings — Inspect H1, H2, H3 hierarchy"
-                    className="p-2 rounded-lg border border-transparent hover:bg-white hover:border-neutral-300 text-neutral-700 hover:text-neutral-900 cursor-pointer transition-all flex items-center justify-center min-w-[34px] min-h-[34px]"
-                  >
-                    <Heading size={20} className="text-[#334155]" />
-                  </button>
-
-                  {/* 3. Links */}
-                  <button
-                    onClick={handleSeoLinks}
-                    title="Links — Check anchor text & link health"
-                    className="p-2 rounded-lg border border-transparent hover:bg-white hover:border-neutral-300 text-neutral-700 hover:text-neutral-900 cursor-pointer transition-all flex items-center justify-center min-w-[34px] min-h-[34px]"
-                  >
-                    <LinkIcon size={20} className="text-[#334155]" />
-                  </button>
-
-                  {/* 4. Images */}
-                  <button
-                    onClick={handleSeoImages}
-                    title="Images — Audit missing ALT text attributes"
-                    className="p-2 rounded-lg border border-transparent hover:bg-white hover:border-neutral-300 text-neutral-700 hover:text-neutral-900 cursor-pointer transition-all flex items-center justify-center min-w-[34px] min-h-[34px]"
-                  >
-                    <ImageIcon size={20} className="text-[#334155]" />
-                  </button>
-
-                  {/* 5. Readability */}
-                  <button
-                    onClick={handleSeoReadability}
-                    title="Readability — Flesch reading ease & grade score"
-                    className="p-2 rounded-lg border border-transparent hover:bg-white hover:border-neutral-300 text-neutral-700 hover:text-neutral-900 cursor-pointer transition-all flex items-center justify-center min-w-[34px] min-h-[34px]"
-                  >
-                    <BookOpen size={20} className="text-[#334155]" />
-                  </button>
-
-                  {/* 6. Optimize */}
-                  <button
-                    onClick={handleSeoOptimize}
-                    title="Optimize — Auto-fix heading hierarchy & tags"
-                    className="p-2 rounded-lg border border-transparent hover:bg-white hover:border-neutral-300 text-neutral-700 hover:text-neutral-900 cursor-pointer transition-all flex items-center justify-center min-w-[34px] min-h-[34px]"
-                  >
-                    <Zap size={20} className="text-[#f59e0b]" />
-                  </button>
+            <React.Suspense
+              fallback={
+                <div className="flex items-center space-x-2 py-4 px-4 text-xs text-neutral-500">
+                  <div className="w-4 h-4 border-2 border-[#185abd] border-t-transparent rounded-full animate-spin" />
+                  <span>Loading SEO Toolkit...</span>
                 </div>
-
-                {/* Centered Footer Label */}
-                <span className="text-[11px] text-center text-[#2563eb] font-normal mt-1.5 tracking-normal">
-                  Audit &amp; Optimize
-                </span>
-              </div>
-
-              {/* DIVIDER */}
-              <div className="h-12 w-px bg-[#dad9d8] mx-3 shrink-0 self-start mt-0.5" />
-
-              {/* GROUP 2: Analyze SEO Check Button (Toggles Right Toolbar) */}
-              <div className="flex flex-col items-center pr-3">
-                <div className="flex items-start space-x-1.5">
-                  <button
-                    onClick={handleToggleSeoCheck}
-                    title="Analyze SEO Check — Open/Close Right Toolbar"
-                    className={`flex items-center space-x-2 px-3 py-1.5 rounded-lg border transition-all cursor-pointer ${
-                      settings.showSeoPane
-                        ? isDarkUi
-                          ? 'bg-[#1e3a5f] border-[#0078d4] text-[#60a5fa] shadow-2xs font-semibold'
-                          : 'bg-[#e0e7ff] border-[#6366f1] text-[#3730a3] shadow-2xs font-semibold'
-                        : isDarkUi
-                        ? 'bg-[#282828] hover:bg-[#333333] border-[#404040] hover:border-neutral-500 text-neutral-200'
-                        : 'bg-white hover:bg-neutral-50 border-neutral-300 text-neutral-700 hover:text-neutral-900'
-                    }`}
-                  >
-                    <BarChart3 size={18} className={settings.showSeoPane ? (isDarkUi ? 'text-[#60a5fa]' : 'text-[#4f46e5]') : (isDarkUi ? 'text-neutral-300' : 'text-[#185abd]')} />
-                    <span className="text-xs font-semibold">Analyze SEO Check</span>
-                    {settings.showSeoPane && (
-                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                    )}
-                  </button>
-                </div>
-
-                {/* Centered Footer Label */}
-                <span className={`text-[11px] text-center font-normal mt-1.5 tracking-normal ${isDarkUi ? 'text-neutral-400' : 'text-[#2563eb]'}`}>
-                  SEO Check
-                </span>
-              </div>
-
-              {/* DIVIDER */}
-              <div className="h-12 w-px bg-[#dad9d8] mx-3 shrink-0 self-start mt-0.5" />
-
-              {/* Quick Summary Pill */}
-              <div className="flex flex-col items-center pr-3">
-                <div className="flex items-start space-x-2">
-                  <div className={`px-2.5 py-1 rounded border text-xs ${
-                    isDarkUi
-                      ? 'bg-[#282828] border-[#404040] text-neutral-200'
-                      : 'bg-white border-neutral-300'
-                  }`}>
-                    <span className="text-[9px] text-neutral-400 uppercase block">Headings</span>
-                    <span className={`font-bold ${isDarkUi ? 'text-[#60a5fa]' : 'text-[#185abd]'}`}>
-                      {editor?.getJSON().content?.filter((n: any) => n.type === 'heading').length || 0} Found
-                    </span>
-                  </div>
-                  <button
-                    onClick={() => onUpdateSettings({ showSeoPane: true })}
-                    className={`px-2.5 py-1.5 text-xs font-semibold rounded border cursor-pointer flex items-center space-x-1 transition-colors ${
-                      isDarkUi
-                        ? 'bg-[#1e3a5f] hover:bg-[#2563eb]/40 border-[#0078d4] text-white'
-                        : 'bg-[#f0f4f9] hover:bg-[#e2ebf6] text-neutral-800 border-neutral-300'
-                    }`}
-                  >
-                    <SearchCheck size={14} className={isDarkUi ? 'text-[#60a5fa]' : 'text-[#185abd]'} />
-                    <span>Quick Audit</span>
-                  </button>
-                </div>
-                <span className="text-[10px] text-center text-neutral-400 font-normal mt-1.5 tracking-normal">Summary</span>
-              </div>
-            </div>
+              }
+            >
+              <SeoTab
+                editor={editor}
+                settings={settings}
+                onUpdateSettings={onUpdateSettings}
+                isDarkUi={isDarkUi}
+                onNotify={(msg) => {
+                  setReviewNotification(msg);
+                  setTimeout(() => setReviewNotification(null), 3500);
+                }}
+              />
+            </React.Suspense>
           )}
 
-          {/* HELP TAB (Matches Screenshot 1) */}
+          {/* HELP TAB (Lazy Loaded with Fast Preload) */}
           {activeTab === 'help' && (
-            <div className="flex items-center space-x-1.5 px-3 py-1">
-              {/* GROUP 1: Help & Guides */}
-              <div className="flex flex-col items-center pr-2">
-                <div className="flex items-center space-x-1.5">
-                  {/* Button 1: Keyboard Shortcuts */}
-                  <button
-                    onClick={() => setShowShortcutsModal(true)}
-                    title="View Keyboard Shortcuts (Ctrl+B, Ctrl+I, Ctrl+Z, etc.)"
-                    className="flex flex-col items-center justify-center px-3 py-1 rounded hover:bg-neutral-100 text-neutral-700 transition-colors cursor-pointer"
-                  >
-                    <Keyboard size={22} className="text-[#185abd] mb-1" />
-                    <span className="text-[11px] leading-tight text-center text-neutral-800">
-                      Keyboard<br />Shortcuts
-                    </span>
-                  </button>
-
-                  {/* Button 2: Quick Guide */}
-                  <button
-                    onClick={() => setShowQuickGuideModal(true)}
-                    title="Open Nedit Quick Guide"
-                    className="flex flex-col items-center justify-center px-3 py-1 rounded hover:bg-neutral-100 text-neutral-700 transition-colors cursor-pointer"
-                  >
-                    <BookOpen size={22} className="text-[#185abd] mb-1" />
-                    <span className="text-[11px] leading-tight text-center text-neutral-800">
-                      Quick<br />Guide
-                    </span>
-                  </button>
-
-                  {/* Button 3: About */}
-                  <button
-                    onClick={() => setShowAboutModal(true)}
-                    title="About Nedit v5.2 & Version Information"
-                    className="flex flex-col items-center justify-center px-3 py-1 rounded hover:bg-neutral-100 text-neutral-700 transition-colors cursor-pointer"
-                  >
-                    <Info size={22} className="text-[#185abd] mb-1" />
-                    <span className="text-[11px] leading-tight text-center text-neutral-800">
-                      About<br />Nedit5.2
-                    </span>
-                  </button>
+            <React.Suspense
+              fallback={
+                <div className="flex items-center space-x-2 py-4 px-4 text-xs text-neutral-500">
+                  <div className="w-4 h-4 border-2 border-[#185abd] border-t-transparent rounded-full animate-spin" />
+                  <span>Loading Help &amp; Guides...</span>
                 </div>
-                <span className="text-[11px] text-center text-[#2563eb] font-normal mt-1.5 tracking-normal">
-                  Help &amp; Guides
-                </span>
-              </div>
-
-              {/* DIVIDER */}
-              <div className="h-12 w-px bg-[#dad9d8] mx-2 shrink-0 self-start mt-0.5" />
-
-              {/* GROUP 2: DOCUMENT READ (Text-to-Speech System & Browser Voices) */}
-              <div className="flex flex-col items-center px-2">
-                <div className="flex items-center space-x-2">
-                  {/* Big Read Aloud Play Button */}
-                  <button
-                    onClick={startDocumentReading}
-                    title="Read Aloud — Read selected text or entire document using system and browser voices"
-                    className={`flex flex-col items-center justify-center px-3 py-1 rounded transition-all cursor-pointer border ${
-                      isSpeaking && !isSpeechPaused
-                        ? isDarkUi
-                          ? 'bg-emerald-950/60 border-emerald-500 text-emerald-300 shadow-2xs font-medium'
-                          : 'bg-emerald-50 border-emerald-400 text-emerald-800 shadow-2xs font-medium'
-                        : isSpeechPaused
-                        ? isDarkUi
-                          ? 'bg-amber-950/60 border-amber-500 text-amber-300 font-medium'
-                          : 'bg-amber-50 border-amber-300 text-amber-800'
-                        : isDarkUi
-                        ? 'bg-[#282828] hover:bg-[#333333] border-[#404040] hover:border-neutral-500 text-neutral-200'
-                        : 'bg-white hover:bg-neutral-50 border-neutral-300 text-neutral-800'
-                    }`}
-                  >
-                    {isSpeaking && !isSpeechPaused ? (
-                      <Volume2 size={22} className="text-emerald-500 animate-pulse mb-1" />
-                    ) : (
-                      <Play size={22} className={`${isDarkUi ? 'text-[#60a5fa] fill-[#60a5fa]' : 'text-[#185abd] fill-[#185abd]'} mb-1`} />
-                    )}
-                    <span className={`text-[11px] leading-tight text-center font-medium ${isDarkUi ? 'text-neutral-200' : ''}`}>
-                      {isSpeaking && !isSpeechPaused
-                        ? 'Reading...'
-                        : isSpeechPaused
-                        ? 'Resume'
-                        : 'Read Aloud'}
-                    </span>
-                  </button>
-
-                  {/* Middle Control Cluster: Pause, Stop, Speed, Voices */}
-                  <div className="flex flex-col space-y-1.5">
-                    {/* Top Row: Pause, Stop, Speed Rate */}
-                    <div className="flex items-center space-x-2">
-                      {/* Pause / Resume Button */}
-                      <button
-                        onClick={pauseDocumentReading}
-                        disabled={!isSpeaking}
-                        title={isSpeechPaused ? 'Resume reading' : 'Pause reading'}
-                        className={`flex items-center space-x-1 px-2 py-0.5 rounded text-xs border transition-colors cursor-pointer ${
-                          isSpeechPaused
-                            ? isDarkUi
-                              ? 'bg-amber-950/60 border-amber-500 text-amber-300 font-semibold'
-                              : 'bg-amber-100 border-amber-400 text-amber-900 font-semibold'
-                            : isDarkUi
-                            ? 'bg-[#282828] border-[#404040] hover:bg-[#333333] text-neutral-200 disabled:opacity-40 disabled:cursor-not-allowed'
-                            : 'bg-white border-neutral-300 hover:bg-neutral-100 text-neutral-700 disabled:opacity-40 disabled:cursor-not-allowed'
-                        }`}
-                      >
-                        <Pause size={13} className={isSpeechPaused ? 'text-amber-500' : isDarkUi ? 'text-neutral-300' : 'text-neutral-600'} />
-                        <span>{isSpeechPaused ? 'Resume' : 'Pause'}</span>
-                      </button>
-
-                      {/* Stop Button */}
-                      <button
-                        onClick={stopDocumentReading}
-                        disabled={!isSpeaking}
-                        title="Stop reading aloud"
-                        className={`flex items-center space-x-1 px-2 py-0.5 rounded text-xs border transition-colors cursor-pointer ${
-                          isDarkUi
-                            ? 'bg-[#282828] border-[#404040] hover:bg-rose-950/40 text-neutral-200 hover:text-rose-400 disabled:opacity-40 disabled:cursor-not-allowed'
-                            : 'bg-white border-neutral-300 hover:bg-rose-50 text-neutral-700 hover:text-rose-700 disabled:opacity-40 disabled:cursor-not-allowed'
-                        }`}
-                      >
-                        <Square size={11} className="fill-rose-600 text-rose-600" />
-                        <span>Stop</span>
-                      </button>
-
-                      {/* Speed Dropdown */}
-                      <div className="flex items-center space-x-1 pl-1">
-                        <Gauge size={13} className={`shrink-0 ${isDarkUi ? 'text-neutral-400' : 'text-neutral-500'}`} />
-                        <span className={`text-[11px] font-medium ${isDarkUi ? 'text-neutral-400' : 'text-neutral-600'}`}>Speed:</span>
-                        <select
-                          value={speechRate}
-                          onChange={(e) => setSpeechRate(parseFloat(e.target.value))}
-                          className={`text-[11px] h-[23px] px-1.5 py-0.5 rounded font-medium cursor-pointer focus:outline-none focus:ring-1 focus:ring-blue-500 border ${
-                            isDarkUi
-                              ? 'bg-[#282828] border-[#404040] text-neutral-200'
-                              : 'bg-white border-neutral-300 text-neutral-700'
-                          }`}
-                          title="Reading speed multiplier"
-                        >
-                          <option value={0.5}>0.5x</option>
-                          <option value={0.75}>0.75x</option>
-                          <option value={1.0}>1.0x (Normal)</option>
-                          <option value={1.25}>1.25x</option>
-                          <option value={1.5}>1.5x</option>
-                          <option value={1.75}>1.75x</option>
-                          <option value={2.0}>2.0x</option>
-                        </select>
-                      </div>
-                    </div>
-
-                    {/* Bottom Row: System and Browser Voices Dropdown */}
-                    <div className="flex items-center space-x-1.5">
-                      <Languages size={14} className={`${isDarkUi ? 'text-[#60a5fa]' : 'text-[#185abd]'} shrink-0`} />
-                      <span className={`text-[11px] font-medium shrink-0 ${isDarkUi ? 'text-neutral-400' : 'text-neutral-600'}`}>Voice:</span>
-                      <select
-                        value={selectedSpeechVoice}
-                        onChange={(e) => setSelectedSpeechVoice(e.target.value)}
-                        className={`w-[230px] text-[11px] h-[23px] px-1.5 py-0 rounded font-medium truncate cursor-pointer focus:outline-none focus:ring-1 focus:ring-blue-500 border ${
-                          isDarkUi
-                            ? 'bg-[#282828] border-[#404040] text-neutral-200'
-                            : 'bg-white border-neutral-300 text-neutral-800'
-                        }`}
-                        title="Available system and browser voices"
-                      >
-                        {speechVoices.length === 0 ? (
-                          <option value="">System Default Voice</option>
-                        ) : (
-                          speechVoices.map((voice, idx) => (
-                            <option key={voice.name + idx} value={voice.name}>
-                              {voice.name} ({voice.lang}){voice.default ? ' — [Default]' : ''}
-                            </option>
-                          ))
-                        )}
-                      </select>
-                    </div>
-                  </div>
-
-                  {/* Status & Feedback Indicator */}
-                  <div className={`flex flex-col justify-center px-2.5 py-1 rounded min-w-[130px] max-w-[170px] h-[52px] border ${
-                    isDarkUi
-                      ? 'bg-[#282828] border-[#404040]'
-                      : 'bg-white border-neutral-200'
-                  }`}>
-                    {isSpeaking ? (
-                      <div className="flex items-center space-x-1.5 text-emerald-500">
-                        <Volume2 size={13} className="animate-bounce shrink-0 text-emerald-500" />
-                        <span className="text-[10px] font-semibold truncate">
-                          {isSpeechPaused ? 'Paused' : 'Reading aloud...'}
-                        </span>
-                      </div>
-                    ) : (
-                      <div className="flex items-center space-x-1 text-neutral-400">
-                        <Headphones size={13} className="shrink-0" />
-                        <span className="text-[10px] font-medium">Speech Ready</span>
-                      </div>
-                    )}
-                    <span
-                      className={`text-[9px] truncate mt-0.5 ${isDarkUi ? 'text-neutral-400' : 'text-neutral-500'}`}
-                      title={currentSpeechSentence || 'Reads selected text or document'}
-                    >
-                      {currentSpeechSentence || (isSpeaking ? 'Reading...' : 'Select text or reads all')}
-                    </span>
-                  </div>
-                </div>
-
-                <span className="text-[11px] text-center text-[#2563eb] font-normal mt-1.5 tracking-normal">
-                  Document Read
-                </span>
-              </div>
-
-              {/* DIVIDER */}
-              <div className="h-12 w-px bg-[#dad9d8] mx-2 shrink-0 self-start mt-0.5" />
-
-              {/* GROUP 3: AI Assistant */}
-              <div className="flex flex-col items-center pl-1">
-                <button
-                  onClick={() =>
-                    onUpdateSettings({
-                      showAiAssistantPane: !settings.showAiAssistantPane,
-                    })
-                  }
-                  title="AI Writing Assistant — Open / Close Right Toolbar"
-                  className={`flex flex-col items-center justify-center px-3.5 py-1 rounded transition-all cursor-pointer ${
-                    settings.showAiAssistantPane
-                      ? 'bg-purple-100/90 text-[#6d28d9] font-semibold border border-purple-300 shadow-2xs'
-                      : 'hover:bg-purple-50/70 text-[#6d28d9]'
-                  }`}
-                >
-                  <Sparkles
-                    size={22}
-                    className="text-[#7c3aed] fill-purple-100 mb-1"
-                  />
-                  <span className="text-[11px] leading-tight text-center font-semibold text-[#6d28d9]">
-                    AI<br />Assistant
-                  </span>
-                </button>
-                <span className="text-[11px] text-center text-purple-600 font-normal mt-1.5 tracking-normal">
-                  AI Writing
-                </span>
-              </div>
-            </div>
+              }
+            >
+              <HelpTab
+                editor={editor}
+                settings={settings}
+                onUpdateSettings={onUpdateSettings}
+                isDarkUi={isDarkUi}
+                onNotify={(msg) => {
+                  setReviewNotification(msg);
+                  setTimeout(() => setReviewNotification(null), 3500);
+                }}
+              />
+            </React.Suspense>
           )}
         </div>
       )}
@@ -5408,7 +4741,10 @@ export const RibbonToolbar: React.FC<RibbonToolbarProps> = ({
         <React.Suspense fallback={null}>
           <InsertPictureModal
             isOpen={showImageModal}
-            onClose={() => setShowImageModal(false)}
+            onClose={() => {
+              setShowImageModal(false);
+              editor?.commands.focus();
+            }}
             editor={editor}
             onNotify={(msg) => {
               setReviewNotification(msg);
@@ -5423,7 +4759,10 @@ export const RibbonToolbar: React.FC<RibbonToolbarProps> = ({
         <React.Suspense fallback={null}>
           <SymbolsPickerModal
             isOpen={showSymbolsPicker}
-            onClose={() => setShowSymbolsPicker(false)}
+            onClose={() => {
+              setShowSymbolsPicker(false);
+              editor?.commands.focus();
+            }}
             editor={editor}
             themeMode={effectiveThemeMode}
             onNotify={(msg) => {
@@ -5438,7 +4777,28 @@ export const RibbonToolbar: React.FC<RibbonToolbarProps> = ({
         <React.Suspense fallback={null}>
           <AiImageModal
             isOpen={showAiImageModal}
-            onClose={() => setShowAiImageModal(false)}
+            onClose={() => {
+              setShowAiImageModal(false);
+              editor?.commands.focus();
+            }}
+            editor={editor}
+            onNotify={(msg) => {
+              setReviewNotification(msg);
+              setTimeout(() => setReviewNotification(null), 3500);
+            }}
+          />
+        </React.Suspense>
+      )}
+
+      {/* Standalone Lazy-Loaded Independent Chart Generator Modal */}
+      {showChartModal && (
+        <React.Suspense fallback={null}>
+          <ChartGeneratorModal
+            isOpen={showChartModal}
+            onClose={() => {
+              setShowChartModal(false);
+              editor?.commands.focus();
+            }}
             editor={editor}
             onNotify={(msg) => {
               setReviewNotification(msg);
@@ -5793,7 +5153,10 @@ export const RibbonToolbar: React.FC<RibbonToolbarProps> = ({
         <React.Suspense fallback={null}>
           <VersionHistoryModal
             isOpen={showVersionHistoryModal}
-            onClose={() => setShowVersionHistoryModal(false)}
+            onClose={() => {
+              setShowVersionHistoryModal(false);
+              editor?.commands.focus();
+            }}
             editor={editor}
             snapshots={snapshots}
             onUpdateSnapshots={(updated) => setSnapshots(updated)}
@@ -5810,65 +5173,15 @@ export const RibbonToolbar: React.FC<RibbonToolbarProps> = ({
         <React.Suspense fallback={null}>
           <AiRewriteModal
             isOpen={showAiRewriteModal}
-            onClose={() => setShowAiRewriteModal(false)}
+            onClose={() => {
+              setShowAiRewriteModal(false);
+              editor?.commands.focus();
+            }}
             editor={editor}
             onNotify={(msg) => {
               setReviewNotification(msg);
               setTimeout(() => setReviewNotification(null), 3000);
             }}
-          />
-        </React.Suspense>
-      )}
-
-      {/* SEO Keyword Density Modal (Lazy-loaded SEO tab button) */}
-      {showKeywordModal && (
-        <React.Suspense fallback={null}>
-          <KeywordDensityModal
-            isOpen={showKeywordModal}
-            onClose={() => setShowKeywordModal(false)}
-            editor={editor}
-            onOpenFullSeo={() => onUpdateSettings({ showSeoPane: true })}
-          />
-        </React.Suspense>
-      )}
-
-      {/* 1. Keyboard Shortcuts Modal (Lazy-loaded Help tab button) */}
-      {showShortcutsModal && (
-        <React.Suspense fallback={null}>
-          <KeyboardShortcutsModal
-            isOpen={showShortcutsModal}
-            onClose={() => setShowShortcutsModal(false)}
-          />
-        </React.Suspense>
-      )}
-
-      {/* 2. Quick Guide Modal (Lazy-loaded Help tab button) */}
-      {showQuickGuideModal && (
-        <React.Suspense fallback={null}>
-          <QuickGuideModal
-            isOpen={showQuickGuideModal}
-            onClose={() => setShowQuickGuideModal(false)}
-          />
-        </React.Suspense>
-      )}
-
-      {/* 3. About Modal (Lazy-loaded 90% Screen Popup with 7 Interactive Tabs) */}
-      {showAboutModal && (
-        <React.Suspense
-          fallback={
-            <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-[100] p-4">
-              <div className="bg-white dark:bg-[#1e1e1e] rounded-2xl p-6 shadow-2xl flex flex-col items-center space-y-3">
-                <div className="w-8 h-8 border-3 border-[#0062ff] border-t-transparent rounded-full animate-spin" />
-                <span className="text-xs font-semibold text-neutral-700 dark:text-neutral-300">
-                  Loading Nedit v5.2 Suite Information...
-                </span>
-              </div>
-            </div>
-          }
-        >
-          <AboutSuiteModal
-            isOpen={showAboutModal}
-            onClose={() => setShowAboutModal(false)}
           />
         </React.Suspense>
       )}
@@ -5884,6 +5197,7 @@ export const RibbonToolbar: React.FC<RibbonToolbarProps> = ({
               setShowEquationPopup(false);
               setEquationEditingLatex('');
               setEquationIsBlock(false);
+              editor?.commands.focus();
             }}
           />
         </React.Suspense>
@@ -5891,3 +5205,5 @@ export const RibbonToolbar: React.FC<RibbonToolbarProps> = ({
     </div>
   );
 };
+
+export const RibbonToolbar = React.memo(RibbonToolbarComponent);

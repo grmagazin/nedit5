@@ -551,6 +551,18 @@ export const SEARCH_COMMANDS: SearchCommand[] = [
     },
   },
   {
+    id: 'insert-chart',
+    label: 'Insert Chart from Table Data',
+    description: 'Generate Column, Bar, Line, or Pie chart from table values and insert as WebP image',
+    category: 'Insert',
+    keywords: ['chart', 'graph', 'plot', 'bar chart', 'pie chart', 'line chart', 'visualize table', 'diagram'],
+    iconType: 'barChart3',
+    action: ({ notify }) => {
+      window.dispatchEvent(new CustomEvent('open-chart-modal'));
+      notify?.('Opened Chart Generator');
+    },
+  },
+  {
     id: 'insert-signature',
     label: 'Insert Formal Signature Block',
     description: 'Add standard business sign-off with date, signature line, and title',

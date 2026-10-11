@@ -145,25 +145,14 @@ class SnapshotStore {
   }
 
   /**
-   * Broadcast CustomEvent repeatedly across the lazy-load mounting window
+   * Broadcast CustomEvent cleanly once
    */
   private broadcastWithRetries(dataUrl: string): void {
     if (typeof window === 'undefined') return;
 
-    const dispatch = () => {
-      window.dispatchEvent(
-        new CustomEvent('word_image_wizard_load', { detail: { src: dataUrl } })
-      );
-    };
-
-    // Immediate
-    dispatch();
-
-    // Retries across the lazy-loading lifecycle (100ms, 250ms, 500ms, 900ms)
-    setTimeout(dispatch, 100);
-    setTimeout(dispatch, 250);
-    setTimeout(dispatch, 500);
-    setTimeout(dispatch, 900);
+    window.dispatchEvent(
+      new CustomEvent('word_image_wizard_load', { detail: { src: dataUrl } })
+    );
   }
 }
 

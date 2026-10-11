@@ -13,7 +13,9 @@ import {
   Camera,
   Download,
 } from 'lucide-react';
-import { ScreenCaptureTool } from './ScreenCaptureTool';
+const ScreenCaptureTool = React.lazy(() =>
+  import('./ScreenCaptureTool').then((m) => ({ default: m.ScreenCaptureTool }))
+);
 import { snapshotStore } from '../utils/snapshotStore';
 import { captureDocumentScreenSnapshot } from '../utils/screenSnapshot';
 
@@ -790,14 +792,16 @@ export const ImageWizardSidebar: React.FC<ImageWizardSidebarProps> = ({ editor, 
         </div>
       </div>
 
-      {/* Lightweight Interactive Screen Capture Tool */}
+      {/* Lightweight Interactive Screen Capture Tool (Lazy-Loaded) */}
       {showScreenCaptureTool && screenCaptureBaseImage && (
-        <ScreenCaptureTool
-          isOpen={showScreenCaptureTool}
-          baseImageUrl={screenCaptureBaseImage}
-          onClose={() => setShowScreenCaptureTool(false)}
-          onConfirmCapture={handleConfirmAreaCapture}
-        />
+        <React.Suspense fallback={null}>
+          <ScreenCaptureTool
+            isOpen={showScreenCaptureTool}
+            baseImageUrl={screenCaptureBaseImage}
+            onClose={() => setShowScreenCaptureTool(false)}
+            onConfirmCapture={handleConfirmAreaCapture}
+          />
+        </React.Suspense>
       )}
     </aside>
   );

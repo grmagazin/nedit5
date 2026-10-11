@@ -18,6 +18,7 @@ import {
   ArrowRight,
   Info,
 } from 'lucide-react';
+import { compressImageToDataUrl } from '../utils/imageCompressor';
 
 export interface StoredLibraryImage {
   id: string;
@@ -284,13 +285,18 @@ export const InsertPictureModal: React.FC<InsertPictureModalProps> = ({
       setAltText(file.name.replace(/\.[^.]+$/, '').replace(/[-_]/g, ' '));
     }
 
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const result = e.target?.result as string;
-      setSelectedImageSrc(result);
-    };
-    reader.onerror = () => setErrorMessage('Error reading file from disk.');
-    reader.readAsDataURL(file);
+    // Smart automatic downscale and compression to protect localStorage quota
+    compressImageToDataUrl(file).then((compressedResult) => {
+      setSelectedImageSrc(compressedResult);
+    }).catch(() => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const result = e.target?.result as string;
+        setSelectedImageSrc(result);
+      };
+      reader.onerror = () => setErrorMessage('Error reading file from disk.');
+      reader.readAsDataURL(file);
+    });
   };
 
   // Drag and drop handlers
@@ -488,8 +494,8 @@ export const InsertPictureModal: React.FC<InsertPictureModalProps> = ({
           caption: safeCaption,
         };
 
-        // Limit library to latest 20 items to respect localStorage limits (~5MB)
-        const updatedLib = [newEntry, ...currentLib.filter((x) => x.id !== newEntry.id)].slice(0, 20);
+        // Limit library to latest 8 items to respect localStorage limits (~5MB)
+        const updatedLib = [newEntry, ...currentLib.filter((x) => x.id !== newEntry.id)].slice(0, 8);
         localStorage.setItem(STORAGE_KEY_IMAGE_LIB, JSON.stringify(updatedLib));
         setLibraryImages(updatedLib);
       } catch (e) {

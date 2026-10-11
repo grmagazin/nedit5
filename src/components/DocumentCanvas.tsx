@@ -381,7 +381,7 @@ export const DocumentCanvas: React.FC<DocumentCanvasProps> = ({
     setPageBreakCalibratedHeight(defaultVal);
   }, [settings.pageSize, settings.orientation]);
 
-  // Track document page height dynamically for accurate page break placement
+  // Track document page height dynamically for accurate page break placement via native ResizeObserver
   useEffect(() => {
     if (!docPageRef.current) return;
     const updateHeight = () => {
@@ -393,7 +393,7 @@ export const DocumentCanvas: React.FC<DocumentCanvasProps> = ({
     const ro = new ResizeObserver(updateHeight);
     ro.observe(docPageRef.current);
     return () => ro.disconnect();
-  }, [editor?.state.doc]);
+  }, []);
 
   const handleAdjustHeight = (delta: number = 5) => {
     setPageBreakCalibratedHeight((prev) => {

@@ -67,6 +67,7 @@ import {
 } from './utils/AutoCorrect';
 import type { BackstageTab } from './components/FileBackstage';
 import { Maximize2 } from 'lucide-react';
+import { compressImageToDataUrl } from './utils/imageCompressor';
 
 const FindReplaceModal = React.lazy(() =>
   import('./components/FindReplaceModal').then((m) => ({ default: m.FindReplaceModal }))
@@ -469,6 +470,10 @@ export default function App() {
           levels: [1, 2, 3],
         },
         horizontalRule: false,
+        undoRedo: {
+          depth: 100,
+          newGroupDelay: 500,
+        },
       }),
       CustomHorizontalRule,
       CustomDiv,
@@ -524,6 +529,32 @@ export default function App() {
     })(),
     editable: settings.viewMode !== 'read',
     editorProps: {
+      handlePaste: (view, event) => {
+        const items = event.clipboardData?.items;
+        if (!items || items.length === 0) return false;
+
+        for (let i = 0; i < items.length; i++) {
+          const item = items[i];
+          if (item.type.indexOf('image') !== -1) {
+            const file = item.getAsFile();
+            if (file) {
+              event.preventDefault();
+              compressImageToDataUrl(file).then((compressedUrl) => {
+                const { state } = view;
+                const node = state.schema.nodes.image?.create({ src: compressedUrl });
+                if (node) {
+                  const transaction = state.tr.replaceSelectionWith(node);
+                  view.dispatch(transaction);
+                }
+              }).catch(() => {
+                // Ignore fallback
+              });
+              return true;
+            }
+          }
+        }
+        return false;
+      },
       handleClick: (view, _pos, event) => {
         const target = event.target as HTMLElement | null;
         const link = target?.closest('a') as HTMLAnchorElement | null;
@@ -840,6 +871,28 @@ export default function App() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [handleSaveToLocalStorage, handlePrint, settings.isFocusMode, handleUpdateSettings]);
 
+  // Stable callbacks for modals and panels to prevent unnecessary re-renders
+  const handleOpenFindReplace = useCallback(() => setShowFindReplace(true), []);
+  const handleCloseFindReplace = useCallback(() => {
+    setShowFindReplace(false);
+    editor?.commands.focus();
+  }, [editor]);
+
+  const handleOpenStatsModal = useCallback(() => setShowStatsModal(true), []);
+  const handleCloseStatsModal = useCallback(() => {
+    setShowStatsModal(false);
+    editor?.commands.focus();
+  }, [editor]);
+
+  const handleToggleCommentsPanel = useCallback((show?: boolean) => {
+    setShowCommentsPanel((prev) => (show !== undefined ? show : !prev));
+  }, []);
+
+  const handleCloseBackstage = useCallback(() => {
+    setShowBackstage(false);
+    editor?.commands.focus();
+  }, [editor]);
+
   const effectiveThemeMode = settings.themeMode || (settings.isDarkMode ? 'fullDark' : 'light');
   const isDarkUi = effectiveThemeMode === 'fullDark' || effectiveThemeMode === 'canvasDark';
   const isSepiaUi = effectiveThemeMode === 'sepia';
@@ -911,8 +964,8 @@ export default function App() {
               setBackstageInitialTab(tab || 'info');
               setShowBackstage(true);
             }}
-            onOpenFindReplace={() => setShowFindReplace(true)}
-            onOpenStats={() => setShowStatsModal(true)}
+            onOpenFindReplace={handleOpenFindReplace}
+            onOpenStats={handleOpenStatsModal}
             onSelectTab={setActiveTab}
             onSave={handleSaveToLocalStorage}
             onPrint={handlePrint}
@@ -921,7 +974,7 @@ export default function App() {
             onToggleAutoSave={handleToggleAutoSave}
             onOpenThemes={handleOpenThemes}
             commentsCount={comments.length}
-            onToggleComments={() => setShowCommentsPanel((prev) => !prev)}
+            onToggleComments={handleToggleCommentsPanel}
           />
         </div>
       )}
@@ -936,14 +989,12 @@ export default function App() {
             settings={settings}
             onUpdateSettings={handleUpdateSettings}
             onOpenBackstage={handleOpenBackstageNormal}
-            onOpenFindReplace={() => setShowFindReplace(true)}
-            onOpenStats={() => setShowStatsModal(true)}
+            onOpenFindReplace={handleOpenFindReplace}
+            onOpenStats={handleOpenStatsModal}
             comments={comments}
             onSetComments={setComments}
             showCommentsPanel={showCommentsPanel}
-            onToggleCommentsPanel={(show) =>
-              setShowCommentsPanel((prev) => (show !== undefined ? show : !prev))
-            }
+            onToggleCommentsPanel={handleToggleCommentsPanel}
             formatPainter={formatPainter}
             onToggleFormatPainter={handleToggleFormatPainter}
             onClearFormatPainter={handleClearFormatPainter}
@@ -1143,7 +1194,7 @@ export default function App() {
         totalPages={totalPagesCount}
         activePage={activePageNumber}
         onUpdateSettings={handleUpdateSettings}
-        onOpenStats={() => setShowStatsModal(true)}
+        onOpenStats={handleOpenStatsModal}
         onToggleNavigation={() =>
           handleUpdateSettings({ showNavigationPane: !settings.showNavigationPane })
         }
@@ -1154,7 +1205,7 @@ export default function App() {
         <Suspense fallback={null}>
           <FindReplaceModal
             editor={editor}
-            onClose={() => setShowFindReplace(false)}
+            onClose={handleCloseFindReplace}
           />
         </Suspense>
       )}
@@ -1163,7 +1214,7 @@ export default function App() {
         <Suspense fallback={null}>
           <DocumentStatsModal
             stats={stats}
-            onClose={() => setShowStatsModal(false)}
+            onClose={handleCloseStatsModal}
           />
         </Suspense>
       )}
@@ -1175,7 +1226,7 @@ export default function App() {
             settings={settings}
             stats={stats}
             onUpdateSettings={handleUpdateSettings}
-            onClose={() => setShowBackstage(false)}
+            onClose={handleCloseBackstage}
             onSaveToLocalStorage={handleSaveToLocalStorage}
             onPrint={handlePrint}
             autoSaveEnabled={autoSaveEnabled}

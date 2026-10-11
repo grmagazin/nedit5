@@ -210,6 +210,21 @@ export function injectPdfPrintStyles(options: PdfPrintOptions = {}): () => void 
         page-break-inside: avoid !important;
       }
 
+      /* Prevent orphaned headings and sliced blocks in PDF / Print */
+      .ProseMirror h1, .ProseMirror h2, .ProseMirror h3, .ProseMirror h4, .ProseMirror h5, .ProseMirror h6,
+      .tiptap h1, .tiptap h2, .tiptap h3, .tiptap h4, .tiptap h5, .tiptap h6,
+      h1, h2, h3, h4, h5, h6 {
+        break-after: avoid !important;
+        page-break-after: avoid !important;
+      }
+
+      .ProseMirror img, .tiptap img, img,
+      .ProseMirror figure, .tiptap figure, figure,
+      .math-block, .tiptap-table, table {
+        break-inside: avoid !important;
+        page-break-inside: avoid !important;
+      }
+
       /* Multi-Page Paginated Print Sheets (Headers, Footers, Page Numbers on every page) */
       #dedicated-print-container {
         display: block !important;
