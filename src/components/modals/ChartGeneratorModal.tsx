@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { createPortal } from 'react-dom';
 import { Editor } from '@tiptap/react';
 import { findTable } from '@tiptap/pm/tables';
+import { TextSelection } from '@tiptap/pm/state';
 import {
   BarChart3,
   PieChart,
@@ -20,6 +21,7 @@ import {
   LayoutGrid,
   Palette,
   Shuffle,
+  Copy,
 } from 'lucide-react';
 
 export type ChartType = 'column' | 'bar' | 'line' | 'area' | 'pie' | 'doughnut';
@@ -643,8 +645,8 @@ export const ChartGeneratorModal: React.FC<ChartGeneratorModalProps> = ({
     }
   }, [renderChartToCanvas, targetWidth, isOpen]);
 
-  // Handle Insert into TipTap Document
-  const handleInsertIntoDocument = () => {
+  // Handle Insert into TipTap Document safely
+  const handleInsertIntoDocument = (positionPlacement: 'auto' | 'above' | 'below' = 'auto') => {
     if (!editor || !previewCanvasRef.current) return;
 
     // Render offscreen canvas at exact target resolution
@@ -659,6 +661,29 @@ export const ChartGeneratorModal: React.FC<ChartGeneratorModalProps> = ({
     }
 
     if (finalDataUrl) {
+      const { state, view } = editor;
+      const table = findTable(state.selection.$from);
+
+      if (table) {
+        // Safe Table Protection:
+        // Do not insert the chart inside the table cell or replace cell text!
+        // Instead, insert a fresh paragraph outside the table (above by default or below)
+        const tablePos = table.pos;
+        const tr = state.tr;
+        const pNode = state.schema.nodes.paragraph.create();
+        const insertPos =
+          positionPlacement === 'below'
+            ? tablePos + table.node.nodeSize
+            : tablePos; // Default: above table
+
+        tr.insert(insertPos, pNode);
+        const targetPos = Math.max(1, insertPos + 1);
+        const resolved = tr.doc.resolve(targetPos);
+        tr.setSelection(TextSelection.near(resolved));
+        view.dispatch(tr);
+        editor.commands.focus();
+      }
+
       editor
         .chain()
         .focus()
@@ -668,8 +693,40 @@ export const ChartGeneratorModal: React.FC<ChartGeneratorModalProps> = ({
         })
         .run();
 
-      onNotify?.(`Inserted ${chartType.toUpperCase()} chart (${targetWidth}px WebP) into document.`);
+      const locText = table
+        ? positionPlacement === 'below'
+          ? 'below table'
+          : 'above table'
+        : 'into document';
+      onNotify?.(
+        `Inserted ${chartType.toUpperCase()} chart (${targetWidth}px WebP) ${locText}. Table cells preserved!`
+      );
       onClose();
+    }
+  };
+
+  // Copy Chart Image directly to clipboard as PNG
+  const handleCopyChartToClipboard = () => {
+    if (!previewCanvasRef.current) return;
+    try {
+      const offscreen = document.createElement('canvas');
+      renderChartToCanvas(offscreen, targetWidth);
+      offscreen.toBlob(async (blob) => {
+        if (!blob) return;
+        try {
+          if (typeof navigator !== 'undefined' && navigator.clipboard?.write) {
+            await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+            onNotify?.('Chart copied to clipboard as PNG image.');
+          } else {
+            onNotify?.('Clipboard write not supported by browser.');
+          }
+        } catch (err) {
+          console.warn('Clipboard write error:', err);
+          onNotify?.('Clipboard write restricted by browser.');
+        }
+      }, 'image/png');
+    } catch (err) {
+      console.warn('Copy chart error:', err);
     }
   };
 
@@ -1091,6 +1148,14 @@ export const ChartGeneratorModal: React.FC<ChartGeneratorModalProps> = ({
                 </div>
                 <div className="flex items-center space-x-2">
                   <button
+                    onClick={handleCopyChartToClipboard}
+                    title="Copy chart image to clipboard (PNG)"
+                    className="flex items-center space-x-1 px-2.5 py-1 text-xs rounded-lg border border-neutral-300 dark:border-neutral-700 hover:bg-white dark:hover:bg-neutral-800 text-neutral-700 dark:text-neutral-300 transition-colors cursor-pointer"
+                  >
+                    <Copy size={13} />
+                    <span>Copy</span>
+                  </button>
+                  <button
                     onClick={handleDownloadWebp}
                     title="Download as WebP file"
                     className="flex items-center space-x-1 px-2.5 py-1 text-xs rounded-lg border border-neutral-300 dark:border-neutral-700 hover:bg-white dark:hover:bg-neutral-800 text-neutral-700 dark:text-neutral-300 transition-colors cursor-pointer"
@@ -1117,20 +1182,46 @@ export const ChartGeneratorModal: React.FC<ChartGeneratorModalProps> = ({
             </div>
 
             {/* Bottom Actions Bar */}
-            <div className="flex items-center justify-end space-x-3 pt-5 mt-4 border-t border-neutral-200 dark:border-neutral-700">
-              <button
-                onClick={onClose}
-                className="px-4 py-2 rounded-xl text-xs font-semibold text-neutral-600 dark:text-neutral-400 hover:bg-neutral-200 dark:hover:bg-neutral-800 transition-colors cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleInsertIntoDocument}
-                className="flex items-center space-x-2 px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-lg shadow-blue-600/30 transition-all transform active:scale-98 cursor-pointer"
-              >
-                <Check size={16} />
-                <span>Insert Chart into Document</span>
-              </button>
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-5 mt-4 border-t border-neutral-200 dark:border-neutral-700">
+              <div className="flex items-center space-x-2">
+                {isFromSelectedTable && (
+                  <span className="text-[11px] text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 px-2.5 py-1 rounded-lg flex items-center gap-1.5 font-medium">
+                    <Sparkles size={12} className="text-amber-600 shrink-0" />
+                    <span>Adds paragraph above table &bull; Table values 100% safe</span>
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center space-x-2">
+                <button
+                  onClick={onClose}
+                  className="px-4 py-2 rounded-xl text-xs font-semibold text-neutral-600 dark:text-neutral-400 hover:bg-neutral-200 dark:hover:bg-neutral-800 transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                {isFromSelectedTable && (
+                  <button
+                    onClick={() => handleInsertIntoDocument('below')}
+                    title="Insert text paragraph below table, then insert chart"
+                    className="flex items-center space-x-1.5 px-3.5 py-2.5 rounded-xl border border-neutral-300 dark:border-neutral-700 hover:bg-neutral-100 dark:hover:bg-neutral-800 text-neutral-800 dark:text-neutral-200 text-xs font-semibold transition-all cursor-pointer"
+                  >
+                    <span>Insert Below Table</span>
+                  </button>
+                )}
+                <button
+                  onClick={() => handleInsertIntoDocument('above')}
+                  title={
+                    isFromSelectedTable
+                      ? 'Inserts text paragraph above table, then pastes chart image safely'
+                      : 'Insert chart into document'
+                  }
+                  className="flex items-center space-x-2 px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-lg shadow-blue-600/30 transition-all transform active:scale-98 cursor-pointer"
+                >
+                  <Check size={16} />
+                  <span>
+                    {isFromSelectedTable ? 'Insert Chart Above Table' : 'Insert Chart into Document'}
+                  </span>
+                </button>
+              </div>
             </div>
           </div>
         </div>

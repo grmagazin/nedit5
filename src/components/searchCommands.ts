@@ -769,13 +769,13 @@ export const SEARCH_COMMANDS: SearchCommand[] = [
   {
     id: 'size-a4',
     label: 'Paper Size: A4 (Default)',
-    description: 'Standard international A4 format (8.27 × 11.69" / 210 × 297 mm)',
+    description: 'Standard international A4 format (8,7 × 11,6" / 210 × 297 mm)',
     category: 'Layout',
     keywords: ['a4', 'paper size', 'size', 'international paper', '210x297'],
     iconType: 'fileText',
     action: ({ onUpdateSettings, notify }) => {
       onUpdateSettings({ pageSize: 'a4' });
-      notify?.('Paper Size set to A4 (8.27 × 11.69")');
+      notify?.('Paper Size set to A4 (8,7 × 11,6")');
     },
   },
   {

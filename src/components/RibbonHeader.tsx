@@ -71,15 +71,15 @@ export const RibbonHeader: React.FC<RibbonHeaderProps> = ({
     <header id="word-ribbon-header" className={`${headerBgClass} flex items-center justify-between px-3 py-1.5 select-none no-print relative z-[200]`} style={{ position: 'relative', zIndex: 200 }}>
       {/* Left side: Brand Logo, Quick Access, Document Title */}
       <div className="flex items-center space-x-2.5">
-        {/* Official Nedit v5.2 Logo (Links to GR Magazin, Opens in New Tab) */}
+        {/* Official Nedit v5.3 Logo (Links to GR Magazin, Opens in New Tab) */}
         <a
           href="https://grmagazin.blogspot.com/"
           target="_blank"
           rel="noopener noreferrer"
-          title="Nedit v5.2 - GR Magazin (Opens in new tab)"
+          title="Nedit v5.3 - GR Magazin (Opens in new tab)"
           className="inline-flex items-center justify-center px-3.5 py-0.5 rounded-full bg-[#0062ff] hover:bg-[#0054db] border-2 border-blue-300 text-white font-black text-xs sm:text-[13px] tracking-tight shadow-xs hover:shadow-sm active:scale-95 transition-all cursor-pointer select-none no-underline"
         >
-          <span>Nedit v5.2</span>
+          <span>Nedit v5.3</span>
         </a>
 
         {/* Quick Access Icons (Undo, Redo, Print) */}

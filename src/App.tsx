@@ -24,6 +24,7 @@ import Subscript from '@tiptap/extension-subscript';
 import Superscript from '@tiptap/extension-superscript';
 import CharacterCount from '@tiptap/extension-character-count';
 import { TextSelection } from '@tiptap/pm/state';
+import { findTable } from '@tiptap/pm/tables';
 
 import {
   FontSize,
@@ -324,6 +325,7 @@ export default function App() {
       showQuickBlocksPane: false,
       showVoiceCommandPane: false,
       isFocusMode: false,
+      isRibbonCollapsed: false,
       viewMode: 'print',
       themeMode: (() => {
         try {
@@ -543,8 +545,23 @@ export default function App() {
                 const { state } = view;
                 const node = state.schema.nodes.image?.create({ src: compressedUrl });
                 if (node) {
-                  const transaction = state.tr.replaceSelectionWith(node);
-                  view.dispatch(transaction);
+                  const table = findTable(state.selection.$from);
+                  if (table) {
+                    // Safe table handling: never delete table cells or paste image inside cell!
+                    // Insert a paragraph above the table and place the image there:
+                    const tablePos = table.pos;
+                    const tr = state.tr;
+                    const pNode = state.schema.nodes.paragraph.create();
+                    tr.insert(tablePos, pNode);
+                    const targetPos = Math.max(1, tablePos + 1);
+                    const resolved = tr.doc.resolve(targetPos);
+                    tr.setSelection(TextSelection.near(resolved));
+                    tr.replaceSelectionWith(node);
+                    view.dispatch(tr);
+                  } else {
+                    const transaction = state.tr.replaceSelectionWith(node);
+                    view.dispatch(transaction);
+                  }
                 }
               }).catch(() => {
                 // Ignore fallback
@@ -660,10 +677,10 @@ export default function App() {
     }
   }, [editor, settings.viewMode]);
 
-  // Sync document.title with document name and Nedit v5.2 branding
+  // Sync document.title with document name and Nedit v5.3 branding
   useEffect(() => {
     const docName = settings.title?.trim();
-    document.title = docName ? `${docName} - Nedit v5.2` : 'Nedit v5.2';
+    document.title = docName ? `${docName} - Nedit v5.3` : 'Nedit v5.3';
   }, [settings.title]);
 
   // Smart Format Painter State (In-Memory, strictly avoiding clipboard)

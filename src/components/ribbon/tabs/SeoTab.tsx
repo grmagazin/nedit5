@@ -242,7 +242,7 @@ export const SeoTab: React.FC<SeoTabProps> = ({
       </div>
 
       {/* DIVIDER */}
-      <div className="h-12 w-px bg-[#dad9d8] mx-3 shrink-0 self-start mt-0.5" />
+      <div className="h-12 w-px bg-[#dad9d8] mr-3 shrink-0 self-start mt-0.5" />
 
       {/* GROUP 2: Analyze SEO Check Button (Toggles Right Toolbar) */}
       <div className="flex flex-col items-center pr-3">

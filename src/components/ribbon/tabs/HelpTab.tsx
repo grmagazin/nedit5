@@ -234,12 +234,12 @@ export const HelpTab: React.FC<HelpTabProps> = ({
           {/* Button 3: About */}
           <button
             onClick={() => setShowAboutModal(true)}
-            title="About Nedit v5.2 & Version Information"
+            title="About Nedit v5.3 & Version Information"
             className="flex flex-col items-center justify-center px-3 py-1 rounded hover:bg-neutral-100 text-neutral-700 transition-colors cursor-pointer"
           >
             <Info size={22} className="text-[#185abd] mb-1" />
             <span className="text-[11px] leading-tight text-center text-neutral-800">
-              About<br />Nedit5.2
+              About<br />Nedit5.3
             </span>
           </button>
         </div>
@@ -510,7 +510,7 @@ export const HelpTab: React.FC<HelpTabProps> = ({
               <div className="bg-white dark:bg-[#1e1e1e] rounded-2xl p-6 shadow-2xl flex flex-col items-center space-y-3">
                 <div className="w-8 h-8 border-3 border-[#0062ff] border-t-transparent rounded-full animate-spin" />
                 <span className="text-xs font-semibold text-neutral-700 dark:text-neutral-300">
-                  Loading Nedit v5.2 Suite Information...
+                  Loading Nedit v5.3 Suite Information...
                 </span>
               </div>
             </div>

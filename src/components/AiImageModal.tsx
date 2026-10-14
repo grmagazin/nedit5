@@ -273,7 +273,7 @@ export const AiImageModal: React.FC<AiImageModalProps> = ({
                   AI Image Studio &amp; Demo Generator
                 </h3>
                 <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-500/30 text-purple-200 border border-purple-400/30 font-semibold">
-                  Nedit v5.2
+                  Nedit v5.3
                 </span>
               </div>
               <p className="text-[11px] text-purple-200/80">

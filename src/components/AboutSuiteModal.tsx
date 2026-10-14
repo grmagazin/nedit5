@@ -48,9 +48,9 @@ const TAB_CONFIGS: TabConfig[] = [
   {
     id: 'futures',
     label: 'Features',
-    badge: 'v5.2',
+    badge: 'v5.3',
     icon: Zap,
-    description: 'Complete breakdown of Nedit v5.2 capabilities & ecosystem',
+    description: 'Complete breakdown of Nedit v5.3 capabilities & ecosystem',
   },
   {
     id: 'sortcuts',
@@ -133,7 +133,7 @@ export const AboutSuiteModal: React.FC<AboutSuiteModalProps> = ({
             <div>
               <div className="flex items-center space-x-2">
                 <h2 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white tracking-tight">
-                  Nedit v5.2 Document Suite
+                  Nedit v5.3 Document Suite
                 </h2>
                 <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-blue-100 dark:bg-blue-950/80 text-[#0062ff] dark:text-blue-400 border border-blue-200 dark:border-blue-800 tracking-wide uppercase">
                   Enterprise
@@ -221,7 +221,7 @@ export const AboutSuiteModal: React.FC<AboutSuiteModalProps> = ({
                   </div>
                   <div>
                     <h3 className="text-lg font-bold text-slate-900 dark:text-white">
-                      Nedit v5.2 Features &amp; Capability Matrix
+                      Nedit v5.3 Features &amp; Capability Matrix
                     </h3>
                     <p className="text-xs text-slate-500 dark:text-neutral-400">
                       Engineered for zero-latency, cloud-free local document creation and formatting.
@@ -791,7 +791,7 @@ export const AboutSuiteModal: React.FC<AboutSuiteModalProps> = ({
         {/* ========================================================= */}
         <div className="px-6 py-3 border-t border-neutral-200 dark:border-neutral-800 flex items-center justify-between bg-white dark:bg-[#1a1a1a]">
           <div className="hidden sm:flex items-center space-x-4 text-xs text-neutral-500 dark:text-neutral-400">
-            <span>&bull; Nedit v5.2.0 Enterprise</span>
+            <span>&bull; Nedit v5.3.0 Enterprise</span>
             <span>&bull; 100% Client-Side Sandbox</span>
             <span>&bull; ECMA-376 Standard</span>
           </div>

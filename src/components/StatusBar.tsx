@@ -6,7 +6,8 @@ import {
   FileText, 
   Globe, 
   Minus, 
-  Plus 
+  Plus,
+  Sparkles
 } from 'lucide-react';
 
 interface StatusBarProps {
@@ -92,8 +93,8 @@ export const StatusBar: React.FC<StatusBarProps> = ({
         </span>
       </div>
 
-      {/* Center section: Support App Link */}
-      <div className="flex items-center justify-center">
+      {/* Center section: Support App & Powered by Gemini Credits */}
+      <div className="flex items-center justify-center space-x-1.5">
         <a
           href="https://grmagazin.blogspot.com/p/donate.html"
           target="_blank"
@@ -101,14 +102,60 @@ export const StatusBar: React.FC<StatusBarProps> = ({
           className={`${hoverBgClass} px-2 py-0.5 rounded cursor-pointer transition-colors text-[11px] font-medium flex items-center`}
           title="Support App (Opens in a new tab)"
         >
-          ❤️ Support App 
+          ❤️ Support App
+        </a>
+
+        <span className={`text-[10px] ${subTextColor} select-none opacity-60`}>•</span>
+
+        <a
+          href="https://aistudio.google.com/"
+          target="_blank"
+          rel="noopener noreferrer"
+          className={`${hoverBgClass} px-2 py-0.5 rounded cursor-pointer transition-colors text-[11px] font-medium flex items-center space-x-1`}
+          title="Created in Google ai Studio"
+        >
+          <Sparkles size={11} className={isDarkFooter ? 'text-amber-400' : isSepiaFooter ? 'text-amber-300' : 'text-amber-300'} />
+          <span>Powered by Gemini</span>
         </a>
       </div>
 
       {/* Right side: View modes, Zoom slider & percentage */}
       <div className="flex items-center space-x-2.5">
         {/* View Layout Switchers */}
-        <div className="flex items-center space-x-0.5">
+        <div className="flex items-center space-x-1">
+          {/* Zen ⛶ Button */}
+          <button
+            onClick={() => onUpdateSettings({ isFocusMode: !settings.isFocusMode })}
+            title={settings.isFocusMode ? "Close Zen Mode (Esc)" : "Open Zen Mode (⛶)"}
+            className={`px-1.5 py-0.5 rounded transition-colors cursor-pointer text-[11px] font-medium flex items-center space-x-1 ${
+              settings.isFocusMode
+                ? isDarkFooter
+                  ? 'bg-white/20 text-white font-semibold'
+                  : 'bg-white/30 text-white font-semibold'
+                : `${hoverBgClass} ${isDarkFooter ? 'text-neutral-300' : 'text-blue-100'}`
+            }`}
+          >
+            <span>Zen</span>
+            <span className="text-[10px] leading-none">⛶</span>
+          </button>
+
+          {/* Collapse ⊟ Button */}
+          <button
+            onClick={() => onUpdateSettings({ isRibbonCollapsed: !settings.isRibbonCollapsed })}
+            title={settings.isRibbonCollapsed ? "Open Ribbon (⊟)" : "Collapse Ribbon (⊟)"}
+            className={`px-1.5 py-0.5 rounded transition-colors cursor-pointer text-[11px] font-medium flex items-center space-x-1 ${
+              settings.isRibbonCollapsed
+                ? isDarkFooter
+                  ? 'bg-white/20 text-white font-semibold'
+                  : 'bg-white/30 text-white font-semibold'
+                : `${hoverBgClass} ${isDarkFooter ? 'text-neutral-300' : 'text-blue-100'}`
+            }`}
+          >
+            <span>Collapse</span>
+            <span className="text-[10px] leading-none">⊟</span>
+          </button>
+
+          {/* Read Mode (Reading) */}
           <button
             onClick={() => onUpdateSettings({ viewMode: 'read' })}
             title="Read Mode"

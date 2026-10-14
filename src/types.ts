@@ -101,6 +101,7 @@ export interface DocumentSettings {
   showSpellCheckPane?: boolean;
   showFormatterPane?: boolean;
   isFocusMode?: boolean;
+  isRibbonCollapsed?: boolean;
   viewMode: 'print' | 'read' | 'web';
   isDarkMode: boolean;
   columns?: 1 | 2;

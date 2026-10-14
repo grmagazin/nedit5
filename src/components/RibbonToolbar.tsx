@@ -151,7 +151,7 @@ export const DOCUMENT_PAGE_SIZES: {
   inches: string;
   metric: string;
 }[] = [
-  { id: 'a4', name: 'A4', inches: '8.27 × 11.69"', metric: '210 × 297 mm' },
+  { id: 'a4', name: 'A4', inches: '8,7 × 11,6"', metric: '210 × 297 mm' },
   { id: 'letter', name: 'Letter', inches: '8.5 × 11"', metric: '216 × 279 mm' },
   { id: 'legal', name: 'Legal', inches: '8.5 × 14"', metric: '216 × 356 mm' },
   { id: 'a3', name: 'A3', inches: '11.69 × 16.54"', metric: '297 × 420 mm' },
@@ -206,7 +206,11 @@ const RibbonToolbarComponent: React.FC<RibbonToolbarProps> = ({
   autoCorrectEnabled = false,
   onToggleAutoCorrect,
 }) => {
-  const [isRibbonCollapsed, setIsRibbonCollapsed] = useState(false);
+  const isRibbonCollapsed = settings.isRibbonCollapsed ?? false;
+  const setIsRibbonCollapsed = (val: boolean | ((prev: boolean) => boolean)) => {
+    const nextVal = typeof val === 'function' ? val(isRibbonCollapsed) : val;
+    onUpdateSettings({ isRibbonCollapsed: nextVal });
+  };
 
   // 3-second popups right of Copy (green), Cut (orange), Paste (blue), Painter (purple)
   const [copyPopupVisible, setCopyPopupVisible] = useState(false);
@@ -272,10 +276,18 @@ const RibbonToolbarComponent: React.FC<RibbonToolbarProps> = ({
   const [showQuickBlocksPicker, setShowQuickBlocksPicker] = useState(false);
   const [isListening, setIsListening] = useState(false);
 
+  // Font Size editable combobox state
+  const [fontSizeInputText, setFontSizeInputText] = useState<string>('');
+  const [isFontSizeEditing, setIsFontSizeEditing] = useState<boolean>(false);
+  const [showFontSizeDropdown, setShowFontSizeDropdown] = useState<boolean>(false);
+  const fontSizeDropdownRef = useRef<HTMLDivElement>(null);
+
   // Table Tab specific states
   const [showTableTabPicker, setShowTableTabPicker] = useState(false);
   const [showTableEditMenu, setShowTableEditMenu] = useState(false);
   const [selectedTableTheme, setSelectedTableTheme] = useState(0);
+  const [selectedTableColor, setSelectedTableColor] = useState('#3b5998');
+  const tableColorPickerInputRef = useRef<HTMLInputElement>(null);
   const [borderMode, setBorderMode] = useState<'normal' | 'minimal' | 'none'>('normal');
 
   // Layout Tab specific states matching photo
@@ -530,12 +542,16 @@ const RibbonToolbarComponent: React.FC<RibbonToolbarProps> = ({
       showColorDropdown ||
       showWatermarkDropdown ||
       showShadowDropdown ||
-      showLanguageDropdown;
+      showLanguageDropdown ||
+      showFontSizeDropdown;
 
     if (!hasAnyDropdownOpen) return;
 
     const handleClickOutside = (event: MouseEvent) => {
       const target = event.target as Node;
+      if (showFontSizeDropdown && fontSizeDropdownRef.current && !fontSizeDropdownRef.current.contains(target)) {
+        setShowFontSizeDropdown(false);
+      }
       if (showHighlightPicker && highlightPickerRef.current && !highlightPickerRef.current.contains(target)) {
         setShowHighlightPicker(false);
       }
@@ -600,6 +616,7 @@ const RibbonToolbarComponent: React.FC<RibbonToolbarProps> = ({
     showWatermarkDropdown,
     showShadowDropdown,
     showLanguageDropdown,
+    showFontSizeDropdown,
   ]);
 
   // Format painter state (in-memory, strictly avoiding clipboard)
@@ -652,10 +669,23 @@ const RibbonToolbarComponent: React.FC<RibbonToolbarProps> = ({
     { label: 'Times New Roman', value: '"Times New Roman", Times, serif' },
     { label: 'Georgia', value: 'Georgia, serif' },
     { label: 'Lora', value: 'Lora, serif' },
+    { label: 'Garamond', value: 'Garamond, "EB Garamond", serif' },
+    { label: 'Inter', value: 'Inter, sans-serif' },
+    { label: 'Roboto', value: 'Roboto, sans-serif' },
+    { label: 'Open Sans', value: '"Open Sans", sans-serif' },
+    { label: 'Montserrat', value: 'Montserrat, sans-serif' },
+    { label: 'Playfair Display', value: '"Playfair Display", serif' },
+    { label: 'Merriweather', value: 'Merriweather, serif' },
+    { label: 'Verdana', value: 'Verdana, Geneva, sans-serif' },
+    { label: 'Trebuchet MS', value: '"Trebuchet MS", sans-serif' },
+    { label: 'Tahoma', value: 'Tahoma, Geneva, sans-serif' },
+    { label: 'Segoe UI', value: '"Segoe UI", Tahoma, Geneva, sans-serif' },
     { label: 'Courier New', value: '"Source Code Pro", "Courier New", monospace' },
+    { label: 'Consolas', value: 'Consolas, "Source Code Pro", monospace' },
+    { label: 'Comic Sans MS', value: '"Comic Sans MS", "Comic Sans", cursive' },
   ];
 
-  const fontSizes = ['9', '10', '11', '12', '14', '16', '18', '20', '24', '28', '36', '48', '72'];
+  const fontSizes = ['8', '9', '10', '11', '12', '14', '16', '18', '20', '22', '24', '26', '28', '36', '48', '72'];
 
   const highlightColors = [
     { name: 'Yellow', color: '#fef08a' },
@@ -1111,7 +1141,7 @@ const RibbonToolbarComponent: React.FC<RibbonToolbarProps> = ({
     },
   ];
 
-  // Table style color presets (matching 2x5 grid in photo)
+  // Table style color presets (matching 2x5 grid: 9 presets + 1 custom header color picker in 10th spot)
   const tableStylePresets = [
     { name: 'Slate Blue', class: 'theme-slate-blue', color: '#3b5998' },
     { name: 'Charcoal', class: 'theme-charcoal', color: '#2d3748' },
@@ -1122,34 +1152,168 @@ const RibbonToolbarComponent: React.FC<RibbonToolbarProps> = ({
     { name: 'Emerald Green', class: 'theme-green', color: '#10b981' },
     { name: 'Coral Red', class: 'theme-red', color: '#ef4444' },
     { name: 'Amber Gold', class: 'theme-amber', color: '#f59e0b' },
-    { name: 'Soft Gray-Blue', class: 'theme-light-slate', color: '#cbd5e1', border: '#94a3b8' },
   ];
 
-  const handleApplyTableStyle = (themeIndex: number) => {
-    setSelectedTableTheme(themeIndex);
+  // Smart Theme Color Helpers for Tables
+  const getContrastTextColor = (hex: string): string => {
+    const clean = hex.replace('#', '').trim();
+    const fullHex = clean.length === 3 ? clean.split('').map((c) => c + c).join('') : clean.padEnd(6, '0');
+    const r = parseInt(fullHex.substring(0, 2), 16) || 0;
+    const g = parseInt(fullHex.substring(2, 4), 16) || 0;
+    const b = parseInt(fullHex.substring(4, 6), 16) || 0;
+    const yiq = (r * 299 + g * 587 + b * 114) / 1000;
+    return yiq >= 155 ? '#0f172a' : '#ffffff';
+  };
+
+  const getTableSoftTint = (hex: string, factor = 0.94): string => {
+    const clean = hex.replace('#', '').trim();
+    const fullHex = clean.length === 3 ? clean.split('').map((c) => c + c).join('') : clean.padEnd(6, '0');
+    const r = parseInt(fullHex.substring(0, 2), 16) || 0;
+    const g = parseInt(fullHex.substring(2, 4), 16) || 0;
+    const b = parseInt(fullHex.substring(4, 6), 16) || 0;
+    const tr = Math.round(r + (255 - r) * factor);
+    const tg = Math.round(g + (255 - g) * factor);
+    const tb = Math.round(b + (255 - b) * factor);
+    return `#${tr.toString(16).padStart(2, '0')}${tg.toString(16).padStart(2, '0')}${tb.toString(16).padStart(2, '0')}`;
+  };
+
+  const getTableBorderColor = (hex: string, darkenFactor = 0.82): string => {
+    const clean = hex.replace('#', '').trim();
+    const fullHex = clean.length === 3 ? clean.split('').map((c) => c + c).join('') : clean.padEnd(6, '0');
+    const r = parseInt(fullHex.substring(0, 2), 16) || 0;
+    const g = parseInt(fullHex.substring(2, 4), 16) || 0;
+    const b = parseInt(fullHex.substring(4, 6), 16) || 0;
+    const dr = Math.round(r * darkenFactor);
+    const dg = Math.round(g * darkenFactor);
+    const db = Math.round(b * darkenFactor);
+    return `#${dr.toString(16).padStart(2, '0')}${dg.toString(16).padStart(2, '0')}${db.toString(16).padStart(2, '0')}`;
+  };
+
+  const handleApplySmartTableTheme = (color: string, themeIndex: number = -1) => {
     if (!editor) return;
 
     if (!editor.isActive('table')) {
-      // Insert a fresh formatted table
+      // Insert a fresh formatted table if not in a table
       editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run();
     }
 
+    const headerColor = color;
+    const headerTextColor = getContrastTextColor(headerColor);
+    const headerBorderColor = getTableBorderColor(headerColor, 0.82);
+    const zebraColor = getTableSoftTint(headerColor, 0.94);
+    const cellBorderColor = '#cbd5e1';
+
     setTimeout(() => {
-      const selectedTheme = tableStylePresets[themeIndex];
+      // 1. Update ProseMirror node attributes if table found in selection
+      try {
+        const { state, view } = editor;
+        const tableInfo = findTable(state.selection.$from);
+        if (tableInfo) {
+          const tr = state.tr;
+          let rowIndex = 0;
+
+          tableInfo.node.forEach((rowNode: any, rowOffset: number) => {
+            const isHeaderRow = rowIndex === 0;
+
+            rowNode.forEach((cellNode: any, cellOffset: number) => {
+              const absCellPos = tableInfo.pos + 1 + rowOffset + 1 + cellOffset;
+              let currentStyle = (cellNode.attrs.style || '') as string;
+              currentStyle = currentStyle
+                .replace(/background(-color)?:\s*[^;]+;?/gi, '')
+                .replace(/color:\s*[^;]+;?/gi, '')
+                .replace(/border-color:\s*[^;]+;?/gi, '')
+                .trim();
+
+              let newStyle = '';
+              if (isHeaderRow) {
+                newStyle = `${currentStyle} background-color: ${headerColor}; color: ${headerTextColor}; border-color: ${headerBorderColor}; font-weight: 600;`.trim();
+              } else {
+                const isEvenDataRow = (rowIndex - 1) % 2 === 1;
+                const bg = isEvenDataRow ? zebraColor : '#ffffff';
+                newStyle = `${currentStyle} background-color: ${bg}; border-color: ${cellBorderColor};`.trim();
+              }
+
+              tr.setNodeMarkup(absCellPos, undefined, {
+                ...cellNode.attrs,
+                style: newStyle,
+                backgroundColor: isHeaderRow ? headerColor : ((rowIndex - 1) % 2 === 1 ? zebraColor : '#ffffff'),
+              });
+            });
+
+            rowIndex++;
+          });
+
+          view.dispatch(tr);
+        }
+      } catch (err) {
+        console.warn('Could not set ProseMirror table attributes:', err);
+      }
+
+      // 2. Direct DOM styling on active table in view for immediate continuous rendering
       const proseMirrorDom = editor.view.dom;
       const tables = proseMirrorDom.querySelectorAll('table');
       if (tables.length > 0) {
-        let targetTable = tables[tables.length - 1];
+        let targetTable: HTMLTableElement = tables[tables.length - 1] as HTMLTableElement;
         tables.forEach((t) => {
           if (t.contains(document.activeElement) || window.getSelection()?.containsNode(t, true)) {
-            targetTable = t;
+            targetTable = t as HTMLTableElement;
           }
         });
 
+        // Clear existing style classes
         tableStylePresets.forEach((p) => targetTable.classList.remove(p.class));
-        targetTable.classList.add(selectedTheme.class);
+        targetTable.classList.remove('theme-purple', 'theme-teal');
+
+        if (themeIndex >= 0 && tableStylePresets[themeIndex]) {
+          targetTable.classList.add(tableStylePresets[themeIndex].class);
+        }
+
+        // Set CSS custom properties on table
+        targetTable.dataset.customTheme = headerColor;
+        targetTable.style.setProperty('--table-header-bg', headerColor);
+        targetTable.style.setProperty('--table-header-color', headerTextColor);
+        targetTable.style.setProperty('--table-header-border', headerBorderColor);
+        targetTable.style.setProperty('--table-zebra-bg', zebraColor);
+
+        // Apply styles to all cells in DOM
+        const rows = targetTable.querySelectorAll('tr');
+        let dataRowIdx = 0;
+        rows.forEach((row, rIdx) => {
+          const isHeader = rIdx === 0 || row.querySelector('th') !== null;
+          if (isHeader) {
+            const cells = row.querySelectorAll('th, td');
+            cells.forEach((cell) => {
+              const el = cell as HTMLElement;
+              el.style.backgroundColor = headerColor;
+              el.style.color = headerTextColor;
+              el.style.borderColor = headerBorderColor;
+              el.style.fontWeight = '600';
+              el.querySelectorAll('p, span, strong').forEach((child) => {
+                (child as HTMLElement).style.color = headerTextColor;
+              });
+            });
+          } else {
+            const bg = dataRowIdx % 2 === 1 ? zebraColor : '#ffffff';
+            const cells = row.querySelectorAll('td');
+            cells.forEach((cell) => {
+              const el = cell as HTMLElement;
+              el.style.backgroundColor = bg;
+              el.style.borderColor = cellBorderColor;
+            });
+            dataRowIdx++;
+          }
+        });
       }
+
+      editor.commands.focus();
     }, 40);
+  };
+
+  const handleApplyTableStyle = (themeIndex: number) => {
+    setSelectedTableTheme(themeIndex);
+    const color = tableStylePresets[themeIndex]?.color || '#3b5998';
+    setSelectedTableColor(color);
+    handleApplySmartTableTheme(color, themeIndex);
   };
 
   const handleCycleTableBorders = () => {
@@ -1274,7 +1438,24 @@ const RibbonToolbarComponent: React.FC<RibbonToolbarProps> = ({
     }
   }
 
-  const currentFontSize = editor?.getAttributes('textStyle')?.fontSize?.replace('px', '') || '11';
+  const currentFontSize =
+    editor?.getAttributes('textStyle')?.fontSize?.replace(/px|pt/gi, '') || '11';
+
+  const commitFontSize = useCallback(
+    (val: string) => {
+      const cleanVal = val.trim().replace(/px|pt/gi, '');
+      const num = parseFloat(cleanVal);
+      if (!isNaN(num) && num > 0 && num <= 500) {
+        editor?.chain().focus().setFontSize(`${num}px`).run();
+        setFontSizeInputText(String(num));
+      } else {
+        setFontSizeInputText(currentFontSize);
+      }
+      setIsFontSizeEditing(false);
+      setShowFontSizeDropdown(false);
+    },
+    [editor, currentFontSize]
+  );
   const currentFontFamily = editor?.getAttributes('textStyle')?.fontFamily || 'Calibri, sans-serif';
 
   const effectiveThemeMode = settings.themeMode || (settings.isDarkMode ? 'fullDark' : 'light');
@@ -1365,7 +1546,7 @@ const RibbonToolbarComponent: React.FC<RibbonToolbarProps> = ({
       {/* Main Ribbon Command Bar */}
       {!isRibbonCollapsed && (
         <div
-          className={`min-h-24 px-3 pt-1.5 pb-1 flex items-start space-x-2 relative z-50 ${
+          className={`min-h-24 px-3 pt-1.5 pb-1 flex items-start space-x-0 relative z-50 ${
             isDarkUi
               ? 'bg-[#202020] text-neutral-100'
               : isSepiaUi
@@ -1377,48 +1558,47 @@ const RibbonToolbarComponent: React.FC<RibbonToolbarProps> = ({
           {/* HOME TAB */}
           {activeTab === 'home' && (
             <>
-              {/* Clipboard Group */}
+              {/* Clipboard Group (2x2 Matrix: Line 1 = Paste, Cut; Line 2 = Painter, Copy) */}
               <div className="flex flex-col justify-between pr-2.5 border-r border-[#dad9d8] relative">
-                <div className="flex items-start space-x-1 relative">
-                  {/* Smart Paste Button with Blue Popup */}
-                  <div className="relative">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        triggerPastePopup();
-                        if (typeof navigator !== 'undefined' && navigator.clipboard?.readText) {
-                          navigator.clipboard
-                            .readText()
-                            .then((clipText) => {
-                              if (clipText && editor) {
-                                editor.commands.insertContent(clipText);
-                              }
-                            })
-                            .catch((err) => {
-                              console.warn('Direct clipboard read restricted by browser:', err);
-                            });
-                        }
-                      }}
-                      title="Paste (Ctrl+V) — Click or press Ctrl+V"
-                      className="flex flex-col items-center justify-start px-2 py-1 rounded hover:bg-white hover:shadow-xs transition-all text-neutral-700 hover:text-neutral-900 cursor-pointer min-w-[42px]"
-                    >
-                      <ClipboardPaste size={18} className="text-[#185abd] mb-0.5" />
-                      <span className="text-[10px] font-medium leading-tight">Paste</span>
-                    </button>
+                <div className="flex flex-col space-y-1 relative py-0.5">
+                  {/* Line 1: Paste & Cut */}
+                  <div className="flex items-center space-x-1">
+                    {/* Paste Button (Icon only, text as tooltip) */}
+                    <div className="relative">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          triggerPastePopup();
+                          if (typeof navigator !== 'undefined' && navigator.clipboard?.readText) {
+                            navigator.clipboard
+                              .readText()
+                              .then((clipText) => {
+                                if (clipText && editor) {
+                                  editor.commands.insertContent(clipText);
+                                }
+                              })
+                              .catch((err) => {
+                                console.warn('Direct clipboard read restricted by browser:', err);
+                              });
+                          }
+                        }}
+                        title="Paste (Ctrl+V) — Click or press Ctrl+V"
+                        className="w-7 h-[25px] rounded hover:bg-white hover:shadow-xs transition-all text-neutral-700 hover:text-neutral-900 cursor-pointer flex items-center justify-center border border-transparent"
+                      >
+                        <ClipboardPaste size={16} className="text-[#185abd]" />
+                      </button>
 
-                    {/* Small Blue Popup Message right of Paste for 3s */}
-                    {pastePopupVisible && (
-                      <div className="absolute left-full top-1/2 -translate-y-1/2 ml-2 z-50 whitespace-nowrap bg-blue-600 text-white text-[11px] font-medium px-2.5 py-1 rounded shadow-lg flex items-center gap-1.5 animate-in fade-in zoom-in-95 duration-150 pointer-events-none">
-                        <Keyboard size={13} className="shrink-0" />
-                        <span>You can use CTRL + V buttons</span>
-                        <div className="absolute right-full top-1/2 -translate-y-1/2 border-4 border-transparent border-r-blue-600" />
-                      </div>
-                    )}
-                  </div>
+                      {/* Small Blue Popup Message right of Paste for 3s */}
+                      {pastePopupVisible && (
+                        <div className="absolute left-full top-1/2 -translate-y-1/2 ml-2 z-50 whitespace-nowrap bg-blue-600 text-white text-[11px] font-medium px-2.5 py-1 rounded shadow-lg flex items-center gap-1.5 animate-in fade-in zoom-in-95 duration-150 pointer-events-none">
+                          <Keyboard size={13} className="shrink-0" />
+                          <span>You can use CTRL + V buttons</span>
+                          <div className="absolute right-full top-1/2 -translate-y-1/2 border-4 border-transparent border-r-blue-600" />
+                        </div>
+                      )}
+                    </div>
 
-                  {/* Cut, Copy, Painter Row/Column */}
-                  <div className="flex flex-col space-y-0.5 relative">
-                    {/* Cut Button with Orange Popup */}
+                    {/* Cut Button */}
                     <div className="relative">
                       <button
                         type="button"
@@ -1446,7 +1626,7 @@ const RibbonToolbarComponent: React.FC<RibbonToolbarProps> = ({
                           triggerCutPopup();
                         }}
                         title="Cut (Ctrl+X)"
-                        className="p-1 rounded hover:bg-white hover:shadow-xs text-neutral-700 cursor-pointer flex items-center space-x-1 w-full"
+                        className="h-[25px] px-1.5 rounded hover:bg-white hover:shadow-xs text-neutral-700 cursor-pointer flex items-center space-x-1 border border-transparent min-w-[48px]"
                       >
                         <Scissors size={12} className="text-neutral-600" />
                         <span className="text-[10px]">Cut</span>
@@ -1461,8 +1641,50 @@ const RibbonToolbarComponent: React.FC<RibbonToolbarProps> = ({
                         </div>
                       )}
                     </div>
+                  </div>
 
-                    {/* Copy Button with Green Popup */}
+                  {/* Line 2: Painter & Copy (Painter placed under Paste!) */}
+                  <div className="flex items-center space-x-1">
+                    {/* Format Painter Button (Icon only, text as tooltip) */}
+                    <div className="relative">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          const isDoubleClick = e.detail === 2;
+                          handleFormatPainterAction(isDoubleClick ? 'persistent' : 'single');
+                        }}
+                        title={
+                          activeFormatPainter
+                            ? `Format Painter Active (${activeFormatPainter.mode}) — Click or select text to apply format, or click here / Esc to cancel`
+                            : 'Format Painter — Click to copy format for 1 use; Double-click for persistent multi-use. Copies character & paragraph styles safely without touching clipboard!'
+                        }
+                        className={`w-7 h-[25px] rounded cursor-pointer flex items-center justify-center border transition-all ${
+                          activeFormatPainter
+                            ? 'bg-[#cde4f7] border-[#185abd] text-[#185abd] shadow-xs ring-1 ring-[#185abd]'
+                            : 'border-transparent hover:bg-white hover:border-neutral-300 text-neutral-700'
+                        }`}
+                      >
+                        <Paintbrush
+                          size={13}
+                          className={`${
+                            activeFormatPainter
+                              ? 'text-[#185abd] animate-pulse'
+                              : 'text-amber-600'
+                          }`}
+                        />
+                      </button>
+
+                      {/* Small Notification Popup right of Format Painter for 3s */}
+                      {painterPopupVisible && activeFormatPainter && (
+                        <div className="absolute left-full top-1/2 -translate-y-1/2 ml-2 z-50 whitespace-nowrap bg-indigo-600 text-white text-[11px] font-medium px-2.5 py-1 rounded shadow-lg flex items-center gap-1.5 animate-in fade-in zoom-in-95 duration-150 pointer-events-none">
+                          <Sparkles size={13} className="shrink-0" />
+                          <span>Format copied in memory ({activeFormatPainter.mode})</span>
+                          <div className="absolute right-full top-1/2 -translate-y-1/2 border-4 border-transparent border-r-indigo-600" />
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Copy Button */}
                     <div className="relative">
                       <button
                         type="button"
@@ -1486,7 +1708,7 @@ const RibbonToolbarComponent: React.FC<RibbonToolbarProps> = ({
                           triggerCopyPopup();
                         }}
                         title="Copy (Ctrl+C)"
-                        className="p-1 rounded hover:bg-white hover:shadow-xs text-neutral-700 cursor-pointer flex items-center space-x-1 w-full"
+                        className="h-[25px] px-1.5 rounded hover:bg-white hover:shadow-xs text-neutral-700 cursor-pointer flex items-center space-x-1 border border-transparent min-w-[48px]"
                       >
                         <Copy size={12} className="text-neutral-600" />
                         <span className="text-[10px]">Copy</span>
@@ -1498,46 +1720,6 @@ const RibbonToolbarComponent: React.FC<RibbonToolbarProps> = ({
                           <Check size={13} className="shrink-0 stroke-[3]" />
                           <span>Selected area Copyed</span>
                           <div className="absolute right-full top-1/2 -translate-y-1/2 border-4 border-transparent border-r-emerald-600" />
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Format Painter Button (Memory based, strictly avoids clipboard) */}
-                    <div className="relative">
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          const isDoubleClick = e.detail === 2;
-                          handleFormatPainterAction(isDoubleClick ? 'persistent' : 'single');
-                        }}
-                        title={
-                          activeFormatPainter
-                            ? `Format Painter Active (${activeFormatPainter.mode}) — Click or select text to apply format, or click here / Esc to cancel`
-                            : 'Format Painter — Click to copy format for 1 use; Double-click for persistent multi-use. Copies character & paragraph styles safely without touching clipboard!'
-                        }
-                        className={`p-1 rounded cursor-pointer flex items-center space-x-1 border transition-all w-full ${
-                          activeFormatPainter
-                            ? 'bg-[#cde4f7] border-[#185abd] text-[#185abd] shadow-xs ring-1 ring-[#185abd]'
-                            : 'border-transparent hover:bg-white hover:border-neutral-300 text-neutral-700'
-                        }`}
-                      >
-                        <Paintbrush
-                          size={12}
-                          className={`${
-                            activeFormatPainter
-                              ? 'text-[#185abd] animate-pulse'
-                              : 'text-amber-600'
-                          }`}
-                        />
-                        <span className="text-[10px] font-medium">Painter</span>
-                      </button>
-
-                      {/* Small Notification Popup right of Format Painter for 3s */}
-                      {painterPopupVisible && activeFormatPainter && (
-                        <div className="absolute left-full top-1/2 -translate-y-1/2 ml-2 z-50 whitespace-nowrap bg-indigo-600 text-white text-[11px] font-medium px-2.5 py-1 rounded shadow-lg flex items-center gap-1.5 animate-in fade-in zoom-in-95 duration-150 pointer-events-none">
-                          <Sparkles size={13} className="shrink-0" />
-                          <span>Format copied in memory ({activeFormatPainter.mode})</span>
-                          <div className="absolute right-full top-1/2 -translate-y-1/2 border-4 border-transparent border-r-indigo-600" />
                         </div>
                       )}
                     </div>
@@ -1563,17 +1745,68 @@ const RibbonToolbarComponent: React.FC<RibbonToolbarProps> = ({
                       ))}
                     </select>
 
-                    <select
-                      value={currentFontSize}
-                      onChange={(e) => editor?.chain().focus().setFontSize(`${e.target.value}px`).run()}
-                      className="h-6 text-xs bg-white border border-[#c8c6c4] hover:border-neutral-400 rounded px-1 focus:outline-none focus:ring-1 focus:ring-[#185abd] w-14"
-                    >
-                      {fontSizes.map((s) => (
-                        <option key={s} value={s}>
-                          {s}
-                        </option>
-                      ))}
-                    </select>
+                    {/* Editable Font Size Combobox */}
+                    <div className="relative flex items-center" ref={fontSizeDropdownRef}>
+                      <input
+                        type="text"
+                        value={isFontSizeEditing ? fontSizeInputText : currentFontSize}
+                        onChange={(e) => {
+                          setFontSizeInputText(e.target.value);
+                        }}
+                        onFocus={(e) => {
+                          setIsFontSizeEditing(true);
+                          setFontSizeInputText(currentFontSize);
+                          e.target.select();
+                        }}
+                        onBlur={() => {
+                          if (isFontSizeEditing) {
+                            commitFontSize(fontSizeInputText);
+                          }
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            commitFontSize(fontSizeInputText);
+                            (e.target as HTMLInputElement).blur();
+                          } else if (e.key === 'Escape') {
+                            setFontSizeInputText(currentFontSize);
+                            setIsFontSizeEditing(false);
+                            setShowFontSizeDropdown(false);
+                            (e.target as HTMLInputElement).blur();
+                          }
+                        }}
+                        title="Font Size — Click to type custom size (e.g. 19) and press Enter, or pick from dropdown"
+                        className="h-6 text-xs bg-white border border-r-0 border-[#c8c6c4] hover:border-neutral-400 rounded-l px-1 focus:outline-none focus:ring-1 focus:ring-[#185abd] w-9 text-center font-medium select-all"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowFontSizeDropdown(!showFontSizeDropdown)}
+                        title="Font Size Presets"
+                        className="h-6 px-1 bg-white border border-l-0 border-[#c8c6c4] hover:bg-neutral-100 hover:border-neutral-400 rounded-r flex items-center justify-center cursor-pointer text-neutral-600"
+                      >
+                        <ChevronDown size={11} />
+                      </button>
+
+                      {/* Font Size Dropdown Menu */}
+                      {showFontSizeDropdown && (
+                        <div className="absolute top-full left-0 mt-1 bg-white border border-neutral-300 rounded shadow-xl py-1 z-50 w-16 max-h-48 overflow-y-auto">
+                          {fontSizes.map((s) => (
+                            <button
+                              key={s}
+                              type="button"
+                              onClick={() => {
+                                commitFontSize(s);
+                              }}
+                              className={`w-full text-center px-2 py-0.5 text-xs hover:bg-blue-50 hover:text-[#185abd] cursor-pointer ${
+                                currentFontSize === s ? 'bg-blue-100 font-bold text-[#185abd]' : 'text-neutral-700'
+                              }`}
+                            >
+                              {s}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
 
                     {/* Grow / Shrink Font buttons */}
                     <button
@@ -2138,7 +2371,7 @@ const RibbonToolbarComponent: React.FC<RibbonToolbarProps> = ({
           {activeTab === 'insert' && (
             <>
               {/* Pages Group (Page Break, Blank Page) */}
-              <div className="flex flex-col justify-between pr-3 border-r border-[#dad9d8]">
+              <div className="flex flex-col justify-between pr-1.5 border-r border-[#dad9d8]">
                 <div className="flex items-start space-x-1">
                   {/* Page Break */}
                   <button
@@ -2224,7 +2457,7 @@ const RibbonToolbarComponent: React.FC<RibbonToolbarProps> = ({
               </div>
 
               {/* Tables Group (Retained existing) */}
-              <div className="flex flex-col justify-between px-3 border-r border-[#dad9d8]">
+              <div className="flex flex-col justify-between px-1.5 border-r border-[#dad9d8]">
                 <div className="relative" ref={tablePickerRef}>
                   <button
                     onClick={() => setShowTablePicker(!showTablePicker)}
@@ -2281,7 +2514,7 @@ const RibbonToolbarComponent: React.FC<RibbonToolbarProps> = ({
               </div>
 
               {/* Illustrations / Media Group: Pictures, AI Image, Image Wizard, Divider */}
-              <div className="flex flex-col justify-between px-3 border-r border-[#dad9d8]">
+              <div className="flex flex-col justify-between px-1.5 border-r border-[#dad9d8]">
                 <div className="flex items-start space-x-1">
                   {/* Pictures (Green Icon as shown in image) */}
                   <button
@@ -2350,7 +2583,7 @@ const RibbonToolbarComponent: React.FC<RibbonToolbarProps> = ({
               </div>
 
               {/* Interactive Insertions: Date & Time, Symbols, Quick Blocks, Command */}
-              <div className="flex flex-col justify-between px-3 border-r border-[#dad9d8]">
+              <div className="flex flex-col justify-between px-1.5 border-r border-[#dad9d8]">
                 <div className="flex items-start space-x-1">
                   {/* Date & Time (Blue Calendar as shown in image) */}
                   <button
@@ -2432,7 +2665,7 @@ const RibbonToolbarComponent: React.FC<RibbonToolbarProps> = ({
               </div>
 
               {/* Links Group */}
-              <div className="flex flex-col justify-between px-3 border-r border-[#dad9d8]">
+              <div className="flex flex-col justify-between px-1.5 border-r border-[#dad9d8]">
                 <div className="flex items-center space-x-1">
                   <button
                     onClick={() => setShowLinkModal(true)}
@@ -2464,7 +2697,7 @@ const RibbonToolbarComponent: React.FC<RibbonToolbarProps> = ({
               </div>
 
               {/* Additional Elements (Code Block) */}
-              <div className="flex flex-col justify-between px-3">
+              <div className="flex flex-col justify-between pl-1.5 pr-2">
                 <button
                   onClick={() => editor?.chain().focus().toggleCodeBlock().run()}
                   title="Insert Code Block"
@@ -2482,7 +2715,7 @@ const RibbonToolbarComponent: React.FC<RibbonToolbarProps> = ({
           {activeTab === 'table' && (
             <>
               {/* Group 1: Table v, Table Edit, Borders */}
-              <div className="flex items-start space-x-1.5 pr-3 border-r border-[#dad9d8]">
+              <div className="flex items-start space-x-1.5 pr-1.5 border-r border-[#dad9d8]">
                 {/* Table v (Blue grid icon with dropdown arrow) */}
                 <div className="relative" ref={tableTabPickerRef}>
                   <button
@@ -2598,70 +2831,87 @@ const RibbonToolbarComponent: React.FC<RibbonToolbarProps> = ({
                 </button>
               </div>
 
-              {/* Group 2: Table Style Palette (2x5 Color Swatches + Paintbrush + Apply Style) */}
-              <div className="flex items-start px-3 border-r border-[#dad9d8]">
-                <div className="flex flex-col space-y-1.5 py-0.5">
-                  {/* 2x5 Color Palette Grid */}
-                  <div className="grid grid-cols-5 gap-1.5">
-                    {tableStylePresets.map((preset, index) => {
-                      const isSelected = selectedTableTheme === index;
-                      return (
-                        <button
-                          key={preset.name}
-                          onClick={() => handleApplyTableStyle(index)}
-                          title={`Table Theme: ${preset.name}`}
-                          className={`w-6 h-6 rounded-xs cursor-pointer transition-all hover:scale-105 relative flex items-center justify-center ${
-                            isSelected
-                              ? 'ring-2 ring-[#185abd] ring-offset-1 scale-105 shadow-xs'
-                              : 'hover:opacity-90'
-                          }`}
-                          style={{
-                            backgroundColor: preset.color,
-                            border: preset.border ? `1px solid ${preset.border}` : '1px solid rgba(0,0,0,0.2)',
-                          }}
-                        >
-                          {isSelected && (
-                            <Check
-                              size={12}
-                              className={preset.color === '#ffffff' || preset.color === '#e2e8f0' ? 'text-neutral-800' : 'text-white'}
-                            />
-                          )}
-                        </button>
-                      );
-                    })}
-                  </div>
+              {/* Group 2: Table Style Palette (2x5 Grid matching Photo TARGET: 9 Presets + Custom Header Color Picker Swatch, 2 rows only) */}
+              <div className="flex flex-col justify-between px-1.5 border-r border-[#dad9d8]">
+                <div className="grid grid-cols-5 gap-1.5 py-1">
+                  {tableStylePresets.map((preset, index) => {
+                    const isSelected = selectedTableTheme === index;
+                    return (
+                      <button
+                        key={preset.name}
+                        onClick={() => {
+                          setSelectedTableTheme(index);
+                          setSelectedTableColor(preset.color);
+                          handleApplySmartTableTheme(preset.color, index);
+                        }}
+                        title={`Table Theme: ${preset.name} (${preset.color})`}
+                        className={`w-[22px] h-[22px] rounded-xs cursor-pointer transition-all hover:scale-105 relative flex items-center justify-center ${
+                          isSelected
+                            ? 'ring-2 ring-[#185abd] ring-offset-1 scale-105 shadow-xs'
+                            : 'hover:opacity-90'
+                        }`}
+                        style={{
+                          backgroundColor: preset.color,
+                          border: preset.border ? `1px solid ${preset.border}` : '1px solid rgba(0,0,0,0.2)',
+                        }}
+                      >
+                        {isSelected && (
+                          <Check
+                            size={11}
+                            className={
+                              preset.color === '#ffffff' || preset.color === '#e2e8f0' || preset.color === '#cbd5e1'
+                                ? 'text-neutral-800'
+                                : 'text-white'
+                            }
+                          />
+                        )}
+                      </button>
+                    );
+                  })}
 
-                  {/* Paintbrush & Apply Style button */}
-                  <div className="flex items-start space-x-1.5">
+                  {/* 10th Swatch: Custom Header Color Picker with Paintbrush Icon */}
+                  <div className="relative">
                     <button
-                      onClick={() => handleApplyTableStyle(selectedTableTheme)}
-                      title="Sample Table Style Painter"
-                      className={`px-2 py-1 rounded border flex items-center justify-center cursor-pointer shadow-2xs transition-colors ${
-                        isDarkUi
-                          ? 'bg-[#282828] hover:bg-[#333333] border-[#404040] text-neutral-200 hover:border-neutral-500'
-                          : 'bg-white hover:bg-neutral-50 border-neutral-300 text-neutral-700 hover:border-neutral-400'
+                      type="button"
+                      onClick={() => tableColorPickerInputRef.current?.click()}
+                      title={`Custom Header Color Picker (Current: ${selectedTableColor}) — Click to choose custom header color`}
+                      className={`w-[22px] h-[22px] rounded-xs cursor-pointer transition-all hover:scale-105 relative flex items-center justify-center ${
+                        selectedTableTheme === -1
+                          ? 'ring-2 ring-[#185abd] ring-offset-1 scale-105 shadow-xs'
+                          : 'hover:opacity-90'
                       }`}
+                      style={{
+                        backgroundColor: selectedTableColor,
+                        border: '1px solid rgba(0,0,0,0.25)',
+                      }}
                     >
-                      <Paintbrush size={14} className={isDarkUi ? 'text-neutral-200' : 'text-neutral-700'} />
+                      <Paintbrush
+                        size={12}
+                        style={{ color: getContrastTextColor(selectedTableColor) }}
+                        className="drop-shadow-xs"
+                      />
                     </button>
-                    <button
-                      onClick={() => handleApplyTableStyle(selectedTableTheme)}
-                      title="Apply current style preset to table"
-                      className={`px-3 py-1 text-[11px] font-semibold rounded border flex items-center space-x-1.5 cursor-pointer transition-colors shadow-2xs ${
-                        isDarkUi
-                          ? 'bg-[#1e3a5f] hover:bg-[#2563eb]/40 border-[#0078d4] text-white'
-                          : 'bg-[#f0f4f9] hover:bg-[#e2ebf6] active:bg-[#d0e0f2] text-neutral-800 border-neutral-300/80'
-                      }`}
-                    >
-                      <Check size={13} className={isDarkUi ? 'text-[#60a5fa]' : 'text-[#185abd]'} />
-                      <span>Apply Style</span>
-                    </button>
+                    <input
+                      ref={tableColorPickerInputRef}
+                      type="color"
+                      value={selectedTableColor}
+                      onChange={(e) => {
+                        const newColor = e.target.value;
+                        setSelectedTableColor(newColor);
+                        setSelectedTableTheme(-1);
+                        handleApplySmartTableTheme(newColor, -1);
+                      }}
+                      className="absolute inset-0 opacity-0 w-full h-full cursor-pointer"
+                      tabIndex={-1}
+                      title="Pick custom header row color"
+                    />
                   </div>
                 </div>
+                <span className="text-[10px] text-center text-neutral-400 font-medium tracking-wide">Table Styles</span>
               </div>
 
               {/* Group 3: Rows (+Row Below, +Row Above, Del Row) */}
-              <div className="flex flex-col justify-between px-3 border-r border-[#dad9d8]">
+              <div className="flex flex-col justify-between px-1.5 border-r border-[#dad9d8]">
                 <div className="flex items-start space-x-1.5">
                   {/* +Row Below */}
                   <button
@@ -2726,7 +2976,7 @@ const RibbonToolbarComponent: React.FC<RibbonToolbarProps> = ({
               </div>
 
               {/* Group 4: Columns (+Col Right, +Col Left, Del Col) */}
-              <div className="flex flex-col justify-between px-3 border-r border-[#dad9d8]">
+              <div className="flex flex-col justify-between px-1.5 border-r border-[#dad9d8]">
                 <div className="flex items-start space-x-1.5">
                   {/* +Col Right */}
                   <button
@@ -2791,7 +3041,7 @@ const RibbonToolbarComponent: React.FC<RibbonToolbarProps> = ({
               </div>
 
               {/* Group 5: Table (Full width on/off, Paragraph Above, Paragraph Below, Delete Table) */}
-              <div className="flex flex-col justify-between px-3">
+              <div className="flex flex-col justify-between pl-1.5 pr-2">
                 <div className="flex items-start space-x-2">
                   {/* Button 1: Table Full Width On/Off Toggle */}
                   <button
@@ -2879,7 +3129,7 @@ const RibbonToolbarComponent: React.FC<RibbonToolbarProps> = ({
           {activeTab === 'layout' && (
             <>
               {/* Photo Layout Section (Left): Margins, Orientation, Size, Columns, Divider, Color, Shadow, Watermark */}
-              <div className="flex items-start space-x-1.5 pr-3 border-r border-[#dad9d8]">
+              <div className="flex items-start space-x-1.5 pr-1.5 border-r border-[#dad9d8]">
                 {/* 1. Margins v */}
                 <div className="relative" ref={marginsDropdownRef}>
                   <button
@@ -2906,7 +3156,7 @@ const RibbonToolbarComponent: React.FC<RibbonToolbarProps> = ({
                       {[
                         { id: 'normal', name: 'Normal', topBottom: '1"', leftRight: '1"' },
                         { id: 'narrow', name: 'Narrow', topBottom: '0.5"', leftRight: '0.5"' },
-                        { id: 'moderate', name: 'Moderate', topBottom: '1"', leftRight: '0.75"' },
+                        { id: 'moderate', name: 'Mod', tooltip: 'Moderate', topBottom: '1"', leftRight: '0.75"' },
                         { id: 'wide', name: 'Wide', topBottom: '1"', leftRight: '1.5"' },
                       ].map((m) => (
                         <button
@@ -2915,6 +3165,7 @@ const RibbonToolbarComponent: React.FC<RibbonToolbarProps> = ({
                             onUpdateSettings({ margins: m.id as PageMargin, customMargins: undefined });
                             setShowMarginsDropdown(false);
                           }}
+                          title={m.id === 'moderate' ? 'Moderate' : m.name}
                           className={`w-full text-left px-2.5 py-1.5 text-xs rounded transition-colors cursor-pointer flex justify-between items-center ${
                             settings.margins === m.id
                               ? 'bg-blue-50 text-[#185abd] font-semibold'
@@ -2947,7 +3198,7 @@ const RibbonToolbarComponent: React.FC<RibbonToolbarProps> = ({
                   >
                     <RotateCw size={22} className="text-[#185abd] mb-0.5" />
                     <span className="text-[11px] font-medium leading-tight flex items-center">
-                      {settings.orientation === 'portrait' ? 'Portr...' : 'Landsc...'} <ChevronDown size={11} className="ml-0.5 text-neutral-500" />
+                      {settings.orientation === 'portrait' ? 'Portr...' : 'Land'} <ChevronDown size={11} className="ml-0.5 text-neutral-500" />
                     </span>
                   </button>
 
@@ -2976,13 +3227,14 @@ const RibbonToolbarComponent: React.FC<RibbonToolbarProps> = ({
                           onUpdateSettings({ orientation: 'landscape' });
                           setShowOrientationDropdown(false);
                         }}
+                        title="Landscape"
                         className={`w-full text-left px-2.5 py-1.5 text-xs rounded transition-colors cursor-pointer flex justify-between items-center ${
                           settings.orientation === 'landscape'
                             ? 'bg-blue-50 text-[#185abd] font-semibold'
                             : 'text-neutral-700 hover:bg-neutral-100'
                         }`}
                       >
-                        <span>Landscape (Horizontal)</span>
+                        <span>Land (Horizontal)</span>
                         {settings.orientation === 'landscape' && <Check size={14} className="text-[#185abd]" />}
                       </button>
                     </div>
@@ -3062,12 +3314,12 @@ const RibbonToolbarComponent: React.FC<RibbonToolbarProps> = ({
                   )}
                 </div>
 
-                {/* 4. Columns (Stacked 1 Column / 2 Columns buttons) */}
-                <div className="flex flex-col space-y-1">
+                {/* 4. Columns (Stacked 1 Col / 2 Col buttons) */}
+                <div className="flex flex-col space-y-1 shrink-0">
                   <button
                     onClick={() => onUpdateSettings({ columns: 1 })}
-                    title="Single Column Layout"
-                    className={`flex items-center space-x-1.5 px-2 py-0.5 rounded text-[11px] font-medium transition-all cursor-pointer border ${
+                    title="1 Column Layout"
+                    className={`flex items-center space-x-1 px-2 py-0.5 rounded text-[11px] font-medium transition-all cursor-pointer border whitespace-nowrap shrink-0 ${
                       (settings.columns ?? 1) === 1
                         ? isDarkUi
                           ? 'bg-[#1e3a5f] text-[#60a5fa] border-[#0078d4] font-semibold shadow-2xs'
@@ -3078,12 +3330,12 @@ const RibbonToolbarComponent: React.FC<RibbonToolbarProps> = ({
                     }`}
                   >
                     <Columns size={13} className={(settings.columns ?? 1) === 1 ? (isDarkUi ? 'text-[#60a5fa]' : 'text-[#185abd]') : (isDarkUi ? 'text-neutral-300' : 'text-neutral-700')} />
-                    <span>1 Column</span>
+                    <span className="whitespace-nowrap">1 Col</span>
                   </button>
                   <button
                     onClick={() => onUpdateSettings({ columns: 2 })}
-                    title="Two Columns Layout"
-                    className={`flex items-center space-x-1.5 px-2 py-0.5 rounded text-[11px] font-medium transition-all cursor-pointer border ${
+                    title="2 Columns Layout"
+                    className={`flex items-center space-x-1 px-2 py-0.5 rounded text-[11px] font-medium transition-all cursor-pointer border whitespace-nowrap shrink-0 ${
                       settings.columns === 2
                         ? isDarkUi
                           ? 'bg-[#1e3a5f] text-[#60a5fa] border-[#0078d4] font-semibold shadow-2xs'
@@ -3094,27 +3346,27 @@ const RibbonToolbarComponent: React.FC<RibbonToolbarProps> = ({
                     }`}
                   >
                     <Columns size={13} className={settings.columns === 2 ? (isDarkUi ? 'text-[#60a5fa]' : 'text-[#185abd]') : (isDarkUi ? 'text-neutral-300' : 'text-neutral-700')} />
-                    <span>2 Columns</span>
+                    <span className="whitespace-nowrap">2 Col</span>
                   </button>
                 </div>
               </div>
 
               {/* Photo Layout Section (Right of first divider): Color v, Shadow, Watermark v */}
-              <div className="flex items-start space-x-2 px-3 border-r border-[#dad9d8]">
-                {/* 5. Color v (Purple Palette Icon) */}
+              <div className="flex items-start space-x-2 px-1.5 border-r border-[#dad9d8]">
+                {/* 5. Color v (Purple Palette Icon, 2px smaller) */}
                 <div className="relative" ref={colorDropdownRef}>
                   <button
                     onClick={() => setShowColorDropdown(!showColorDropdown)}
                     title="Page Background Color"
-                    className={`flex flex-col items-center justify-start px-2 py-1 rounded cursor-pointer transition-all border ${
+                    className={`flex flex-col items-center justify-start px-1.5 py-0.5 rounded cursor-pointer transition-all border ${
                       showColorDropdown
                         ? 'bg-[#ede9fe] border-[#7c3aed] text-[#7c3aed]'
                         : 'border-transparent hover:bg-white hover:border-neutral-300 text-neutral-700'
                     }`}
                   >
-                    <Palette size={22} className="text-[#7c3aed] mb-0.5" />
-                    <span className="text-[11px] font-medium leading-tight flex items-center">
-                      Color <ChevronDown size={11} className="ml-0.5 text-neutral-500" />
+                    <Palette size={20} className="text-[#7c3aed] mb-0.5" />
+                    <span className="text-[10.5px] font-medium leading-tight flex items-center">
+                      Color <ChevronDown size={10} className="ml-0.5 text-neutral-500" />
                     </span>
                   </button>
 
@@ -3345,12 +3597,13 @@ const RibbonToolbarComponent: React.FC<RibbonToolbarProps> = ({
 
               {/* EXISTING BUTTONS IN LAYOUT TAB (Retained completely) */}
               {/* Margins Group */}
-              <div className="flex flex-col justify-between pr-3 border-r border-[#dad9d8]">
+              <div className="flex flex-col justify-between px-1.5 border-r border-[#dad9d8]">
                 <div className="flex items-start space-x-1">
                   {(['normal', 'narrow', 'moderate', 'wide'] as PageMargin[]).map((margin) => (
                     <button
                       key={margin}
                       onClick={() => onUpdateSettings({ margins: margin, customMargins: undefined })}
+                      title={margin === 'moderate' ? 'Moderate' : margin.charAt(0).toUpperCase() + margin.slice(1)}
                       className={`px-2.5 py-1.5 rounded capitalize text-xs cursor-pointer flex flex-col items-center border transition-all ${
                         settings.margins === margin
                           ? isDarkUi
@@ -3361,7 +3614,7 @@ const RibbonToolbarComponent: React.FC<RibbonToolbarProps> = ({
                           : 'border-transparent hover:bg-white hover:border-neutral-300 text-neutral-700'
                       }`}
                     >
-                      <span className="font-semibold">{margin}</span>
+                      <span className="font-semibold">{margin === 'moderate' ? 'Mod' : margin}</span>
                       <span className={`text-[9px] ${isDarkUi ? 'text-neutral-400' : 'text-neutral-400'}`}>
                         {margin === 'normal'
                           ? '1 inch'
@@ -3378,12 +3631,13 @@ const RibbonToolbarComponent: React.FC<RibbonToolbarProps> = ({
               </div>
 
               {/* Orientation Group */}
-              <div className="flex flex-col justify-between px-3 border-r border-[#dad9d8]">
+              <div className="flex flex-col justify-between px-1.5 border-r border-[#dad9d8]">
                 <div className="flex items-start space-x-1.5">
                   {(['portrait', 'landscape'] as PageOrientation[]).map((orient) => (
                     <button
                       key={orient}
                       onClick={() => onUpdateSettings({ orientation: orient })}
+                      title={orient === 'landscape' ? 'Landscape' : 'Portrait'}
                       className={`px-2.5 py-1.5 rounded capitalize text-xs cursor-pointer flex flex-col items-center border transition-all ${
                         settings.orientation === orient
                           ? isDarkUi
@@ -3394,7 +3648,7 @@ const RibbonToolbarComponent: React.FC<RibbonToolbarProps> = ({
                           : 'border-transparent hover:bg-white hover:border-neutral-300 text-neutral-700'
                       }`}
                     >
-                      <span className="font-semibold">{orient}</span>
+                      <span className="font-semibold">{orient === 'landscape' ? 'Land' : orient}</span>
                       <span className={`text-[9px] ${isDarkUi ? 'text-neutral-400' : 'text-neutral-400'}`}>
                         {orient === 'portrait' ? 'Vertical' : 'Horizontal'}
                       </span>
@@ -3405,10 +3659,10 @@ const RibbonToolbarComponent: React.FC<RibbonToolbarProps> = ({
               </div>
 
               {/* Page Paper Size */}
-              <div className="flex flex-col justify-between px-3">
+              <div className="flex flex-col justify-between pl-1.5 pr-2">
                 <div className="flex items-start space-x-1.5">
                   {[
-                    { id: 'a4' as PageSize, name: 'A4', desc: '8.27 × 11.69"' },
+                    { id: 'a4' as PageSize, name: 'A4', desc: '8,7 × 11,6"' },
                     { id: 'letter' as PageSize, name: 'Letter', desc: '8.5 × 11"' },
                     { id: 'legal' as PageSize, name: 'Legal', desc: '8.5 × 14"' },
                   ].map((s) => (
@@ -3477,7 +3731,7 @@ const RibbonToolbarComponent: React.FC<RibbonToolbarProps> = ({
           {activeTab === 'review' && (
             <div className="flex items-start space-x-0 w-full select-none pt-0.5">
               {/* SECTION 1: Spelling & Grammar, Word Count, AI Rewrite, Spell API, Translate, Language Dropdown, Dictate */}
-              <div className="flex items-start space-x-1 pr-3 border-r border-[#dad9d8]">
+              <div className="flex items-start space-x-1 pr-1.5 border-r border-[#dad9d8]">
                 {/* 1. Spelling & Grammar (Green CheckCheck) - Smart open Gemini Right Toolbar */}
                 <button
                   onClick={() => {
@@ -3684,7 +3938,7 @@ const RibbonToolbarComponent: React.FC<RibbonToolbarProps> = ({
               </div>
 
               {/* SECTION 2: Comments (New Comment, Comments with orange badge 1) */}
-              <div className="flex items-start space-x-2 px-3 border-r border-[#dad9d8]">
+              <div className="flex items-start space-x-2 px-1.5 border-r border-[#dad9d8]">
                 {/* 8. New Comment (Orange MessageSquarePlus) */}
                 <button
                   onClick={() => {
@@ -3731,7 +3985,7 @@ const RibbonToolbarComponent: React.FC<RibbonToolbarProps> = ({
               </div>
 
               {/* SECTION 3: History & Snapshots (Save Snapshot, Version History) */}
-              <div className="flex items-start space-x-2 px-3">
+              <div className="flex items-start space-x-2 px-1.5">
                 {/* 10. Save Snapshot (Green Camera) */}
                 <button
                   onClick={handleCaptureScreenSnapshot}
@@ -3776,7 +4030,7 @@ const RibbonToolbarComponent: React.FC<RibbonToolbarProps> = ({
           {activeTab === 'view' && (
             <div className="flex items-start space-x-0 w-full select-none pt-0.5">
               {/* SECTION 1: Print Layout & Focus Mode */}
-              <div className="flex items-start space-x-1 pr-3">
+              <div className="flex items-start space-x-1 pr-1.5">
                 {/* 1. Print Layout (Light blue active card with blue eye) */}
                 <button
                   onClick={() => onUpdateSettings({ viewMode: 'print' })}
@@ -3819,7 +4073,7 @@ const RibbonToolbarComponent: React.FC<RibbonToolbarProps> = ({
               </div>
 
               {/* DIVIDER */}
-              <div className="h-11 w-px bg-[#dad9d8] mr-3 shrink-0" />
+              <div className="h-11 w-px bg-[#dad9d8] mr-1.5 shrink-0" />
 
               {/* SECTION 2: Ruler, Gridlines, ¶ Marks Checkbox Group */}
               <div className="flex flex-col justify-start space-y-1.5 pt-0.5 text-xs select-none min-w-[105px]">
@@ -3915,7 +4169,7 @@ const RibbonToolbarComponent: React.FC<RibbonToolbarProps> = ({
               </div>
 
               {/* DIVIDER */}
-              <div className="h-11 w-px bg-[#dad9d8] mx-2 shrink-0" />
+              <div className="h-11 w-px bg-[#dad9d8] mx-1.5 shrink-0" />
 
               {/* SECTION 3: Navigation Pane */}
               <div className="flex items-start px-1">
@@ -3936,7 +4190,7 @@ const RibbonToolbarComponent: React.FC<RibbonToolbarProps> = ({
               </div>
 
               {/* DIVIDER */}
-              <div className="h-11 w-px bg-[#dad9d8] mx-3 shrink-0" />
+              <div className="h-11 w-px bg-[#dad9d8] mx-1.5 shrink-0" />
 
               {/* SECTION 4: Zoom Controls (100%, Zoom In, Zoom Out) */}
               <div className="flex items-start space-x-1 px-1">
@@ -3978,7 +4232,7 @@ const RibbonToolbarComponent: React.FC<RibbonToolbarProps> = ({
               </div>
 
               {/* DIVIDER */}
-              <div className="h-11 w-px bg-[#dad9d8] mx-3 shrink-0" />
+              <div className="h-11 w-px bg-[#dad9d8] mx-1.5 shrink-0" />
 
               {/* SECTION 5: Dark / Light Switch (Matches User Photo 1) */}
               <div className="flex flex-col items-center px-1">
@@ -4123,14 +4377,14 @@ const RibbonToolbarComponent: React.FC<RibbonToolbarProps> = ({
               </div>
 
               {/* DIVIDER */}
-              <div className="h-11 w-px bg-[#dad9d8] mx-3 shrink-0" />
+              <div className="h-11 w-px bg-[#dad9d8] mx-1.5 shrink-0" />
 
               {/* SECTION 6: AutoCorrect ON / OFF */}
               <div className="flex flex-col items-center justify-start px-1">
                 <button
                   type="button"
                   onClick={onToggleAutoCorrect}
-                  title={`AutoCorrect: ${autoCorrectEnabled ? 'ON' : 'OFF'} (Click to toggle)`}
+                  title="Auto Correct"
                   className={`flex flex-col items-center justify-center px-2.5 py-1 rounded-lg border transition-all cursor-pointer min-w-[76px] ${
                     autoCorrectEnabled
                       ? isDarkUi
@@ -4150,7 +4404,7 @@ const RibbonToolbarComponent: React.FC<RibbonToolbarProps> = ({
                     }
                   />
                   <span className="text-[11px] leading-tight text-center font-medium">
-                    AutoCorrect: <span className="font-bold">{autoCorrectEnabled ? 'ON' : 'OFF'}</span>
+                    Corect: <span className="font-bold">{autoCorrectEnabled ? 'ON' : 'OFF'}</span>
                   </span>
                 </button>
                 <span className="text-[10px] text-neutral-400 dark:text-neutral-500 tracking-tight mt-1 select-none">
@@ -4164,7 +4418,7 @@ const RibbonToolbarComponent: React.FC<RibbonToolbarProps> = ({
           {activeTab === 'format' && (
             <div className="flex items-start space-x-0 w-full select-none pt-0.5">
               {/* GROUP 1: Ultimate Formatter */}
-              <div className="flex items-start pr-3">
+              <div className="flex items-start pr-1.5">
                 <button
                   onClick={() => {
                     onUpdateSettings({ showFormatterPane: !settings.showFormatterPane });
@@ -4209,10 +4463,10 @@ const RibbonToolbarComponent: React.FC<RibbonToolbarProps> = ({
               </div>
 
               {/* DIVIDER */}
-              <div className="h-12 w-px bg-[#dad9d8] mr-3 shrink-0 self-start mt-0.5" />
+              <div className="h-12 w-px bg-[#dad9d8] mr-1.5 shrink-0 self-start mt-0.5" />
 
               {/* GROUP 2: Format Painter & Paste Format */}
-              <div className="flex items-start space-x-1 pr-3">
+              <div className="flex items-start space-x-1 pr-1.5">
                 {/* Format Painter */}
                 <button
                   onClick={(e) => {
@@ -4257,10 +4511,10 @@ const RibbonToolbarComponent: React.FC<RibbonToolbarProps> = ({
               </div>
 
               {/* DIVIDER */}
-              <div className="h-12 w-px bg-[#dad9d8] mr-3 shrink-0 self-start mt-0.5" />
+              <div className="h-12 w-px bg-[#dad9d8] mr-1.5 shrink-0 self-start mt-0.5" />
 
               {/* GROUP 3: Clear Formatting & No Spacing */}
-              <div className="flex items-start space-x-1 pr-3">
+              <div className="flex items-start space-x-1 pr-1.5">
                 <button
                   onClick={() => editor?.chain().focus().unsetAllMarks().clearNodes().run()}
                   title="Clear All Formatting"
@@ -4272,28 +4526,28 @@ const RibbonToolbarComponent: React.FC<RibbonToolbarProps> = ({
                   </span>
                 </button>
 
-                {/* No Spacing */}
+                {/* Spacing */}
                 <button
                   onClick={() => {
                     if (editor) {
                       cleanAllSpacing(editor);
                     }
                   }}
-                  title="No Spacing — Clean all spacing in selected area (line height 1.0, 0px paragraph margins, and table spacing)"
+                  title="no spacing"
                   className="flex flex-col items-center justify-start px-2.5 py-1 rounded-lg border border-transparent hover:bg-amber-50 hover:border-amber-300 text-neutral-700 cursor-pointer min-w-[62px] transition-all group"
                 >
                   <Sparkles size={22} className="text-amber-600 mb-1 group-hover:scale-110 transition-transform" />
                   <span className="text-[11px] font-medium leading-tight text-center text-neutral-800 group-hover:text-amber-800">
-                    No<br />Spacing
+                    Spacing
                   </span>
                 </button>
               </div>
 
               {/* DIVIDER */}
-              <div className="h-12 w-px bg-[#dad9d8] mr-3 shrink-0 self-start mt-0.5" />
+              <div className="h-12 w-px bg-[#dad9d8] mr-1.5 shrink-0 self-start mt-0.5" />
 
               {/* GROUP 4: Case (AA UPPER, aa lower, Aa Sentence, Tt Title, aA Toggle) with "Case" footer */}
-              <div className="flex flex-col items-center pr-3">
+              <div className="flex flex-col items-center pr-1.5">
                 <div className="flex items-start space-x-2">
                   {/* AA UPPER */}
                   <button
@@ -4414,10 +4668,10 @@ const RibbonToolbarComponent: React.FC<RibbonToolbarProps> = ({
               </div>
 
               {/* DIVIDER */}
-              <div className="h-12 w-px bg-[#dad9d8] mr-3 shrink-0 self-start mt-0.5" />
+              <div className="h-12 w-px bg-[#dad9d8] mr-1.5 shrink-0 self-start mt-0.5" />
 
               {/* GROUP 5: Script (x² Super, x₂ Sub) with "Script" footer */}
-              <div className="flex flex-col items-center pr-3">
+              <div className="flex flex-col items-center pr-1.5">
                 <div className="flex items-start space-x-2">
                   {/* x² Super */}
                   <button
@@ -4463,10 +4717,10 @@ const RibbonToolbarComponent: React.FC<RibbonToolbarProps> = ({
               </div>
 
               {/* DIVIDER */}
-              <div className="h-12 w-px bg-[#dad9d8] mr-3 shrink-0 self-start mt-0.5" />
+              <div className="h-12 w-px bg-[#dad9d8] mr-1.5 shrink-0 self-start mt-0.5" />
 
               {/* GROUP 6: Math (Fx Equation) */}
-              <div className="flex flex-col items-center pr-3">
+              <div className="flex flex-col items-center pr-1.5">
                 <button
                   onClick={() => {
                     setEquationEditingLatex('');
@@ -4559,10 +4813,10 @@ const RibbonToolbarComponent: React.FC<RibbonToolbarProps> = ({
               </div>
 
               {/* DIVIDER */}
-              <div className="h-12 w-px bg-[#dad9d8] mx-3 shrink-0 self-start mt-0.5" />
+              <div className="h-12 w-px bg-[#dad9d8] mr-1.5 shrink-0 self-start mt-0.5" />
 
               {/* GROUP 2: Structure (Merge, Split) */}
-              <div className="flex flex-col items-center pr-3">
+              <div className="flex flex-col items-center pr-1.5">
                 <div className="flex items-start space-x-1.5">
                   {/* 6. Merge */}
                   <button
@@ -4590,10 +4844,10 @@ const RibbonToolbarComponent: React.FC<RibbonToolbarProps> = ({
               </div>
 
               {/* DIVIDER */}
-              <div className="h-12 w-px bg-[#dad9d8] mx-3 shrink-0 self-start mt-0.5" />
+              <div className="h-12 w-px bg-[#dad9d8] mr-1.5 shrink-0 self-start mt-0.5" />
 
               {/* GROUP 3: HTML (Rm Links, Rm Images, Responsive, Rm Attrs, Clean Tags) */}
-              <div className="flex flex-col items-center pr-3">
+              <div className="flex flex-col items-center pr-1.5">
                 <div className="flex items-start space-x-1.5">
                   {/* 8. Rm Links */}
                   <button
@@ -4640,20 +4894,20 @@ const RibbonToolbarComponent: React.FC<RibbonToolbarProps> = ({
                     <Tag size={20} className="text-[#334155]" />
                   </button>
 
-                  {/* 13. No Spacing */}
+                  {/* 13. Spacing */}
                   <button
                     onClick={() => {
                       if (editor) {
                         cleanAllSpacing(editor);
                       }
                     }}
-                    title="no spacing — Clean all spacing in selected area (line height 1.0, 0px paragraph margins, and table spacing)"
+                    title="no spacing"
                     aria-label="no spacing"
                     className="px-2 py-1.5 rounded-lg border border-transparent hover:bg-amber-50 hover:border-amber-300 text-neutral-700 hover:text-neutral-900 cursor-pointer transition-all flex items-center justify-center space-x-1 min-h-[34px] group"
                   >
                     <Sparkles size={14} className="text-amber-600 group-hover:scale-110 transition-transform shrink-0" />
                     <span className="font-semibold text-[11px] text-neutral-800 group-hover:text-amber-800 leading-none whitespace-nowrap">
-                      no spacing
+                      Spacing
                     </span>
                   </button>
 

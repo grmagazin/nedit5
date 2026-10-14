@@ -25,6 +25,7 @@ export const ImageClickMenu: React.FC<ImageClickMenuProps> = ({
   const [selectedImg, setSelectedImg] = useState<HTMLImageElement | null>(null);
   const [menuPosition, setMenuPosition] = useState<{ top: number; left: number } | null>(null);
   const [widthPx, setWidthPx] = useState<number>(600);
+  const [activePercent, setActivePercent] = useState<number | null>(null);
   const [alignment, setAlignment] = useState<'left' | 'center' | 'right'>('left');
   const [floatWrap, setFloatWrap] = useState<'none' | 'left' | 'right'>('none');
   const menuRef = useRef<HTMLDivElement | null>(null);
@@ -32,7 +33,7 @@ export const ImageClickMenu: React.FC<ImageClickMenuProps> = ({
   // Calculate and update menu position directly above the image
   const updatePosition = useCallback((img: HTMLImageElement) => {
     const rect = img.getBoundingClientRect();
-    const menuWidth = 560; // approximate width of the floating toolbar
+    const menuWidth = 620; // approximate width of the floating toolbar
     const menuHeight = 44;
 
     // Position directly above the image
@@ -81,6 +82,14 @@ export const ImageClickMenu: React.FC<ImageClickMenuProps> = ({
         // Read attributes from image
         const currentWidth = img.offsetWidth || 600;
         setWidthPx(currentWidth);
+
+        const rawWidth = img.getAttribute('data-width') || img.style.width || '';
+        const matchPct = rawWidth.match(/^(\d+)%$/);
+        if (matchPct) {
+          setActivePercent(parseInt(matchPct[1], 10));
+        } else {
+          setActivePercent(null);
+        }
 
         const currentAlign = (img.getAttribute('data-alignment') as 'left' | 'center' | 'right') || 'left';
         setAlignment(currentAlign);
@@ -241,6 +250,7 @@ export const ImageClickMenu: React.FC<ImageClickMenuProps> = ({
   const handleSliderChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = parseInt(e.target.value, 10);
     setWidthPx(val);
+    setActivePercent(null);
     if (selectedImg) {
       const widthVal = `${val}px`;
       selectedImg.style.width = widthVal;
@@ -262,7 +272,7 @@ export const ImageClickMenu: React.FC<ImageClickMenuProps> = ({
     }
   };
 
-  // Preset Width Percentages
+  // Preset Width Percentages: 25%, 50%, 80%, 90%, 100%
   const handleSetPercentWidth = (percent: number) => {
     if (!selectedImg) return;
     const widthVal = `${percent}%`;
@@ -271,6 +281,7 @@ export const ImageClickMenu: React.FC<ImageClickMenuProps> = ({
     selectedImg.setAttribute('data-width', widthVal);
     const newPx = Math.round(selectedImg.offsetWidth);
     setWidthPx(newPx);
+    setActivePercent(percent);
 
     const align = (selectedImg.getAttribute('data-alignment') as 'left' | 'center' | 'right') || alignment || 'left';
     const marginLeft = align === 'center' ? 'auto' : align === 'right' ? 'auto' : '0';
@@ -285,7 +296,7 @@ export const ImageClickMenu: React.FC<ImageClickMenuProps> = ({
     updatePosition(selectedImg);
   };
 
-  // Maximize / Full Width
+  // Maximize / Full Width (100%)
   const handleFullWidth = () => {
     if (!selectedImg) return;
     const widthVal = '100%';
@@ -294,6 +305,7 @@ export const ImageClickMenu: React.FC<ImageClickMenuProps> = ({
     selectedImg.setAttribute('data-width', widthVal);
     const newPx = Math.round(selectedImg.offsetWidth);
     setWidthPx(newPx);
+    setActivePercent(100);
 
     const align = (selectedImg.getAttribute('data-alignment') as 'left' | 'center' | 'right') || alignment || 'left';
     const marginLeft = align === 'center' ? 'auto' : align === 'right' ? 'auto' : '0';
@@ -432,22 +444,33 @@ export const ImageClickMenu: React.FC<ImageClickMenuProps> = ({
       {/* Divider */}
       <div className="h-4 w-px bg-neutral-200" />
 
-      {/* 2. Width Presets: 25%, 50%, 75%, 100%, Expand */}
+      {/* 2. Width Presets: 25%, 50%, 80%, 90%, 100%, Expand */}
       <div className="flex items-center space-x-0.5">
-        {[25, 50, 75, 100].map((pct) => (
-          <button
-            key={pct}
-            onClick={() => handleSetPercentWidth(pct)}
-            className="px-1.5 py-1 text-[11px] font-medium text-neutral-600 hover:text-neutral-900 hover:bg-neutral-100 rounded cursor-pointer transition-colors"
-            title={`Set width to ${pct}%`}
-          >
-            {pct}%
-          </button>
-        ))}
+        {[25, 50, 80, 90, 100].map((pct) => {
+          const isActive = activePercent === pct;
+          return (
+            <button
+              key={pct}
+              onClick={() => handleSetPercentWidth(pct)}
+              className={`px-1.5 py-1 text-[11px] rounded cursor-pointer transition-colors ${
+                isActive
+                  ? 'bg-[#185abd] text-white font-bold shadow-2xs'
+                  : 'font-medium text-neutral-600 hover:text-neutral-900 hover:bg-neutral-100'
+              }`}
+              title={`Set image width to ${pct}%`}
+            >
+              {pct}%
+            </button>
+          );
+        })}
 
         <button
           onClick={handleFullWidth}
-          className="p-1 text-neutral-600 hover:text-neutral-900 hover:bg-neutral-100 rounded cursor-pointer transition-colors"
+          className={`p-1 rounded cursor-pointer transition-colors ${
+            activePercent === 100
+              ? 'bg-[#185abd] text-white shadow-2xs'
+              : 'text-neutral-600 hover:text-neutral-900 hover:bg-neutral-100'
+          }`}
           title="Expand / Full Width (100%)"
         >
           <Maximize2 size={13} />

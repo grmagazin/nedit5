@@ -31,7 +31,7 @@ async function startServer() {
   app.get('/api/health', (_req, res) => {
     res.json({
       status: 'ok',
-      version: '5.2.0',
+      version: '5.3.0',
       hasGeminiKey: Boolean(process.env.GEMINI_API_KEY),
     });
   });
@@ -144,7 +144,7 @@ async function startServer() {
   }
 
   app.listen(PORT, '0.0.0.0', () => {
-    console.log(`🚀 Nedit v5.2 Fullstack Server running on http://0.0.0.0:${PORT}`);
+    console.log(`🚀 Nedit v5.3 Fullstack Server running on http://0.0.0.0:${PORT}`);
   });
 }
 

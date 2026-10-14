@@ -404,6 +404,21 @@
   background-color: #f0fdfa;
 }
 
+/* Smart Custom Table Themes from Smart Theme Color Picker */
+.ProseMirror table[data-custom-theme] th {
+  background-color: var(--table-header-bg) !important;
+  color: var(--table-header-color) !important;
+  border-color: var(--table-header-border, var(--table-header-bg)) !important;
+}
+.ProseMirror table[data-custom-theme] th p,
+.ProseMirror table[data-custom-theme] th span,
+.ProseMirror table[data-custom-theme] th strong {
+  color: var(--table-header-color) !important;
+}
+.ProseMirror table[data-custom-theme] tr:nth-child(even) td {
+  background-color: var(--table-zebra-bg, #f8fafc);
+}
+
 .ProseMirror table.borders-none td,
 .ProseMirror table.borders-none th {
   border: 1px dashed transparent;
