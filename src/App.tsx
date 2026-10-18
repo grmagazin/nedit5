@@ -23,7 +23,7 @@ import TaskItem from '@tiptap/extension-task-item';
 import Subscript from '@tiptap/extension-subscript';
 import Superscript from '@tiptap/extension-superscript';
 import CharacterCount from '@tiptap/extension-character-count';
-import { TextSelection } from '@tiptap/pm/state';
+import { TextSelection, NodeSelection } from '@tiptap/pm/state';
 import { findTable } from '@tiptap/pm/tables';
 
 import {
@@ -69,6 +69,13 @@ import {
 import type { BackstageTab } from './components/FileBackstage';
 import { Maximize2 } from 'lucide-react';
 import { compressImageToDataUrl } from './utils/imageCompressor';
+import {
+  asyncSaveDocumentContent,
+  asyncLoadDocumentContent,
+  asyncSaveDocumentSettings,
+  asyncLoadDocumentSettings,
+  clearStorageCache,
+} from './utils/indexedDbStorage';
 
 const FindReplaceModal = React.lazy(() =>
   import('./components/FindReplaceModal').then((m) => ({ default: m.FindReplaceModal }))
@@ -87,6 +94,9 @@ const SeoCheckSidebar = React.lazy(() =>
 );
 const TableEditSidebar = React.lazy(() =>
   import('./components/TableEditSidebar').then((m) => ({ default: m.TableEditSidebar }))
+);
+const TableToolsSidebar = React.lazy(() =>
+  import('./components/TableToolsSidebar').then((m) => ({ default: m.TableToolsSidebar }))
 );
 const BorderEditSidebar = React.lazy(() =>
   import('./components/BorderEditSidebar').then((m) => ({ default: m.BorderEditSidebar }))
@@ -157,6 +167,11 @@ export default function App() {
   const [showFindReplace, setShowFindReplace] = useState(false);
   const [showStatsModal, setShowStatsModal] = useState(false);
   const [isSaved, setIsSaved] = useState(true);
+  const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | 'failed'>('saved');
+  const [saveErrorMessage, setSaveErrorMessage] = useState<string | null>(null);
+  const lastSavedNodeSizeRef = useRef<number>(0);
+  const lastSavedContentLengthRef = useRef<number>(0);
+  const lastAutoSaveTimestampRef = useRef<number>(Date.now());
   const [backstageInitialTab, setBackstageInitialTab] = useState<BackstageTab>('info');
   const [showCommentsPanel, setShowCommentsPanel] = useState(false);
   const [comments, setComments] = useState<DocumentComment[]>(() => {
@@ -291,6 +306,7 @@ export default function App() {
       showNavigationPane: false,
       showSeoPane: false,
       showTableEditPane: false,
+      showTableToolsPane: false,
       enableTableHandle: (() => {
         try {
           const val = localStorage.getItem('wordpad_enable_table_handle');
@@ -320,6 +336,7 @@ export default function App() {
         }
         return 'navigate';
       })(),
+      linkedImageMode: false,
       showImageWizardPane: false,
       showFormatterPane: false,
       showQuickBlocksPane: false,
@@ -386,7 +403,7 @@ export default function App() {
   }, []);
 
   // 2. Heavy DOM & AST structure calculations (paragraphs & multi-page DOM measuring)
-  const updateHeavyStats = useCallback((editorInstance: any) => {
+  const updateHeavyStats = useCallback((editorInstance: any, forceRecalc: boolean = false) => {
     if (!editorInstance || editorInstance.isDestroyed) return;
 
     // Count non-empty paragraphs from JSON AST
@@ -401,17 +418,26 @@ export default function App() {
       paragraphs: Math.max(1, paragraphs),
     }));
 
-    // Update total pages count based on user page breaks & DOM calibrations
-    const pmEl = document.querySelector('.ProseMirror');
-    if (pmEl) {
-      const docPages = calculateDocumentPages(
-        editorInstance,
-        settingsRef.current.pageSize,
-        settingsRef.current.orientation
-      );
-      setTotalPagesCount(docPages.length);
+    // Smart / Manual Page Calculation:
+    // If in manual mode (or doc has >= 20 pages), skip heavy layout DOM queries unless forceRecalc is true!
+    const isManualMode = settingsRef.current.pageCalcMode === 'manual' || totalPagesCount >= 20;
+    if (!isManualMode || forceRecalc) {
+      const pmEl = document.querySelector('.ProseMirror');
+      if (pmEl) {
+        const docPages = calculateDocumentPages(
+          editorInstance,
+          settingsRef.current.pageSize,
+          settingsRef.current.orientation
+        );
+        setTotalPagesCount(docPages.length);
+
+        // If newly calculated pages >= 20 and mode not explicitly configured, default to manual
+        if (docPages.length >= 20 && !settingsRef.current.pageCalcMode) {
+          setSettings((prev) => ({ ...prev, pageCalcMode: 'manual' }));
+        }
+      }
     }
-  }, []);
+  }, [totalPagesCount]);
 
   // Coordinated stats scheduler: instant light stats + 400ms deferred heavy stats
   const scheduleStatsUpdate = useCallback((editorInstance: any, immediateHeavy: boolean = false) => {
@@ -420,10 +446,10 @@ export default function App() {
       clearTimeout(heavyStatsTimerRef.current);
     }
     if (immediateHeavy) {
-      updateHeavyStats(editorInstance);
+      updateHeavyStats(editorInstance, true);
     } else {
       heavyStatsTimerRef.current = setTimeout(() => {
-        updateHeavyStats(editorInstance);
+        updateHeavyStats(editorInstance, false);
       }, 400);
     }
   }, [updateLightStats, updateHeavyStats]);
@@ -452,11 +478,7 @@ export default function App() {
         }
       }
       if (autoSaveEnabledRef.current) {
-        try {
-          localStorage.setItem(STORAGE_KEY_SETTINGS, JSON.stringify(next));
-        } catch {
-          // ignore
-        }
+        asyncSaveDocumentSettings(next);
       } else {
         setIsSaved(false);
       }
@@ -473,8 +495,8 @@ export default function App() {
         },
         horizontalRule: false,
         undoRedo: {
-          depth: 100,
-          newGroupDelay: 500,
+          depth: 50,
+          newGroupDelay: 800,
         },
       }),
       CustomHorizontalRule,
@@ -573,8 +595,66 @@ export default function App() {
         return false;
       },
       handleClick: (view, _pos, event) => {
-        const target = event.target as HTMLElement | null;
-        const link = target?.closest('a') as HTMLAnchorElement | null;
+        const targetNode = event.target as Node | null;
+        const target = (targetNode instanceof Element ? targetNode : targetNode?.parentElement) as HTMLElement | null;
+        const link = target?.closest ? (target.closest('a') as HTMLAnchorElement | null) : null;
+        const isImage = target?.tagName === 'IMG' || !!(target?.closest ? target.closest('img') : null);
+
+        // CRITICAL: Linked Image Edit Mode!
+        // When the clicked/selected element is an image inside <a>:
+        // 1. Link Manager recognizes the link contains an image and does NOT block editing.
+        // 2. Image Mode is activated: NodeSelection is set on the image node, allowing
+        //    image context menu, Image Wizard, right toolbar resize/alignment.
+        // 3. Link Wizard is put in standby: href stays intact, browser does not navigate,
+        //    text selection does not hijack the image, and Link Wizard does not open.
+        if (isImage) {
+          event.preventDefault();
+          event.stopPropagation();
+
+          // Set linkedImageMode to true and put Link Wizard in standby
+          handleUpdateSettings({ linkedImageMode: true, showHyperLinkPane: false });
+
+          // Select the image as NodeSelection in TipTap ProseMirror
+          const imgEl = (target?.tagName === 'IMG' ? target : (target?.closest ? target.closest('img') : null)) as HTMLImageElement;
+          if (imgEl) {
+            let imgPos: number | null = null;
+            try {
+              const rawPos = view.posAtDOM(imgEl, 0);
+              if (view.state.doc.nodeAt(rawPos)?.type.name === 'image') {
+                imgPos = rawPos;
+              } else if (rawPos > 0 && view.state.doc.nodeAt(rawPos - 1)?.type.name === 'image') {
+                imgPos = rawPos - 1;
+              }
+            } catch {}
+
+            if (imgPos === null) {
+              const targetSrc = imgEl.getAttribute('src');
+              view.state.doc.descendants((node, pos) => {
+                if (node.type.name === 'image') {
+                  if (!targetSrc || node.attrs.src === targetSrc) {
+                    imgPos = pos;
+                    return false;
+                  }
+                }
+              });
+            }
+
+            if (imgPos !== null && imgPos >= 0) {
+              try {
+                const tr = view.state.tr.setSelection(NodeSelection.create(view.state.doc, imgPos));
+                view.dispatch(tr);
+              } catch {}
+            }
+          }
+
+          return true;
+        }
+
+        // Clicked outside or on a regular text link: deactivate linkedImageMode
+        if (settingsRef.current.linkedImageMode) {
+          handleUpdateSettings({ linkedImageMode: false });
+        }
+
         if (!link) return false;
 
         const currentMode = settingsRef.current.hyperLinkMode || 'navigate';
@@ -625,25 +705,60 @@ export default function App() {
       // 1. Instant light stats + 400ms deferred heavy stats
       scheduleStatsUpdate(ed, false);
 
-      // 2. Auto-save with 1.5s trailing debounce
+      // 2. High-performance, async Auto-save with dirty checking & max-wait
       if (autoSaveEnabledRef.current) {
+        setSaveStatus('saving');
         setIsSaved(false);
+
         if (autoSaveTimerRef.current) {
           clearTimeout(autoSaveTimerRef.current);
         }
-        autoSaveTimerRef.current = setTimeout(() => {
-          try {
-            if (!ed.isDestroyed) {
-              localStorage.setItem(STORAGE_KEY_CONTENT, ed.getHTML());
-              setIsSaved(true);
-            }
-          } catch {
-            // storage quota fallback
+
+        const flushSave = async () => {
+          if (ed.isDestroyed) return;
+          const currentSize = ed.state.doc.nodeSize;
+          const textLength = ed.state.doc.content.size;
+
+          // Substantive change check: If doc structure & length didn't change, skip expensive serialization
+          if (
+            currentSize === lastSavedNodeSizeRef.current &&
+            textLength === lastSavedContentLengthRef.current
+          ) {
+            setSaveStatus('saved');
+            setIsSaved(true);
+            return;
           }
-        }, 1500);
+
+          try {
+            const html = ed.getHTML();
+            const success = await asyncSaveDocumentContent(html);
+            if (success) {
+              lastSavedNodeSizeRef.current = currentSize;
+              lastSavedContentLengthRef.current = textLength;
+              lastAutoSaveTimestampRef.current = Date.now();
+              setSaveStatus('saved');
+              setIsSaved(true);
+              setSaveErrorMessage(null);
+            } else {
+              throw new Error('Save failed');
+            }
+          } catch (err: any) {
+            console.error('AutoSave failed:', err);
+            setSaveStatus('failed');
+            setIsSaved(false);
+            setSaveErrorMessage('Storage limit reached or disk write failed');
+          }
+        };
+
+        // If continuous typing exceeded 12s without pause, flush save immediately
+        if (Date.now() - lastAutoSaveTimestampRef.current > 12000) {
+          flushSave();
+        } else {
+          autoSaveTimerRef.current = setTimeout(flushSave, 1500);
+        }
       } else {
-        // AutoSave is OFF: marked as unsaved until user manually saves
         setIsSaved(false);
+        setSaveStatus('saved');
       }
     },
     onCreate: ({ editor: ed }) => {
@@ -682,6 +797,22 @@ export default function App() {
     const docName = settings.title?.trim();
     document.title = docName ? `${docName} - Nedit v5.3` : 'Nedit v5.3';
   }, [settings.title]);
+
+  // Startup sync: Load document content & settings asynchronously from IndexedDB
+  useEffect(() => {
+    asyncLoadDocumentContent().then((content) => {
+      if (content && content.trim() !== '' && editor && !editor.isDestroyed) {
+        if (editor.getHTML() !== content) {
+          editor.commands.setContent(content);
+        }
+      }
+    });
+    asyncLoadDocumentSettings().then((savedSettings) => {
+      if (savedSettings) {
+        setSettings((prev) => ({ ...prev, ...savedSettings }));
+      }
+    });
+  }, [editor]);
 
   // Smart Format Painter State (In-Memory, strictly avoiding clipboard)
   const [formatPainter, setFormatPainter] = useState<CopiedWordFormat | null>(null);
@@ -828,16 +959,80 @@ export default function App() {
     };
   }, [editor, autoCorrectEnabled]);
 
-  const handleSaveToLocalStorage = useCallback(() => {
+  const handleSaveToLocalStorage = useCallback(async () => {
     if (!editor) return;
+    setSaveStatus('saving');
     try {
-      localStorage.setItem(STORAGE_KEY_CONTENT, editor.getHTML());
-      localStorage.setItem(STORAGE_KEY_SETTINGS, JSON.stringify(settings));
+      const html = editor.getHTML();
+      await asyncSaveDocumentContent(html);
+      await asyncSaveDocumentSettings(settings);
       setIsSaved(true);
+      setSaveStatus('saved');
+      setSaveErrorMessage(null);
     } catch {
-      // ignore
+      setSaveStatus('failed');
+      setIsSaved(false);
+      setSaveErrorMessage('Failed to save document. Storage limit reached.');
     }
   }, [editor, settings]);
+
+  const handleClearCache = useCallback(async () => {
+    try {
+      await clearStorageCache();
+      setSaveErrorMessage(null);
+      setSaveStatus('saving');
+      if (editor && !editor.isDestroyed) {
+        const html = editor.getHTML();
+        await asyncSaveDocumentContent(html);
+        setSaveStatus('saved');
+        setIsSaved(true);
+      }
+    } catch (err) {
+      console.error('Clear cache error:', err);
+      setSaveStatus('failed');
+      setSaveErrorMessage('Could not clear cache.');
+    }
+  }, [editor]);
+
+  const handleRetrySave = useCallback(async () => {
+    if (!editor || editor.isDestroyed) return;
+    setSaveStatus('saving');
+    try {
+      await asyncSaveDocumentContent(editor.getHTML());
+      await asyncSaveDocumentSettings(settings);
+      setSaveStatus('saved');
+      setIsSaved(true);
+      setSaveErrorMessage(null);
+    } catch {
+      setSaveStatus('failed');
+      setIsSaved(false);
+      setSaveErrorMessage('Storage full.');
+    }
+  }, [editor, settings]);
+
+  const handleRecalculatePages = useCallback(() => {
+    if (!editor || editor.isDestroyed) return;
+    const pmEl = document.querySelector('.ProseMirror');
+    if (pmEl) {
+      const docPages = calculateDocumentPages(
+        editor,
+        settingsRef.current.pageSize,
+        settingsRef.current.orientation
+      );
+      setTotalPagesCount(docPages.length);
+    }
+  }, [editor]);
+
+  const handleTogglePageCalcMode = useCallback(() => {
+    const current = settings.pageCalcMode || (totalPagesCount >= 20 ? 'manual' : 'auto');
+    const next = current === 'auto' ? 'manual' : 'auto';
+    handleUpdateSettings({ pageCalcMode: next });
+    if (next === 'auto') {
+      setTimeout(() => {
+        handleRecalculatePages();
+      }, 50);
+    }
+  }, [settings.pageCalcMode, totalPagesCount, handleUpdateSettings, handleRecalculatePages]);
 
   const handleCleanLocalStorage = useCallback(() => {
     try {
@@ -1018,6 +1213,7 @@ export default function App() {
             onApplyFormatPainter={handleApplyFormatPainter}
             autoCorrectEnabled={autoCorrectEnabled}
             onToggleAutoCorrect={handleToggleAutoCorrect}
+            totalPages={totalPagesCount}
           />
         </div>
       )}
@@ -1052,6 +1248,8 @@ export default function App() {
               handleUpdateSettings({ isFocusMode: false });
             }
           }}
+          totalPages={totalPagesCount}
+          activePage={activePageNumber}
         />
 
         {/* SEO Check Sidebar (Toggled via Analyze SEO button) */}
@@ -1081,6 +1279,17 @@ export default function App() {
                 }
                 handleUpdateSettings({ enableTableHandle: enabled });
               }}
+            />
+          </Suspense>
+        )}
+
+        {/* Table Tools Right Toolbar (Toggled via Table Tools button in Table tab) */}
+        {settings.showTableToolsPane && (
+          <Suspense fallback={<SidebarLoadingFallback />}>
+            <TableToolsSidebar
+              editor={editor}
+              themeMode={effectiveThemeMode}
+              onClose={() => handleUpdateSettings({ showTableToolsPane: false })}
             />
           </Suspense>
         )}
@@ -1215,6 +1424,13 @@ export default function App() {
         onToggleNavigation={() =>
           handleUpdateSettings({ showNavigationPane: !settings.showNavigationPane })
         }
+        isSaved={isSaved}
+        saveStatus={saveStatus}
+        saveErrorMessage={saveErrorMessage}
+        onClearCache={handleClearCache}
+        onRetrySave={handleRetrySave}
+        onTogglePageCalcMode={handleTogglePageCalcMode}
+        onRecalculatePages={handleRecalculatePages}
       />
 
       {/* Modals */}

@@ -82,6 +82,23 @@ export const HyperLinkSidebar: React.FC<HyperLinkSidebarProps> = ({
 
     const attrs = editor.getAttributes('link');
     const isLinkActive = editor.isActive('link');
+    const isImageActive = editor.isActive('image');
+
+    if (isImageActive) {
+      if (attrs.href) {
+        setLinkUrl(attrs.href);
+      }
+      setDisplayText('[Linked Image]');
+      setOpenInNewWindow(attrs.target === '_blank');
+      const rel = attrs.rel || '';
+      setRelNoFollow(rel.includes('nofollow'));
+      setRelSponsored(rel.includes('sponsored'));
+      setRelUgc(rel.includes('ugc'));
+      setTitleAttr(attrs.title || '');
+      setAriaLabel(attrs['aria-label'] || '');
+      setCheckResult(null);
+      return;
+    }
 
     if (isLinkActive && attrs.href) {
       setLinkUrl(attrs.href);
@@ -172,6 +189,18 @@ export const HyperLinkSidebar: React.FC<HyperLinkSidebarProps> = ({
     ].filter(Boolean);
     const rel = relParts.length > 0 ? relParts.join(' ') : null;
 
+    // If an image is selected, apply link directly to the image node without replacing the image!
+    if (editor.isActive('image')) {
+      editor
+        .chain()
+        .focus()
+        .setLink({ href: finalUrl, target, rel })
+        .run();
+      setApplyFeedback(true);
+      setTimeout(() => setApplyFeedback(false), 2000);
+      return;
+    }
+
     const { from, to } = editor.state.selection;
     const hasSelection = from !== to;
     const originalSelectedText = hasSelection
@@ -235,6 +264,18 @@ export const HyperLinkSidebar: React.FC<HyperLinkSidebarProps> = ({
   // Remove Link button
   const handleRemoveLink = () => {
     if (!editor) return;
+    if (editor.isActive('image')) {
+      editor.chain().focus().unsetLink().run();
+      setLinkUrl('');
+      setOpenInNewWindow(false);
+      setRelNoFollow(false);
+      setRelSponsored(false);
+      setRelUgc(false);
+      setTitleAttr('');
+      setAriaLabel('');
+      setCheckResult(null);
+      return;
+    }
     editor.chain().focus().extendMarkRange('link').unsetLink().run();
     setLinkUrl('');
     setOpenInNewWindow(false);
@@ -322,6 +363,19 @@ export const HyperLinkSidebar: React.FC<HyperLinkSidebarProps> = ({
 
       {/* 2. Scrollable Body matching Photo 2 */}
       <div className="flex-1 overflow-y-auto p-4 space-y-3.5 text-xs">
+        {/* Linked Image Edit Mode Notice */}
+        {editor && editor.isActive('image') && (
+          <div className="p-2.5 bg-blue-50/90 border border-blue-200 rounded-md text-blue-900 flex items-start space-x-2">
+            <span className="text-sm">🖼️</span>
+            <div>
+              <p className="font-semibold text-xs text-blue-950">Linked Image Mode</p>
+              <p className="text-[11px] text-blue-800 leading-tight mt-0.5">
+                The selected element is an image. Updating or removing the link will not replace or delete the image.
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* Text to display field */}
         <div className="space-y-1">
           <label className="block text-xs font-medium text-neutral-600">

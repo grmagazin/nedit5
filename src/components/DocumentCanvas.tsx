@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { Editor, EditorContent } from '@tiptap/react';
 import { DocumentSettings } from '../types';
 import { InteractiveRuler } from './InteractiveRuler';
@@ -24,6 +24,8 @@ interface DocumentCanvasProps {
   onApplyFormatPainter?: () => void;
   onCancelFormatPainter?: () => void;
   onFocusLayoutTab?: () => void;
+  totalPages?: number;
+  activePage?: number;
 }
 
 export const DocumentCanvas: React.FC<DocumentCanvasProps> = ({
@@ -34,13 +36,35 @@ export const DocumentCanvas: React.FC<DocumentCanvasProps> = ({
   onApplyFormatPainter,
   onCancelFormatPainter,
   onFocusLayoutTab,
+  totalPages,
+  activePage,
 }) => {
-  // Real multi-page calculation for accurate dynamic header/footer page counters
-  const calculatedPages = useMemo(() => {
-    return calculateDocumentPages(editor, settings.pageSize, settings.orientation);
-  }, [editor?.state.doc, settings.pageSize, settings.orientation]);
-  const realTotalPages = Math.max(1, calculatedPages.length);
-  const realCurrentPage = calculatedPages.find((p) => p.isCurrent)?.pageNumber || 1;
+  // Smart multi-page calculation:
+  // Decoupled from keystrokes to eliminate layout thrashing during fast typing.
+  const [debouncedPages, setDebouncedPages] = useState<any[]>([]);
+  const pageCalcTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    // If in manual calculation mode or > 20 pages, do not auto-recalculate on every doc change
+    if (settings.pageCalcMode === 'manual' || (totalPages && totalPages >= 20)) {
+      return;
+    }
+
+    if (pageCalcTimerRef.current) clearTimeout(pageCalcTimerRef.current);
+    pageCalcTimerRef.current = setTimeout(() => {
+      if (editor && !editor.isDestroyed) {
+        const pages = calculateDocumentPages(editor, settings.pageSize, settings.orientation);
+        setDebouncedPages(pages);
+      }
+    }, 600);
+
+    return () => {
+      if (pageCalcTimerRef.current) clearTimeout(pageCalcTimerRef.current);
+    };
+  }, [editor?.state.doc, settings.pageSize, settings.orientation, settings.pageCalcMode, totalPages]);
+
+  const realTotalPages = totalPages || Math.max(1, debouncedPages.length);
+  const realCurrentPage = activePage || debouncedPages.find((p: any) => p.isCurrent)?.pageNumber || 1;
 
   // Page dimension calculations (standard 96 DPI screen resolution)
   const pageDimensions = useMemo(() => {
@@ -271,11 +295,12 @@ export const DocumentCanvas: React.FC<DocumentCanvasProps> = ({
 
     const handleMouseDown = (e: MouseEvent) => {
       const pmEl = document.querySelector('.ProseMirror');
-      const target = e.target as HTMLElement | null;
-      const table = target?.closest('table') as HTMLElement | null;
+      const targetNode = e.target as Node | null;
+      const target = (targetNode instanceof Element ? targetNode : targetNode?.parentElement) as HTMLElement | null;
+      const table = target?.closest ? (target.closest('table') as HTMLElement | null) : null;
       const isResizeCursor = pmEl?.classList.contains('resize-cursor');
-      const isResizeHandle = target?.classList.contains('column-resize-handle');
-      const isDragHandle = target?.closest('.table-drag-handle');
+      const isResizeHandle = target?.classList?.contains('column-resize-handle');
+      const isDragHandle = target?.closest ? target.closest('.table-drag-handle') : null;
 
       if ((isResizeCursor || isResizeHandle) && table) {
         document.body.classList.add('table-col-resizing');
@@ -287,8 +312,9 @@ export const DocumentCanvas: React.FC<DocumentCanvasProps> = ({
     };
 
     const handleDragStart = (e: DragEvent) => {
-      const target = e.target as HTMLElement | null;
-      const table = target?.closest('table') as HTMLElement | null;
+      const targetNode = e.target as Node | null;
+      const target = (targetNode instanceof Element ? targetNode : targetNode?.parentElement) as HTMLElement | null;
+      const table = target?.closest ? (target.closest('table') as HTMLElement | null) : null;
       if (table) {
         activeTable = table;
         table.classList.add('dragging');
@@ -441,6 +467,12 @@ export const DocumentCanvas: React.FC<DocumentCanvasProps> = ({
       document.querySelector('[data-word-modal="true"], .word-modal-backdrop, #word-file-backstage, .file-backstage-container')
     ) {
       return;
+    }
+    const targetNode = e.target as Node | null;
+    const target = (targetNode instanceof Element ? targetNode : targetNode?.parentElement) as HTMLElement | null;
+    const isImage = target?.tagName === 'IMG' || !!(target?.closest ? target.closest('img') : null);
+    if (isImage) {
+      onUpdateSettings({ linkedImageMode: true });
     }
     e.preventDefault();
     setContextMenu({
@@ -721,9 +753,23 @@ export const DocumentCanvas: React.FC<DocumentCanvasProps> = ({
               settings.showParagraphMarks ? 'word-paragraph-marks-active' : ''
             }`}
             onClickCapture={(event) => {
-              const target = event.target as HTMLElement | null;
-              const link = target?.closest('a') as HTMLAnchorElement | null;
+              const targetNode = event.target as Node | null;
+              const target = (targetNode instanceof Element ? targetNode : targetNode?.parentElement) as HTMLElement | null;
+              const isImage = target?.tagName === 'IMG' || !!(target?.closest ? target.closest('img') : null);
+              const link = target?.closest ? (target.closest('a') as HTMLAnchorElement | null) : null;
+              
+              // If clicked an image (even if inside <a>), allow Image Edit Mode!
+              // The link manager suspends intervention for this active image.
+              if (isImage) {
+                return;
+              }
+
               if (!link) return;
+
+              // Deactivate linkedImageMode when regular link is clicked
+              if (settings.linkedImageMode) {
+                onUpdateSettings({ linkedImageMode: false });
+              }
 
               const mode = settings.hyperLinkMode || 'navigate';
 
@@ -754,7 +800,7 @@ export const DocumentCanvas: React.FC<DocumentCanvasProps> = ({
               }
 
               // Open hyperlink editor in right toolbar
-              onUpdateSettings({ showHyperLinkPane: true });
+              onUpdateSettings({ showHyperLinkPane: true, linkedImageMode: false });
             }}
           >
             <EditorContent editor={editor} />
@@ -822,6 +868,8 @@ export const DocumentCanvas: React.FC<DocumentCanvasProps> = ({
         position={{ x: contextMenu.x, y: contextMenu.y }}
         onClose={() => setContextMenu((prev) => ({ ...prev, isOpen: false }))}
         onOpenLinkModal={() => setShowLinkModal(true)}
+        onOpenImageWizard={() => onUpdateSettings({ showImageWizardPane: true, showHyperLinkPane: false })}
+        linkedImageMode={settings.linkedImageMode}
       />
 
       {/* Insert Hyperlink Modal (Triggered from Context Menu) */}
@@ -835,7 +883,10 @@ export const DocumentCanvas: React.FC<DocumentCanvasProps> = ({
       {/* Floating Image Click Menu (Auto-appears when clicking an image, hides when clicking elsewhere) */}
       <ImageClickMenu
         editor={editor}
-        onOpenImageWizard={() => onUpdateSettings({ showImageWizardPane: true })}
+        onOpenImageWizard={() => onUpdateSettings({ showImageWizardPane: true, showHyperLinkPane: false })}
+        onSetLinkedImageMode={(active) => onUpdateSettings({ linkedImageMode: active })}
+        onEditLink={() => onUpdateSettings({ showHyperLinkPane: true })}
+        onDeselect={() => onUpdateSettings({ linkedImageMode: false })}
       />
 
       {/* Floating HyperLink Interaction & Mode Tooltip Overlay */}

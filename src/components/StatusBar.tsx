@@ -7,7 +7,9 @@ import {
   Globe, 
   Minus, 
   Plus,
-  Sparkles
+  Sparkles,
+  AlertTriangle,
+  RotateCw,
 } from 'lucide-react';
 
 interface StatusBarProps {
@@ -18,6 +20,13 @@ interface StatusBarProps {
   totalPages?: number;
   activePage?: number;
   onToggleNavigation?: () => void;
+  isSaved?: boolean;
+  saveStatus?: 'saved' | 'saving' | 'failed';
+  saveErrorMessage?: string | null;
+  onClearCache?: () => void;
+  onRetrySave?: () => void;
+  onTogglePageCalcMode?: () => void;
+  onRecalculatePages?: () => void;
 }
 
 export const StatusBar: React.FC<StatusBarProps> = ({
@@ -28,6 +37,13 @@ export const StatusBar: React.FC<StatusBarProps> = ({
   totalPages = 1,
   activePage = 1,
   onToggleNavigation,
+  isSaved = true,
+  saveStatus = 'saved',
+  saveErrorMessage,
+  onClearCache,
+  onRetrySave,
+  onTogglePageCalcMode,
+  onRecalculatePages,
 }) => {
   const effectiveThemeMode = settings.themeMode || (settings.isDarkMode ? 'fullDark' : 'light');
   const isDarkFooter = effectiveThemeMode === 'fullDark' || effectiveThemeMode === 'canvasDark';
@@ -83,6 +99,43 @@ export const StatusBar: React.FC<StatusBarProps> = ({
           {stats.words} {stats.words === 1 ? 'word' : 'words'}
         </button>
 
+        {/* Smart Page Calculation Mode (Auto / Manual toggle & 10+/20+ page warning) */}
+        {totalPages >= 20 ? (
+          <button
+            onClick={onRecalculatePages}
+            title="Document has 20+ pages: Manual Page Calculation active for maximum speed. Click to Recalculate!"
+            className="px-1.5 py-0.5 rounded bg-amber-400/20 text-amber-200 border border-amber-400/40 cursor-pointer flex items-center space-x-1 font-medium"
+          >
+            <span>⚡ Calc: Manual (20+ pgs)</span>
+            <RotateCw size={10} className="hover:rotate-180 transition-transform" />
+          </button>
+        ) : totalPages >= 10 && settings.pageCalcMode !== 'manual' ? (
+          <button
+            onClick={() => onUpdateSettings({ pageCalcMode: 'manual' })}
+            title="10+ pages detected. Click to switch to Manual Page Calculation for maximum speed!"
+            className="px-1.5 py-0.5 rounded bg-amber-400/15 text-amber-200 border border-amber-300/30 cursor-pointer flex items-center space-x-1"
+          >
+            <span>💡 10+ pgs: Switch to Manual</span>
+          </button>
+        ) : (
+          <button
+            onClick={settings.pageCalcMode === 'manual' ? onRecalculatePages : onTogglePageCalcMode}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              onTogglePageCalcMode?.();
+            }}
+            title={
+              settings.pageCalcMode === 'manual'
+                ? 'Manual Page Calculation (Click to Recalculate, Right-click for Auto)'
+                : 'Auto Page Calculation (Click to switch to Manual mode)'
+            }
+            className={`${hoverBgClass} px-1.5 py-0.5 rounded cursor-pointer transition-colors text-[10.5px] flex items-center space-x-1`}
+          >
+            <span>{settings.pageCalcMode === 'manual' ? 'Calc: Manual' : 'Calc: Auto'}</span>
+            {settings.pageCalcMode === 'manual' && <RotateCw size={10} />}
+          </button>
+        )}
+
         <div className={`hidden sm:flex items-center space-x-1 ${hoverBgClass} px-1.5 py-0.5 rounded cursor-pointer transition-colors`}>
           <Check size={11} className="text-emerald-400" />
           <span className="text-[10px]">No proofing errors</span>
@@ -93,30 +146,73 @@ export const StatusBar: React.FC<StatusBarProps> = ({
         </span>
       </div>
 
-      {/* Center section: Support App & Powered by Gemini Credits */}
-      <div className="flex items-center justify-center space-x-1.5">
-        <a
-          href="https://grmagazin.blogspot.com/p/donate.html"
-          target="_blank"
-          rel="noopener noreferrer"
-          className={`${hoverBgClass} px-2 py-0.5 rounded cursor-pointer transition-colors text-[11px] font-medium flex items-center`}
-          title="Support App (Opens in a new tab)"
-        >
-          ❤️ Support App
-        </a>
+      {/* Center section: Support App & Powered by Gemini Credits OR Prominent Save Failure Warning */}
+      <div className="flex items-center justify-center space-x-2">
+        {saveStatus === 'failed' ? (
+          /* High-visibility Save Failure Warning with Immediate Cache Clearing */
+          <div className="flex items-center space-x-1.5 bg-red-600 text-white font-semibold px-2 py-0.5 rounded shadow-md border border-red-300 text-[11px] animate-pulse">
+            <AlertTriangle size={12} className="shrink-0 text-amber-200" />
+            <span>Save Failed (Storage Full)</span>
+            <button
+              onClick={onClearCache}
+              title="Clear temporary storage and old snapshots to immediately free disk space"
+              className="ml-1 px-1.5 py-0.5 bg-white text-red-700 hover:bg-neutral-100 rounded text-[10px] font-bold cursor-pointer transition-colors shadow-xs"
+            >
+              🧹 Clear Cache
+            </button>
+            {onRetrySave && (
+              <button
+                onClick={onRetrySave}
+                title="Retry saving document"
+                className="px-1.5 py-0.5 bg-red-800 hover:bg-red-900 text-white rounded text-[10px] font-bold cursor-pointer transition-colors"
+              >
+                🔄 Retry
+              </button>
+            )}
+          </div>
+        ) : (
+          <>
+            <a
+              href="https://grmagazin.blogspot.com/p/donate.html"
+              target="_blank"
+              rel="noopener noreferrer"
+              className={`${hoverBgClass} px-2 py-0.5 rounded cursor-pointer transition-colors text-[11px] font-medium flex items-center`}
+              title="Support App (Opens in a new tab)"
+            >
+              ❤️ Support App
+            </a>
 
-        <span className={`text-[10px] ${subTextColor} select-none opacity-60`}>•</span>
+            <span className={`text-[10px] ${subTextColor} select-none opacity-60`}>•</span>
 
-        <a
-          href="https://aistudio.google.com/"
-          target="_blank"
-          rel="noopener noreferrer"
-          className={`${hoverBgClass} px-2 py-0.5 rounded cursor-pointer transition-colors text-[11px] font-medium flex items-center space-x-1`}
-          title="Created in Google ai Studio"
-        >
-          <Sparkles size={11} className={isDarkFooter ? 'text-amber-400' : isSepiaFooter ? 'text-amber-300' : 'text-amber-300'} />
-          <span>Powered by Gemini</span>
-        </a>
+            <a
+              href="https://aistudio.google.com/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className={`${hoverBgClass} px-2 py-0.5 rounded cursor-pointer transition-colors text-[11px] font-medium flex items-center space-x-1`}
+              title="Created in Google ai Studio"
+            >
+              <Sparkles size={11} className={isDarkFooter ? 'text-amber-400' : isSepiaFooter ? 'text-amber-300' : 'text-amber-300'} />
+              <span>Powered by Gemini</span>
+            </a>
+
+            <span className={`text-[10px] ${subTextColor} select-none opacity-60`}>•</span>
+
+            {/* Discreet Save Indicator */}
+            {saveStatus === 'saving' ? (
+              <span className="text-[10.5px] opacity-80 flex items-center space-x-1 font-medium text-amber-300">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping inline-block" />
+                <span>Saving...</span>
+              </span>
+            ) : isSaved ? (
+              <span className="hidden lg:flex items-center space-x-1 text-[10px] opacity-80 text-emerald-300">
+                <Check size={11} className="text-emerald-400" />
+                <span>Saved</span>
+              </span>
+            ) : (
+              <span className="text-[10px] opacity-70 italic text-amber-200">Unsaved changes</span>
+            )}
+          </>
+        )}
       </div>
 
       {/* Right side: View modes, Zoom slider & percentage */}

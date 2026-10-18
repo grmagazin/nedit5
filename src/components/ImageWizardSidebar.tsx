@@ -12,6 +12,9 @@ import {
   Check,
   Camera,
   Download,
+  ExternalLink,
+  Save,
+  Link2,
 } from 'lucide-react';
 const ScreenCaptureTool = React.lazy(() =>
   import('./ScreenCaptureTool').then((m) => ({ default: m.ScreenCaptureTool }))
@@ -173,8 +176,20 @@ export const ImageWizardSidebar: React.FC<ImageWizardSidebarProps> = ({ editor, 
   // Web Optimization options
   const [format, setFormat] = useState<'WebP' | 'JPG' | 'PNG'>('WebP');
   const [qualityPercent, setQualityPercent] = useState<number>(80);
+
+  // Individual parameter states & saved baselines for 1-parameter instant updates
+  const [imageLink, setImageLink] = useState<string>('');
+  const [savedImageLink, setSavedImageLink] = useState<string>('');
+
   const [altText, setAltText] = useState<string>('');
+  const [savedAltText, setSavedAltText] = useState<string>('');
+
   const [caption, setCaption] = useState<string>('');
+  const [savedCaption, setSavedCaption] = useState<string>('');
+
+  const isLinkModified = imageLink !== savedImageLink;
+  const isAltModified = altText !== savedAltText;
+  const isCaptionModified = caption !== savedCaption;
 
   // Status message
   const [appliedMessage, setAppliedMessage] = useState<string | null>(null);
@@ -269,9 +284,18 @@ export const ImageWizardSidebar: React.FC<ImageWizardSidebarProps> = ({ editor, 
         const attrs = editor.getAttributes('image');
         if (attrs.src && attrs.src !== imageSrc) {
           setImageSrc(attrs.src);
-          if (attrs.alt) setAltText(attrs.alt);
-          if (attrs.title) setCaption(attrs.title);
         }
+        const currentAlt = attrs.alt || '';
+        const currentTitle = attrs.title || '';
+        setAltText(currentAlt);
+        setSavedAltText(currentAlt);
+        setCaption(currentTitle);
+        setSavedCaption(currentTitle);
+
+        const linkAttrs = editor.getAttributes('link');
+        const currentLink = linkAttrs?.href || '';
+        setImageLink(currentLink);
+        setSavedImageLink(currentLink);
       }
     };
 
@@ -416,16 +440,37 @@ export const ImageWizardSidebar: React.FC<ImageWizardSidebarProps> = ({ editor, 
             finalDataUrl = imageSrc;
           }
 
-          // Insert or update in TipTap
-          editor
-            .chain()
-            .focus()
-            .setImage({
-              src: finalDataUrl,
-              alt: altText || undefined,
-              title: caption || undefined,
-            })
-            .run();
+          // Check if current image has an existing link to preserve or if user entered one
+          const currentLinkAttrs = editor.isActive('link') ? editor.getAttributes('link') : null;
+          const finalLinkHref = imageLink.trim() || currentLinkAttrs?.href;
+
+          // Insert or update in TipTap, keeping link intact if present
+          if (finalLinkHref) {
+            editor
+              .chain()
+              .focus()
+              .setImage({
+                src: finalDataUrl,
+                alt: altText || undefined,
+                title: caption || undefined,
+              })
+              .setLink({ ...currentLinkAttrs, href: finalLinkHref })
+              .run();
+          } else {
+            editor
+              .chain()
+              .focus()
+              .setImage({
+                src: finalDataUrl,
+                alt: altText || undefined,
+                title: caption || undefined,
+              })
+              .run();
+          }
+
+          setSavedImageLink(finalLinkHref || '');
+          setSavedAltText(altText);
+          setSavedCaption(caption);
 
           // Show applied confirmation
           setAppliedMessage(`Optimized (${format} ${qualityPercent}%, ${outWidth}px)`);
@@ -434,7 +479,58 @@ export const ImageWizardSidebar: React.FC<ImageWizardSidebarProps> = ({ editor, 
       };
 
       img.onerror = () => {
-        // Direct insertion fallback
+        const currentLinkAttrs = editor.isActive('link') ? editor.getAttributes('link') : null;
+        const finalLinkHref = imageLink.trim() || currentLinkAttrs?.href;
+        if (finalLinkHref) {
+          editor
+            .chain()
+            .focus()
+            .setImage({
+              src: imageSrc,
+              alt: altText || undefined,
+              title: caption || undefined,
+            })
+            .setLink({
+              href: finalLinkHref,
+              target: currentLinkAttrs?.target,
+              rel: currentLinkAttrs?.rel,
+            })
+            .run();
+        } else {
+          editor
+            .chain()
+            .focus()
+            .setImage({
+              src: imageSrc,
+              alt: altText || undefined,
+              title: caption || undefined,
+            })
+            .run();
+        }
+        setAppliedMessage('Inserted image into document');
+        setTimeout(() => setAppliedMessage(null), 3000);
+      };
+
+      img.src = imageSrc;
+    } catch {
+      const currentLinkAttrs = editor.isActive('link') ? editor.getAttributes('link') : null;
+      const finalLinkHref = imageLink.trim() || currentLinkAttrs?.href;
+      if (finalLinkHref) {
+        editor
+          .chain()
+          .focus()
+          .setImage({
+            src: imageSrc,
+            alt: altText || undefined,
+            title: caption || undefined,
+          })
+          .setLink({
+            href: finalLinkHref,
+            target: currentLinkAttrs?.target,
+            rel: currentLinkAttrs?.rel,
+          })
+          .run();
+      } else {
         editor
           .chain()
           .focus()
@@ -444,22 +540,94 @@ export const ImageWizardSidebar: React.FC<ImageWizardSidebarProps> = ({ editor, 
             title: caption || undefined,
           })
           .run();
-        setAppliedMessage('Inserted image into document');
-        setTimeout(() => setAppliedMessage(null), 3000);
-      };
+      }
+    }
+  };
 
-      img.src = imageSrc;
-    } catch {
+  // 1. Immediate Save Image Link (1-parameter update, no format re-encoding)
+  const handleSaveImageLink = () => {
+    if (!editor) return;
+    const trimmed = imageLink.trim();
+    if (editor.isActive('image')) {
+      if (trimmed) {
+        editor.chain().focus().setLink({ href: trimmed }).run();
+      } else {
+        editor.chain().focus().unsetLink().run();
+      }
+    }
+    setSavedImageLink(trimmed);
+    setAppliedMessage(trimmed ? '🔗 Image link updated and saved!' : '🔗 Image link removed');
+    setTimeout(() => setAppliedMessage(null), 3000);
+  };
+
+  // 2. Immediate Save Alt Text (SEO) (1-parameter update, no format re-encoding)
+  const handleSaveAltText = () => {
+    if (!editor) return;
+    if (editor.isActive('image')) {
+      editor.chain().focus().updateAttributes('image', { alt: altText || undefined }).run();
+    }
+    setSavedAltText(altText);
+    setAppliedMessage('🏷️ Alt text (SEO) saved to image!');
+    setTimeout(() => setAppliedMessage(null), 3000);
+  };
+
+  // 3. Immediate Save Caption (1-parameter update, no format re-encoding)
+  const handleSaveCaption = () => {
+    if (!editor) return;
+    if (editor.isActive('image')) {
+      editor.chain().focus().updateAttributes('image', { title: caption || undefined }).run();
+    }
+    setSavedCaption(caption);
+    setAppliedMessage('💬 Caption saved to image!');
+    setTimeout(() => setAppliedMessage(null), 3000);
+  };
+
+  // 4. Insert image as External link (preserves original external URL without base64 conversion)
+  const handleInsertExternalLink = () => {
+    if (!editor) return;
+
+    let externalUrl = '';
+    if (urlInput && (urlInput.startsWith('http://') || urlInput.startsWith('https://'))) {
+      externalUrl = urlInput.trim();
+    } else if (imageSrc && (imageSrc.startsWith('http://') || imageSrc.startsWith('https://'))) {
+      externalUrl = imageSrc.trim();
+    } else {
+      const entered = window.prompt('Enter external image URL (https://...):', urlInput || '');
+      if (!entered || !entered.trim()) return;
+      externalUrl = entered.trim();
+      setUrlInput(externalUrl);
+    }
+
+    const currentLink = imageLink.trim() || (editor.isActive('link') ? editor.getAttributes('link')?.href : '');
+
+    if (currentLink) {
       editor
         .chain()
         .focus()
         .setImage({
-          src: imageSrc,
+          src: externalUrl,
+          alt: altText || undefined,
+          title: caption || undefined,
+        })
+        .setLink({ href: currentLink })
+        .run();
+    } else {
+      editor
+        .chain()
+        .focus()
+        .setImage({
+          src: externalUrl,
           alt: altText || undefined,
           title: caption || undefined,
         })
         .run();
     }
+
+    setSavedImageLink(currentLink || '');
+    setSavedAltText(altText);
+    setSavedCaption(caption);
+    setAppliedMessage(`🌐 Inserted image as external link (${externalUrl})`);
+    setTimeout(() => setAppliedMessage(null), 3500);
   };
 
   // Reset to original HVAC sample or clear options
@@ -470,6 +638,10 @@ export const ImageWizardSidebar: React.FC<ImageWizardSidebarProps> = ({ editor, 
     setQualityPercent(80);
     setAltText('');
     setCaption('');
+    setImageLink('');
+    setSavedImageLink('');
+    setSavedAltText('');
+    setSavedCaption('');
   };
 
   // Delete image from document
@@ -700,32 +872,140 @@ export const ImageWizardSidebar: React.FC<ImageWizardSidebarProps> = ({ editor, 
             </div>
           </div>
 
-          {/* Alt Text (SEO) */}
+          {/* 1. Image Link (Before Alt Text) */}
           <div>
-            <label className="text-xs font-medium text-slate-700 mb-1.5 block">
-              Alt Text (SEO)
-            </label>
-            <input
-              type="text"
-              value={altText}
-              onChange={(e) => setAltText(e.target.value)}
-              placeholder="Describe the image..."
-              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-[#253468]"
-            />
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-xs font-medium text-slate-700 flex items-center space-x-1">
+                <Link2 size={12} className="text-slate-500" />
+                <span>Image Link</span>
+              </label>
+              <span
+                className={`text-[10px] font-semibold px-1.5 py-0.2 rounded transition-colors ${
+                  isLinkModified
+                    ? 'text-orange-700 bg-orange-100 border border-orange-300'
+                    : 'text-emerald-700 bg-emerald-100 border border-emerald-300'
+                }`}
+              >
+                {isLinkModified ? 'Unsaved' : 'Saved'}
+              </span>
+            </div>
+            <div className="flex items-center space-x-1.5">
+              <input
+                type="text"
+                value={imageLink}
+                onChange={(e) => setImageLink(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleSaveImageLink()}
+                placeholder="https://example.com/target-link"
+                className={`flex-1 px-2.5 py-1.5 rounded-lg text-xs text-slate-800 placeholder-slate-400 focus:outline-none transition-all ${
+                  isLinkModified
+                    ? 'border-2 border-orange-500 bg-orange-50/20 focus:border-orange-600'
+                    : 'border-2 border-emerald-500 bg-white focus:border-emerald-600'
+                }`}
+              />
+              <button
+                type="button"
+                onClick={handleSaveImageLink}
+                title="Apply & save image link immediately"
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold shrink-0 cursor-pointer transition-all shadow-2xs flex items-center space-x-1 ${
+                  isLinkModified
+                    ? 'bg-orange-500 hover:bg-orange-600 text-white border border-orange-600'
+                    : 'bg-emerald-600 hover:bg-emerald-700 text-white border border-emerald-600'
+                }`}
+              >
+                {isLinkModified ? <Save size={12} /> : <Check size={12} />}
+                <span>SAVE</span>
+              </button>
+            </div>
           </div>
 
-          {/* Caption */}
+          {/* 2. Alt Text (SEO) */}
           <div>
-            <label className="text-xs font-medium text-slate-700 mb-1.5 block">
-              Caption
-            </label>
-            <input
-              type="text"
-              value={caption}
-              onChange={(e) => setCaption(e.target.value)}
-              placeholder="Caption shown below image"
-              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-[#253468]"
-            />
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-xs font-medium text-slate-700">
+                Alt Text (SEO)
+              </label>
+              <span
+                className={`text-[10px] font-semibold px-1.5 py-0.2 rounded transition-colors ${
+                  isAltModified
+                    ? 'text-orange-700 bg-orange-100 border border-orange-300'
+                    : 'text-emerald-700 bg-emerald-100 border border-emerald-300'
+                }`}
+              >
+                {isAltModified ? 'Unsaved' : 'Saved'}
+              </span>
+            </div>
+            <div className="flex items-center space-x-1.5">
+              <input
+                type="text"
+                value={altText}
+                onChange={(e) => setAltText(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleSaveAltText()}
+                placeholder="Describe image for SEO..."
+                className={`flex-1 px-2.5 py-1.5 rounded-lg text-xs text-slate-800 placeholder-slate-400 focus:outline-none transition-all ${
+                  isAltModified
+                    ? 'border-2 border-orange-500 bg-orange-50/20 focus:border-orange-600'
+                    : 'border-2 border-emerald-500 bg-white focus:border-emerald-600'
+                }`}
+              />
+              <button
+                type="button"
+                onClick={handleSaveAltText}
+                title="Apply & save alt text immediately"
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold shrink-0 cursor-pointer transition-all shadow-2xs flex items-center space-x-1 ${
+                  isAltModified
+                    ? 'bg-orange-500 hover:bg-orange-600 text-white border border-orange-600'
+                    : 'bg-emerald-600 hover:bg-emerald-700 text-white border border-emerald-600'
+                }`}
+              >
+                {isAltModified ? <Save size={12} /> : <Check size={12} />}
+                <span>SAVE</span>
+              </button>
+            </div>
+          </div>
+
+          {/* 3. Caption */}
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-xs font-medium text-slate-700">
+                Caption
+              </label>
+              <span
+                className={`text-[10px] font-semibold px-1.5 py-0.2 rounded transition-colors ${
+                  isCaptionModified
+                    ? 'text-orange-700 bg-orange-100 border border-orange-300'
+                    : 'text-emerald-700 bg-emerald-100 border border-emerald-300'
+                }`}
+              >
+                {isCaptionModified ? 'Unsaved' : 'Saved'}
+              </span>
+            </div>
+            <div className="flex items-center space-x-1.5">
+              <input
+                type="text"
+                value={caption}
+                onChange={(e) => setCaption(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleSaveCaption()}
+                placeholder="Caption shown below image..."
+                className={`flex-1 px-2.5 py-1.5 rounded-lg text-xs text-slate-800 placeholder-slate-400 focus:outline-none transition-all ${
+                  isCaptionModified
+                    ? 'border-2 border-orange-500 bg-orange-50/20 focus:border-orange-600'
+                    : 'border-2 border-emerald-500 bg-white focus:border-emerald-600'
+                }`}
+              />
+              <button
+                type="button"
+                onClick={handleSaveCaption}
+                title="Apply & save caption immediately"
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold shrink-0 cursor-pointer transition-all shadow-2xs flex items-center space-x-1 ${
+                  isCaptionModified
+                    ? 'bg-orange-500 hover:bg-orange-600 text-white border border-orange-600'
+                    : 'bg-emerald-600 hover:bg-emerald-700 text-white border border-emerald-600'
+                }`}
+              >
+                {isCaptionModified ? <Save size={12} /> : <Check size={12} />}
+                <span>SAVE</span>
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -749,6 +1029,17 @@ export const ImageWizardSidebar: React.FC<ImageWizardSidebarProps> = ({ editor, 
         >
           <Wand2 size={14} />
           <span>Apply Optimization ({format} {qualityPercent}%)</span>
+        </button>
+
+        {/* New Button with Green Border: Insert image as External link */}
+        <button
+          type="button"
+          onClick={handleInsertExternalLink}
+          className="w-full bg-white hover:bg-emerald-50 text-emerald-800 font-semibold py-2 px-4 rounded-lg flex items-center justify-center space-x-2 text-xs border-2 border-emerald-600 shadow-xs cursor-pointer transition-colors"
+          title="Insert or keep this image linked as an external Web URL rather than embedding as base64"
+        >
+          <ExternalLink size={14} className="text-emerald-600" />
+          <span>Insert image as External link</span>
         </button>
 
         {/* Secondary Actions: Replace, Reset, Delete */}

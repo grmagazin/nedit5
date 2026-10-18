@@ -30,6 +30,8 @@ import {
   Underline as UnderlineIcon,
   Strikethrough,
   Link2,
+  Wand2,
+  Image as ImageIcon,
 } from 'lucide-react';
 
 interface EditorContextMenuProps {
@@ -38,6 +40,8 @@ interface EditorContextMenuProps {
   position: { x: number; y: number };
   onClose: () => void;
   onOpenLinkModal?: () => void;
+  onOpenImageWizard?: () => void;
+  linkedImageMode?: boolean;
 }
 
 type SubmenuType = 'format' | 'list' | 'spacing' | 'fontSize' | 'typography' | null;
@@ -48,6 +52,8 @@ export const EditorContextMenu: React.FC<EditorContextMenuProps> = ({
   position,
   onClose,
   onOpenLinkModal,
+  onOpenImageWizard,
+  linkedImageMode,
 }) => {
   const menuRef = useRef<HTMLDivElement>(null);
   const [activeSubmenu, setActiveSubmenu] = useState<SubmenuType>(null);
@@ -243,6 +249,40 @@ export const EditorContextMenu: React.FC<EditorContextMenuProps> = ({
       {/* COLUMN 1: LEFT COLUMN                                      */}
       {/* ========================================================= */}
       <div className={`w-[235px] p-2 flex flex-col justify-start relative ${isCol1Active ? 'z-30' : 'z-10'}`}>
+        {/* IMAGE ACTIONS (when image is active or linkedImageMode) */}
+        {(editor.isActive('image') || linkedImageMode) && (
+          <div className="mb-2 pb-2 border-b border-neutral-100 bg-emerald-50/50 p-1.5 rounded-md border border-emerald-200/60">
+            <div className="px-1 pb-1 text-[10px] font-bold text-emerald-800 tracking-wider uppercase flex items-center space-x-1">
+              <ImageIcon size={12} className="text-emerald-600" />
+              <span>Image Options</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                onClose();
+                onOpenImageWizard?.();
+              }}
+              className="flex items-center space-x-2 w-full px-2 py-1.5 rounded hover:bg-emerald-100/60 text-emerald-900 transition-colors text-left cursor-pointer text-xs font-medium"
+            >
+              <Wand2 size={13} className="text-emerald-600" />
+              <span>Open Image Wizard</span>
+            </button>
+            {editor.isActive('link') && (
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  onOpenLinkModal?.();
+                }}
+                className="flex items-center space-x-2 w-full px-2 py-1.5 rounded hover:bg-blue-100/60 text-blue-900 transition-colors text-left cursor-pointer text-xs font-medium mt-0.5"
+              >
+                <Link2 size={13} className="text-blue-600" />
+                <span>Edit Image Link</span>
+              </button>
+            )}
+          </div>
+        )}
+
         {/* Undo / Redo Header */}
         <div className="flex items-center justify-between px-2 py-1 pb-2 border-b border-neutral-100">
           <button

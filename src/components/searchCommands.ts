@@ -400,6 +400,48 @@ export const SEARCH_COMMANDS: SearchCommand[] = [
     },
   },
   {
+    id: 'convert-remove-empty-lines',
+    label: 'Remove Empty Lines',
+    description: 'Remove empty lines and merge 1-character lines into next line while preserving all formatting, images, and tables',
+    category: 'Formatting',
+    keywords: ['remove empty lines', 'empty lines', 'delete empty lines', 'merge single char', 'fold lines', 'compact lines'],
+    iconType: 'foldVertical',
+    action: async ({ editor, notify }) => {
+      if (!editor) return;
+      const { removeEmptyLinesAndOrphans } = await import('../utils/cleanEmptyLines');
+      const { emptyLinesRemoved, singleCharsMerged } = removeEmptyLinesAndOrphans(editor);
+      notify?.(`Remove empty lines: ${emptyLinesRemoved} lines removed, ${singleCharsMerged} characters joined.`);
+    },
+  },
+  {
+    id: 'convert-web-clean',
+    label: 'Web Clean (Keeps Tables)',
+    description: 'HTML Content Sanitizer: strips scripts, ads, trackers, and web noise while strictly keeping tables and typography intact',
+    category: 'Formatting',
+    keywords: ['web clean', 'article sanitizer', 'clean web html', 'sanitize html', 'clean article', 'keep tables'],
+    iconType: 'globe',
+    action: async ({ editor, notify }) => {
+      if (!editor) return;
+      const { executeWebClean } = await import('../utils/webJunkCleaner');
+      const res = executeWebClean(editor, { keepTables: true });
+      notify?.(`Web Clean: ${res.junkElementsRemoved} web noise removed (tables preserved, ${res.divsCleaned} divs cleaned).`);
+    },
+  },
+  {
+    id: 'convert-web-junk-clean',
+    label: 'Web Junk Clean (Unwraps Tables to Text)',
+    description: 'HTML Content Sanitizer: strips ads, web junk, and unwraps tables into clean text paragraphs',
+    category: 'Formatting',
+    keywords: ['web clean', 'web junk clean', 'article sanitizer', 'clean web html', 'unwrap tables', 'clean article'],
+    iconType: 'shieldCheck',
+    action: async ({ editor, notify }) => {
+      if (!editor) return;
+      const { executeWebJunkClean } = await import('../utils/webJunkCleaner');
+      const res = executeWebJunkClean(editor);
+      notify?.(`Web Junk Clean: ${res.junkElementsRemoved} web noise removed, ${res.tablesUnwrapped} tables unwrapped to text.`);
+    },
+  },
+  {
     id: 'highlight-yellow',
     label: 'Highlight Text (Yellow)',
     description: 'Apply bright yellow marker highlight to selection',

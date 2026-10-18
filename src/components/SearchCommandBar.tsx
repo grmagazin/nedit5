@@ -58,7 +58,9 @@ import {
   Plus,
   CornerDownLeft,
   Command as CommandIcon,
-  Check
+  Check,
+  FoldVertical,
+  ShieldCheck,
 } from 'lucide-react';
 import { DocumentSettings } from '../types';
 import { BackstageTab } from './FileBackstage';
@@ -336,6 +338,8 @@ export const SearchCommandBar: React.FC<SearchCommandBarProps> = ({
       case 'printer': return <Printer size={size} />;
       case 'download': return <Download size={size} />;
       case 'plus': return <Plus size={size} />;
+      case 'foldVertical': return <FoldVertical size={size} />;
+      case 'shieldCheck': return <ShieldCheck size={size} />;
       default: return <CommandIcon size={size} />;
     }
   };

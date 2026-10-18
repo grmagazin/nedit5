@@ -11,6 +11,7 @@ import {
   describeFormat,
 } from '../utils/formatPainter';
 import { cleanAllSpacing } from '../utils/spacingUtils';
+import { asyncSaveSnapshot, asyncGetAllSnapshots } from '../utils/indexedDbStorage';
 import {
   RibbonTab,
   PageMargin,
@@ -23,6 +24,7 @@ import {
   PageBorderStyle,
 } from '../types';
 import {
+  Calculator,
   Bold,
   Italic,
   Underline,
@@ -86,6 +88,8 @@ import {
   Trash2,
   TableProperties,
   Rows,
+  FoldVertical,
+  ShieldCheck,
   SquareDashed,
   Download,
   HelpCircle,
@@ -142,6 +146,7 @@ const VersionHistoryModal = React.lazy(() => import('./modals/VersionHistoryModa
 const ChartGeneratorModal = React.lazy(() => import('./modals/ChartGeneratorModal'));
 const SeoTab = React.lazy(() => import('./ribbon/tabs/SeoTab'));
 const HelpTab = React.lazy(() => import('./ribbon/tabs/HelpTab'));
+const ConvertTab = React.lazy(() => import('./ribbon/tabs/ConvertTab'));
 import { snapshotStore } from '../utils/snapshotStore';
 import { captureDocumentScreenSnapshot } from '../utils/screenSnapshot';
 
@@ -184,6 +189,7 @@ interface RibbonToolbarProps {
   onApplyFormatPainter?: () => void;
   autoCorrectEnabled?: boolean;
   onToggleAutoCorrect?: () => void;
+  totalPages?: number;
 }
 
 const RibbonToolbarComponent: React.FC<RibbonToolbarProps> = ({
@@ -205,6 +211,7 @@ const RibbonToolbarComponent: React.FC<RibbonToolbarProps> = ({
   onApplyFormatPainter,
   autoCorrectEnabled = false,
   onToggleAutoCorrect,
+  totalPages,
 }) => {
   const isRibbonCollapsed = settings.isRibbonCollapsed ?? false;
   const setIsRibbonCollapsed = (val: boolean | ((prev: boolean) => boolean)) => {
@@ -355,22 +362,24 @@ const RibbonToolbarComponent: React.FC<RibbonToolbarProps> = ({
     };
   }, [editor]);
 
-  // Snapshots & Version History
+  // Snapshots & Version History (Strictly capped at 6 versions max)
   const [snapshots, setSnapshots] = useState<DocumentSnapshot[]>(() => {
     try {
       const saved = localStorage.getItem('word_doc_snapshots');
       if (saved) return JSON.parse(saved);
     } catch {}
-    return [
-      {
-        id: 'rev-1',
-        name: 'Initial Draft Revision',
-        timestamp: 'Today, 09:30 AM',
-        htmlContent: '<p>Initial working draft revision...</p>',
-        wordCount: 142,
-      },
-    ];
+    return [];
   });
+
+  // Asynchronously sync snapshots from IndexedDB storage
+  useEffect(() => {
+    asyncGetAllSnapshots().then((list) => {
+      if (list && list.length > 0) {
+        setSnapshots(list);
+      }
+    });
+  }, []);
+
   const [showSaveSnapshotModal, setShowSaveSnapshotModal] = useState(false);
   const [snapshotTitle, setSnapshotTitle] = useState('');
   const [showVersionHistoryModal, setShowVersionHistoryModal] = useState(false);
@@ -466,11 +475,9 @@ const RibbonToolbarComponent: React.FC<RibbonToolbarProps> = ({
           wordCount,
           previewImage: capturedAreaUrl,
         };
-        const updated = [newSnap, ...snapshots];
+        const updated = [newSnap, ...snapshots].slice(0, 6);
         setSnapshots(updated);
-        try {
-          localStorage.setItem('word_doc_snapshots', JSON.stringify(updated.slice(0, 20)));
-        } catch {}
+        asyncSaveSnapshot(newSnap, 6);
       }
 
       setReviewNotification('📸 Area captured & sent to Image Wizard! Ready to resize & paste.');
@@ -711,305 +718,8 @@ const RibbonToolbarComponent: React.FC<RibbonToolbarProps> = ({
     { name: 'Deep Teal', color: '#0f766e' },
   ];
 
-  // Convert Tab Operations
-  const handleFixSpaces = () => {
-    if (!editor) return;
-    const { from, to, empty } = editor.state.selection;
-    if (!empty) {
-      const text = editor.state.doc.textBetween(from, to);
-      const fixed = text
-        .replace(/[ \t]{2,}/g, ' ')
-        .replace(/\s+([.,;:!?])/g, '$1')
-        .replace(/([.,;:!?])(?=[A-Za-z])/g, '$1 ');
-      editor.chain().focus().insertContent(fixed).run();
-    } else {
-      let html = editor.getHTML();
-      html = html
-        .replace(/(&nbsp;|\s){2,}/gi, ' ')
-        .replace(/\s+([.,;:!?])/g, '$1');
-      editor.commands.setContent(html);
-    }
-    setReviewNotification('Clean: Fixed spaces and normalized spacing.');
-    setTimeout(() => setReviewNotification(null), 3000);
-  };
 
-  const handleClearFormat = () => {
-    if (!editor) return;
-    editor.chain().focus().clearNodes().unsetAllMarks().run();
-    setReviewNotification('Clean: Formatting cleared.');
-    setTimeout(() => setReviewNotification(null), 3000);
-  };
 
-  const handleWebClean = () => {
-    if (!editor) return;
-    let html = editor.getHTML();
-    html = html.replace(/\s*style="[^"]*"/gi, '');
-    html = html.replace(/\s*class="[^"]*"/gi, '');
-    html = html.replace(/<!--[\s\S]*?-->/gi, '');
-    html = html.replace(/<o:[^>]*>[\s\S]*?<\/o:[^>]*>/gi, '');
-    html = html.replace(/<\/?(span|div)[^>]*>/gi, '');
-    html = html.replace(/<p>\s*(<br\s*\/?>)?\s*<\/p>/gi, '');
-    editor.commands.setContent(html);
-    setReviewNotification('Clean: Web formatting and clipboard artifacts removed.');
-    setTimeout(() => setReviewNotification(null), 3000);
-  };
-
-  const handleNormalize = () => {
-    if (!editor) return;
-    let html = editor.getHTML();
-    html = html.replace(/"([^"]*)"/g, '“$1”');
-    html = html.replace(/(\w)'(\w)/g, '$1’$2');
-    html = html.replace(/--/g, '—');
-    html = html.replace(/\.{3}/g, '…');
-    html = html.replace(/(<p>\s*<\/p>){2,}/gi, '<p></p>');
-    editor.commands.setContent(html);
-    setReviewNotification('Clean: Typography and paragraph spacing normalized.');
-    setTimeout(() => setReviewNotification(null), 3000);
-  };
-
-  const handleCleanWiki = () => {
-    if (!editor) return;
-    let html = editor.getHTML();
-    html = html.replace(/\[(?:\d+|citation needed|edit|note \d+|source)\]/gi, '');
-    html = html.replace(/<sup\b[^>]*class="[^"]*reference[^"]*"[^>]*>[\s\S]*?<\/sup>/gi, '');
-    html = html.replace(/<sup\b[^>]*>[\s\S]*?<\/sup>/gi, '');
-    editor.commands.setContent(html);
-    setReviewNotification('Clean: Wikipedia reference citations removed.');
-    setTimeout(() => setReviewNotification(null), 3000);
-  };
-
-  const handleMergeParagraphs = () => {
-    if (!editor) return;
-    const { from, to, empty } = editor.state.selection;
-    if (!empty) {
-      const text = editor.state.doc.textBetween(from, to, '\n');
-      const merged = text.split('\n').map((s) => s.trim()).filter(Boolean).join(' ');
-      editor.chain().focus().insertContent(merged).run();
-    } else {
-      let html = editor.getHTML();
-      html = html.replace(/<\/p>\s*<p>/gi, ' ');
-      editor.commands.setContent(html);
-    }
-    setReviewNotification('Structure: Paragraphs merged into flowing text.');
-    setTimeout(() => setReviewNotification(null), 3000);
-  };
-
-  const handleSplitSentences = () => {
-    if (!editor) return;
-    const { from, to, empty } = editor.state.selection;
-    if (!empty) {
-      const text = editor.state.doc.textBetween(from, to);
-      const split = text.replace(/([.!?])\s+(?=[A-Z0-9"“'‘])/g, '$1\n\n');
-      editor.chain().focus().insertContent(split).run();
-    } else {
-      let html = editor.getHTML();
-      html = html.replace(/([.!?])\s+(?=[A-Z0-9"“'‘])/g, '$1</p><p>');
-      editor.commands.setContent(html);
-    }
-    setReviewNotification('Structure: Text split into individual sentences.');
-    setTimeout(() => setReviewNotification(null), 3000);
-  };
-
-  const handleRemoveLinks = () => {
-    if (!editor) return;
-    const { from, to, empty } = editor.state.selection;
-    if (!empty) {
-      editor.chain().focus().unsetLink().run();
-    } else {
-      let html = editor.getHTML();
-      html = html.replace(/<a\b[^>]*>(.*?)<\/a>/gi, '$1');
-      editor.commands.setContent(html);
-    }
-    setReviewNotification('HTML: Removed links while preserving text.');
-    setTimeout(() => setReviewNotification(null), 3000);
-  };
-
-  const handleRemoveImages = () => {
-    if (!editor) return;
-    let html = editor.getHTML();
-    html = html.replace(/<img\b[^>]*>/gi, '');
-    html = html.replace(/<figure\b[^>]*>[\s\S]*?<\/figure>/gi, '');
-    editor.commands.setContent(html);
-    setReviewNotification('HTML: Removed all images from document.');
-    setTimeout(() => setReviewNotification(null), 3000);
-  };
-
-  const handleMakeResponsive = () => {
-    if (!editor) return;
-    let html = editor.getHTML();
-    html = html.replace(/<table\b([^>]*)>/gi, (_match, attrs) => {
-      const cleanAttrs = attrs
-        .replace(/\s*(width|height)="[^"]*"/gi, '')
-        .replace(/\s*style="[^"]*"/gi, '');
-      return `<table ${cleanAttrs} style="width: 100%; max-width: 100%; border-collapse: collapse;">`;
-    });
-    html = html.replace(/<img\b([^>]*)>/gi, (_match, attrs) => {
-      const cleanAttrs = attrs
-        .replace(/\s*(width|height)="[^"]*"/gi, '')
-        .replace(/\s*style="[^"]*"/gi, '');
-      return `<img ${cleanAttrs} style="max-width: 100%; height: auto; display: block;" />`;
-    });
-    editor.commands.setContent(html);
-    setReviewNotification('HTML: Responsive rules applied to tables & images.');
-    setTimeout(() => setReviewNotification(null), 3000);
-  };
-
-  const handleRemoveAttributes = () => {
-    if (!editor) return;
-    let html = editor.getHTML();
-    html = html.replace(/<([a-z0-9]+)\b([^>]*)>/gi, (_match, tag, attrs) => {
-      const lowerTag = tag.toLowerCase();
-      if (lowerTag === 'a') {
-        const hrefMatch = attrs.match(/href="([^"]*)"/i);
-        return hrefMatch ? `<a href="${hrefMatch[1]}">` : '<a>';
-      }
-      if (lowerTag === 'img') {
-        const srcMatch = attrs.match(/src="([^"]*)"/i);
-        const altMatch = attrs.match(/alt="([^"]*)"/i);
-        return `<img ${srcMatch ? srcMatch[0] : ''} ${altMatch ? altMatch[0] : ''} />`;
-      }
-      return `<${tag}>`;
-    });
-    editor.commands.setContent(html);
-    setReviewNotification('HTML: Removed all HTML attributes (style, class, id, width).');
-    setTimeout(() => setReviewNotification(null), 3000);
-  };
-
-  const handleRemoveTags = () => {
-    if (!editor) return;
-    let html = editor.getHTML();
-    html = html.replace(/<\/?(span|div|font|center|section|article|header|footer|aside)\b[^>]*>/gi, '');
-    editor.commands.setContent(html);
-    setReviewNotification('HTML: Cleaned wrapper tags (span, div, font, center).');
-    setTimeout(() => setReviewNotification(null), 3000);
-  };
-
-  const handleTableToDiv = () => {
-    if (!editor) return;
-
-    const { state } = editor;
-    const { selection } = state;
-
-    // 1. Locate selected table or table containing cursor
-    let targetTablePos: number | null = null;
-    let targetTableNode: any = null;
-
-    for (let d = selection.$from.depth; d > 0; d--) {
-      const node = selection.$from.node(d);
-      if (node.type.name === 'table') {
-        targetTablePos = selection.$from.before(d);
-        targetTableNode = node;
-        break;
-      }
-    }
-
-    // 2. If cursor not directly inside a table, check selection range or document
-    if (!targetTableNode) {
-      if (!selection.empty) {
-        state.doc.nodesBetween(selection.from, selection.to, (node, pos) => {
-          if (node.type.name === 'table' && targetTableNode === null) {
-            targetTablePos = pos;
-            targetTableNode = node;
-            return false;
-          }
-        });
-      }
-
-      // If still not found, search the document for the first table
-      if (!targetTableNode) {
-        state.doc.descendants((node, pos) => {
-          if (node.type.name === 'table' && targetTableNode === null) {
-            targetTablePos = pos;
-            targetTableNode = node;
-            return false;
-          }
-        });
-      }
-    }
-
-    if (!targetTableNode || targetTablePos === null) {
-      setReviewNotification('Table to DIV: No table found to convert.');
-      setTimeout(() => setReviewNotification(null), 3000);
-      return;
-    }
-
-    // 3. Serialize table to HTML DOM
-    let tableEl: HTMLTableElement | null = null;
-    try {
-      const dom = DOMSerializer.fromSchema(editor.schema).serializeNode(targetTableNode);
-      const tempContainer = document.createElement('div');
-      tempContainer.appendChild(dom);
-      tableEl = tempContainer.querySelector('table');
-    } catch {
-      // Fallback
-    }
-
-    if (!tableEl) {
-      setReviewNotification('Table to DIV: Could not parse table contents.');
-      setTimeout(() => setReviewNotification(null), 3000);
-      return;
-    }
-
-    const rows = Array.from(tableEl.querySelectorAll('tr'));
-    if (rows.length === 0) {
-      setReviewNotification('Table to DIV: Selected table has no rows.');
-      setTimeout(() => setReviewNotification(null), 3000);
-      return;
-    }
-
-    // 4. Smartly transform table rows and cells into divTable / divTableRow / divTableCell with <p>
-    let convertedRowsHtml = '';
-
-    rows.forEach((row, rowIndex) => {
-      const cells = Array.from(row.children) as HTMLElement[];
-      const isHeaderRow =
-        rowIndex === 0 &&
-        (row.querySelector('th') !== null || cells.some((c) => c.tagName.toLowerCase() === 'th'));
-
-      let cellsHtml = '';
-      cells.forEach((cell, cellIndex) => {
-        let innerHtml = cell.innerHTML.trim();
-        // Ensure content is wrapped in paragraph
-        if (!innerHtml.startsWith('<p') && !innerHtml.startsWith('<div')) {
-          if (isHeaderRow && !innerHtml.includes('<strong>')) {
-            innerHtml = `<p><strong>${innerHtml || '&nbsp;'}</strong></p>`;
-          } else {
-            innerHtml = `<p>${innerHtml || '&nbsp;'}</p>`;
-          }
-        }
-
-        const isLastCell = cellIndex === cells.length - 1;
-        cellsHtml += `<div class="divTableCell" style="flex: 1; min-width: 0; padding: 10px 14px; ${
-          isLastCell ? '' : 'border-right: 1px solid #e2e8f0;'
-        } word-break: break-word;">${innerHtml}</div>`;
-      });
-
-      const rowClass = isHeaderRow ? 'divTableRow divTableHeading' : 'divTableRow';
-      const rowBg = isHeaderRow
-        ? 'background-color: #f1f5f9; font-weight: 600;'
-        : rowIndex % 2 === 1
-        ? 'background-color: #f8fafc;'
-        : 'background-color: #ffffff;';
-      const isLastRow = rowIndex === rows.length - 1;
-
-      convertedRowsHtml += `<div class="${rowClass}" style="display: flex; width: 100%; ${
-        isLastRow ? '' : 'border-bottom: 1px solid #e2e8f0;'
-      } ${rowBg}">${cellsHtml}</div>`;
-    });
-
-    const fullConvertedHtml = `<div class="divTable" style="display: flex; flex-direction: column; width: 100%; margin: 1.25rem 0; border: 1px solid #cbd5e1; border-radius: 6px; overflow: hidden; background-color: #ffffff; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">${convertedRowsHtml}</div>`;
-
-    // 5. Replace table in editor preserving history
-    editor
-      .chain()
-      .focus()
-      .deleteRange({ from: targetTablePos, to: targetTablePos + targetTableNode.nodeSize })
-      .insertContentAt(targetTablePos, fullConvertedHtml)
-      .run();
-
-    setReviewNotification('HTML: Converted table to responsive <DIV> paragraphs.');
-    setTimeout(() => setReviewNotification(null), 3500);
-  };
 
   const handleInsertTable = (rows: number, cols: number) => {
     if (!editor) return;
@@ -1480,6 +1190,8 @@ const RibbonToolbarComponent: React.FC<RibbonToolbarProps> = ({
       import('./ribbon/tabs/SeoTab');
     } else if (tab === 'help') {
       import('./ribbon/tabs/HelpTab');
+    } else if (tab === 'convert') {
+      import('./ribbon/tabs/ConvertTab');
     }
   }, []);
 
@@ -2795,10 +2507,11 @@ const RibbonToolbarComponent: React.FC<RibbonToolbarProps> = ({
                 </div>
 
                 {/* Table Edit Button (Opens/Closes Table Edit Right Toolbar) */}
+                {/* Table Edit Button (Opens/Closes Table Edit Right Toolbar) */}
                 <button
                   onClick={() => onUpdateSettings({ showTableEditPane: !settings.showTableEditPane })}
                   title="Table Edit — Open/Close Table Edit Right Toolbar"
-                  className={`flex flex-col items-center justify-start px-2 py-1 rounded cursor-pointer transition-all border ${
+                  className={`flex flex-col items-center justify-start self-start px-2 py-1 rounded cursor-pointer transition-all border ${
                     settings.showTableEditPane
                       ? 'bg-[#cde4f7] border-[#185abd] text-[#185abd] font-semibold'
                       : 'border-transparent hover:bg-white hover:border-neutral-300 text-neutral-700'
@@ -2817,7 +2530,7 @@ const RibbonToolbarComponent: React.FC<RibbonToolbarProps> = ({
                 <button
                   onClick={() => onUpdateSettings({ showBorderEditPane: !settings.showBorderEditPane })}
                   title="Borders — Open/Close Border Edit Right Toolbar"
-                  className={`flex flex-col items-center justify-start px-2 py-1 rounded cursor-pointer transition-all border ${
+                  className={`flex flex-col items-center justify-start self-start px-2 py-1 rounded cursor-pointer transition-all border ${
                     settings.showBorderEditPane
                       ? 'bg-[#cde4f7] border-[#185abd] text-[#185abd] font-semibold'
                       : 'border-transparent hover:bg-white hover:border-neutral-300 text-neutral-700'
@@ -2828,6 +2541,26 @@ const RibbonToolbarComponent: React.FC<RibbonToolbarProps> = ({
                     className={`mb-0.5 ${settings.showBorderEditPane ? 'text-[#185abd]' : 'text-neutral-700'}`}
                   />
                   <span className="text-[11px] font-medium leading-tight">Borders</span>
+                </button>
+
+                {/* Table Tools (Opens/Closes Table Tools Right Toolbar) */}
+                <button
+                  onClick={() => onUpdateSettings({ showTableToolsPane: !settings.showTableToolsPane })}
+                  title="Table Tools — Smart Calculations & Data Tools"
+                  aria-label="Table Tools"
+                  className={`flex flex-col items-center justify-start self-start px-2 py-1 rounded cursor-pointer transition-all border ${
+                    settings.showTableToolsPane
+                      ? 'bg-[#cde4f7] border-[#185abd] text-[#185abd] font-semibold'
+                      : 'border-transparent hover:bg-white hover:border-neutral-300 text-neutral-700'
+                  }`}
+                >
+                  <Calculator
+                    size={22}
+                    className={`mb-0.5 ${settings.showTableToolsPane ? 'text-[#185abd]' : 'text-neutral-700'}`}
+                  />
+                  <span className="text-[11px] font-medium leading-tight text-center">
+                    Tools
+                  </span>
                 </button>
               </div>
 
@@ -4754,182 +4487,27 @@ const RibbonToolbarComponent: React.FC<RibbonToolbarProps> = ({
             </div>
           )}
 
-          {/* CONVERT TAB (MATCHING USER PHOTO: Clean, Structure, HTML) */}
+          {/* CONVERT TAB (Lazy Loaded with Fast Preload) */}
           {activeTab === 'convert' && (
-            <div className="flex items-start space-x-0 w-full select-none pt-0.5">
-              {/* GROUP 1: Clean (Fix spaces, clear format, web clean, normalize, clean wiki) */}
-              <div className="flex flex-col items-center pr-3">
-                <div className="flex items-start space-x-1.5">
-                  {/* 1. Fix spaces */}
-                  <button
-                    onClick={handleFixSpaces}
-                    title="Fix spaces"
-                    className="p-2 rounded-lg border border-transparent hover:bg-white hover:border-neutral-300 text-neutral-700 hover:text-neutral-900 cursor-pointer transition-all flex items-center justify-center min-w-[34px] min-h-[34px]"
-                  >
-                    <Space size={20} className="text-[#334155]" />
-                  </button>
-
-                  {/* 2. clear format */}
-                  <button
-                    onClick={handleClearFormat}
-                    title="Clear format"
-                    className="p-2 rounded-lg border border-transparent hover:bg-white hover:border-neutral-300 text-neutral-700 hover:text-neutral-900 cursor-pointer transition-all flex items-center justify-center min-w-[34px] min-h-[34px]"
-                  >
-                    <RemoveFormatting size={20} className="text-[#334155]" />
-                  </button>
-
-                  {/* 3. web clean */}
-                  <button
-                    onClick={handleWebClean}
-                    title="Web clean"
-                    className="p-2 rounded-lg border border-transparent hover:bg-white hover:border-neutral-300 text-neutral-700 hover:text-neutral-900 cursor-pointer transition-all flex items-center justify-center min-w-[34px] min-h-[34px]"
-                  >
-                    <Globe size={20} className="text-[#334155]" />
-                  </button>
-
-                  {/* 4. normalize */}
-                  <button
-                    onClick={handleNormalize}
-                    title="Normalize"
-                    className="p-2 rounded-lg border border-transparent hover:bg-white hover:border-neutral-300 text-neutral-700 hover:text-neutral-900 cursor-pointer transition-all flex items-center justify-center min-w-[34px] min-h-[34px]"
-                  >
-                    <Wand2 size={20} className="text-[#334155]" />
-                  </button>
-
-                  {/* 5. clean wiki */}
-                  <button
-                    onClick={handleCleanWiki}
-                    title="Clean wiki"
-                    className="p-2 rounded-lg border border-transparent hover:bg-white hover:border-neutral-300 text-neutral-700 hover:text-neutral-900 cursor-pointer transition-all flex items-center justify-center min-w-[34px] min-h-[34px]"
-                  >
-                    <BookOpen size={20} className="text-[#334155]" />
-                  </button>
+            <React.Suspense
+              fallback={
+                <div className="flex items-center space-x-2 py-4 px-4 text-xs text-neutral-500">
+                  <div className="w-4 h-4 border-2 border-[#185abd] border-t-transparent rounded-full animate-spin" />
+                  <span>Loading Convert Toolkit...</span>
                 </div>
-
-                {/* Centered Footer Label: Clean */}
-                <span className="text-[11px] text-center text-[#2563eb] font-normal mt-1.5 tracking-normal">
-                  Clean
-                </span>
-              </div>
-
-              {/* DIVIDER */}
-              <div className="h-12 w-px bg-[#dad9d8] mr-1.5 shrink-0 self-start mt-0.5" />
-
-              {/* GROUP 2: Structure (Merge, Split) */}
-              <div className="flex flex-col items-center pr-1.5">
-                <div className="flex items-start space-x-1.5">
-                  {/* 6. Merge */}
-                  <button
-                    onClick={handleMergeParagraphs}
-                    title="Merge"
-                    className="p-2 rounded-lg border border-transparent hover:bg-white hover:border-neutral-300 text-neutral-700 hover:text-neutral-900 cursor-pointer transition-all flex items-center justify-center min-w-[34px] min-h-[34px]"
-                  >
-                    <Combine size={20} className="text-[#334155]" />
-                  </button>
-
-                  {/* 7. Split */}
-                  <button
-                    onClick={handleSplitSentences}
-                    title="Split"
-                    className="p-2 rounded-lg border border-transparent hover:bg-white hover:border-neutral-300 text-neutral-700 hover:text-neutral-900 cursor-pointer transition-all flex items-center justify-center min-w-[34px] min-h-[34px]"
-                  >
-                    <Scissors size={20} className="text-[#334155]" />
-                  </button>
-                </div>
-
-                {/* Centered Footer Label: Structure */}
-                <span className="text-[11px] text-center text-[#2563eb] font-normal mt-1.5 tracking-normal">
-                  Structure
-                </span>
-              </div>
-
-              {/* DIVIDER */}
-              <div className="h-12 w-px bg-[#dad9d8] mr-1.5 shrink-0 self-start mt-0.5" />
-
-              {/* GROUP 3: HTML (Rm Links, Rm Images, Responsive, Rm Attrs, Clean Tags) */}
-              <div className="flex flex-col items-center pr-1.5">
-                <div className="flex items-start space-x-1.5">
-                  {/* 8. Rm Links */}
-                  <button
-                    onClick={handleRemoveLinks}
-                    title="Rm Links"
-                    className="p-2 rounded-lg border border-transparent hover:bg-white hover:border-neutral-300 text-neutral-700 hover:text-neutral-900 cursor-pointer transition-all flex items-center justify-center min-w-[34px] min-h-[34px]"
-                  >
-                    <Unlink size={20} className="text-[#334155]" />
-                  </button>
-
-                  {/* 9. Rm Images */}
-                  <button
-                    onClick={handleRemoveImages}
-                    title="Rm Images"
-                    className="p-2 rounded-lg border border-transparent hover:bg-white hover:border-neutral-300 text-neutral-700 hover:text-neutral-900 cursor-pointer transition-all flex items-center justify-center min-w-[34px] min-h-[34px]"
-                  >
-                    <ImageOff size={20} className="text-[#334155]" />
-                  </button>
-
-                  {/* 10. Responsive */}
-                  <button
-                    onClick={handleMakeResponsive}
-                    title="Responsive"
-                    className="p-2 rounded-lg border border-transparent hover:bg-white hover:border-neutral-300 text-neutral-700 hover:text-neutral-900 cursor-pointer transition-all flex items-center justify-center min-w-[34px] min-h-[34px]"
-                  >
-                    <Ruler size={20} className="text-[#334155]" />
-                  </button>
-
-                  {/* 11. Rm Attrs */}
-                  <button
-                    onClick={handleRemoveAttributes}
-                    title="Rm Attrs"
-                    className="p-2 rounded-lg border border-transparent hover:bg-white hover:border-neutral-300 text-neutral-700 hover:text-neutral-900 cursor-pointer transition-all flex items-center justify-center min-w-[34px] min-h-[34px]"
-                  >
-                    <Eraser size={20} className="text-[#334155]" />
-                  </button>
-
-                  {/* 12. Clean Tags / Rm Tags */}
-                  <button
-                    onClick={handleRemoveTags}
-                    title="Clean Tags / Rm Tags"
-                    className="p-2 rounded-lg border border-transparent hover:bg-white hover:border-neutral-300 text-neutral-700 hover:text-neutral-900 cursor-pointer transition-all flex items-center justify-center min-w-[34px] min-h-[34px]"
-                  >
-                    <Tag size={20} className="text-[#334155]" />
-                  </button>
-
-                  {/* 13. Spacing */}
-                  <button
-                    onClick={() => {
-                      if (editor) {
-                        cleanAllSpacing(editor);
-                      }
-                    }}
-                    title="no spacing"
-                    aria-label="no spacing"
-                    className="px-2 py-1.5 rounded-lg border border-transparent hover:bg-amber-50 hover:border-amber-300 text-neutral-700 hover:text-neutral-900 cursor-pointer transition-all flex items-center justify-center space-x-1 min-h-[34px] group"
-                  >
-                    <Sparkles size={14} className="text-amber-600 group-hover:scale-110 transition-transform shrink-0" />
-                    <span className="font-semibold text-[11px] text-neutral-800 group-hover:text-amber-800 leading-none whitespace-nowrap">
-                      Spacing
-                    </span>
-                  </button>
-
-                  {/* 14. Table to DIV converter */}
-                  <button
-                    onClick={handleTableToDiv}
-                    title="Table to DIV converter"
-                    aria-label="Table to DIV converter"
-                    className="p-2 rounded-lg border border-transparent hover:bg-white hover:border-neutral-300 text-neutral-700 hover:text-neutral-900 cursor-pointer transition-all flex items-center justify-center min-w-[34px] min-h-[34px]"
-                  >
-                    <span className="font-mono font-bold text-[11px] text-[#334155] leading-none tracking-tight select-none">
-                      &lt;DIV&gt;
-                    </span>
-                  </button>
-                </div>
-
-                {/* Centered Footer Label: HTML */}
-                <span className="text-[11px] text-center text-[#2563eb] font-normal mt-1.5 tracking-normal">
-                  HTML
-                </span>
-              </div>
-            </div>
+              }
+            >
+              <ConvertTab
+                editor={editor}
+                settings={settings}
+                onUpdateSettings={onUpdateSettings}
+                isDarkUi={isDarkUi}
+                onNotify={(msg) => {
+                  setReviewNotification(msg);
+                  setTimeout(() => setReviewNotification(null), 3500);
+                }}
+              />
+            </React.Suspense>
           )}
 
           {/* SEO TAB (Lazy Loaded with Fast Preload) */}
@@ -5382,11 +4960,9 @@ const RibbonToolbarComponent: React.FC<RibbonToolbarProps> = ({
                       wordCount,
                       previewImage: capturedSnapshotImage || undefined,
                     };
-                    const updated = [newSnap, ...snapshots];
+                    const updated = [newSnap, ...snapshots].slice(0, 6);
                     setSnapshots(updated);
-                    try {
-                      localStorage.setItem('word_doc_snapshots', JSON.stringify(updated.slice(0, 20)));
-                    } catch {}
+                    asyncSaveSnapshot(newSnap, 6);
                     setShowSaveSnapshotModal(false);
                     setReviewNotification(`Milestone "${newSnap.name}" saved!`);
                     setTimeout(() => setReviewNotification(null), 3000);
@@ -5418,6 +4994,7 @@ const RibbonToolbarComponent: React.FC<RibbonToolbarProps> = ({
               setReviewNotification(msg);
               setTimeout(() => setReviewNotification(null), 3500);
             }}
+            totalPages={totalPages}
           />
         </React.Suspense>
       )}

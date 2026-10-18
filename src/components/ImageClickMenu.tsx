@@ -11,16 +11,23 @@ import {
   Pencil,
   Wand2,
   Trash2,
+  Link2,
 } from 'lucide-react';
 
 interface ImageClickMenuProps {
   editor: Editor | null;
   onOpenImageWizard?: () => void;
+  onSetLinkedImageMode?: (active: boolean) => void;
+  onEditLink?: (href: string) => void;
+  onDeselect?: () => void;
 }
 
 export const ImageClickMenu: React.FC<ImageClickMenuProps> = ({
   editor,
   onOpenImageWizard,
+  onSetLinkedImageMode,
+  onEditLink,
+  onDeselect,
 }) => {
   const [selectedImg, setSelectedImg] = useState<HTMLImageElement | null>(null);
   const [menuPosition, setMenuPosition] = useState<{ top: number; left: number } | null>(null);
@@ -56,16 +63,17 @@ export const ImageClickMenu: React.FC<ImageClickMenuProps> = ({
     if (!editor) return;
 
     const handleDocumentClick = (e: MouseEvent) => {
-      const target = e.target as HTMLElement | null;
+      const targetNode = e.target as Node | null;
+      const target = (targetNode instanceof Element ? targetNode : targetNode?.parentElement) as HTMLElement | null;
       if (!target) return;
 
       // If clicked inside our menu, don't close
-      if (menuRef.current && menuRef.current.contains(target)) {
+      if (menuRef.current && menuRef.current.contains(targetNode as Node)) {
         return;
       }
 
       // If clicked an image inside ProseMirror
-      if (target.tagName === 'IMG' && target.closest('.ProseMirror')) {
+      if (target.tagName === 'IMG' && (target.closest ? target.closest('.ProseMirror') : null)) {
         const img = target as HTMLImageElement;
 
         // Clear previous selected image outline
@@ -99,11 +107,22 @@ export const ImageClickMenu: React.FC<ImageClickMenuProps> = ({
 
         updatePosition(img);
 
+        // If image is inside an <a> tag, activate Linked Image Edit Mode
+        const parentLink = img.closest('a') as HTMLAnchorElement | null;
+        if (parentLink) {
+          onSetLinkedImageMode?.(true);
+        }
+
         // Select the image node in TipTap if possible
         try {
-          const pos = editor.view.posAtDOM(img, 0);
-          if (pos >= 0) {
+          const pos = findImageNodePos(img);
+          if (pos !== null && pos >= 0) {
             editor.commands.setNodeSelection(pos);
+          } else {
+            const rawPos = editor.view.posAtDOM(img, 0);
+            if (rawPos >= 0) {
+              editor.commands.setNodeSelection(rawPos);
+            }
           }
         } catch {
           // ignore
@@ -112,11 +131,17 @@ export const ImageClickMenu: React.FC<ImageClickMenuProps> = ({
       }
 
       // Clicked something else in TipTap or outside: hide menu & remove outline
+      clearSelectedImage();
+    };
+
+    const clearSelectedImage = () => {
       if (selectedImg) {
         selectedImg.classList.remove('selected-image-active');
         selectedImg.removeAttribute('data-selected');
         setSelectedImg(null);
         setMenuPosition(null);
+        onDeselect?.();
+        onSetLinkedImageMode?.(false);
       }
     };
 
@@ -124,8 +149,7 @@ export const ImageClickMenu: React.FC<ImageClickMenuProps> = ({
       if (selectedImg) {
         // If image was removed from DOM, close menu
         if (!document.body.contains(selectedImg)) {
-          setSelectedImg(null);
-          setMenuPosition(null);
+          clearSelectedImage();
           return;
         }
         updatePosition(selectedImg);
@@ -134,10 +158,7 @@ export const ImageClickMenu: React.FC<ImageClickMenuProps> = ({
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && selectedImg) {
-        selectedImg.classList.remove('selected-image-active');
-        selectedImg.removeAttribute('data-selected');
-        setSelectedImg(null);
-        setMenuPosition(null);
+        clearSelectedImage();
       }
     };
 
@@ -149,10 +170,7 @@ export const ImageClickMenu: React.FC<ImageClickMenuProps> = ({
     const handleSelectionUpdate = () => {
       // If the active selection in TipTap is no longer an image, close
       if (!editor.isActive('image') && selectedImg) {
-        selectedImg.classList.remove('selected-image-active');
-        selectedImg.removeAttribute('data-selected');
-        setSelectedImg(null);
-        setMenuPosition(null);
+        clearSelectedImage();
       }
     };
     editor.on('selectionUpdate', handleSelectionUpdate);
@@ -590,6 +608,33 @@ export const ImageClickMenu: React.FC<ImageClickMenuProps> = ({
           <Trash2 size={14} />
         </button>
       </div>
+
+      {/* Linked Image Status Indicator & Explicit Edit Link Action */}
+      {selectedImg.closest('a') && (
+        <>
+          <div className="h-4 w-px bg-neutral-200" />
+          <div className="flex items-center space-x-1 pl-1.5 pr-1 py-0.5 rounded bg-blue-50/90 text-blue-800 text-[11px] font-medium border border-blue-200 select-none">
+            <Link2 size={12} className="text-blue-600 shrink-0" />
+            <span
+              className="max-w-[100px] truncate text-blue-700 font-mono text-[10px]"
+              title={`Linked to: ${selectedImg.closest('a')?.getAttribute('href') || ''}`}
+            >
+              {selectedImg.closest('a')?.getAttribute('href') || 'Link'}
+            </span>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onEditLink?.(selectedImg.closest('a')?.getAttribute('href') || '');
+              }}
+              className="ml-0.5 px-1.5 py-0.5 bg-white hover:bg-blue-100 text-[10px] text-blue-800 rounded border border-blue-300 font-semibold cursor-pointer transition-colors"
+              title="Edit image link in Link Manager"
+            >
+              Edit Link
+            </button>
+          </div>
+        </>
+      )}
     </div>,
     document.body
   );

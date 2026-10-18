@@ -43,8 +43,21 @@ export const HyperLinkOverlay: React.FC<HyperLinkOverlayProps> = ({
     const editorDom = editor.view.dom;
 
     const handleMouseOver = (e: MouseEvent) => {
-      const target = e.target as HTMLElement | null;
-      const link = target?.closest('a') as HTMLAnchorElement | null;
+      const targetNode = e.target as Node | null;
+      const target = (targetNode instanceof Element ? targetNode : targetNode?.parentElement) as HTMLElement | null;
+      const isImg = target?.tagName === 'IMG' || !!(target?.closest ? target.closest('img') : null);
+      const link = target?.closest ? (target.closest('a') as HTMLAnchorElement | null) : null;
+
+      // Linked Image Standby: If hovering over an image inside a link or if linkedImageMode is active,
+      // the Link Wizard/Overlay remains in standby and does NOT pop up over the image
+      if (isImg || settingsRef.current.linkedImageMode) {
+        if (hoverTimeoutRef.current) {
+          clearTimeout(hoverTimeoutRef.current);
+          hoverTimeoutRef.current = null;
+        }
+        setHoverState(null);
+        return;
+      }
 
       if (link && editorDom.contains(link)) {
         if (hoverTimeoutRef.current) {
@@ -77,8 +90,9 @@ export const HyperLinkOverlay: React.FC<HyperLinkOverlayProps> = ({
     };
 
     const handleMouseOut = (e: MouseEvent) => {
-      const target = e.target as HTMLElement | null;
-      const link = target?.closest('a') as HTMLAnchorElement | null;
+      const targetNode = e.target as Node | null;
+      const target = (targetNode instanceof Element ? targetNode : targetNode?.parentElement) as HTMLElement | null;
+      const link = target?.closest ? (target.closest('a') as HTMLAnchorElement | null) : null;
 
       if (link && editorDom.contains(link)) {
         if (hoverTimeoutRef.current) {
@@ -126,7 +140,7 @@ export const HyperLinkOverlay: React.FC<HyperLinkOverlayProps> = ({
     }
   }, [hoverState, mode, measuredHeight]);
 
-  if (!hoverState) return null;
+  if (!hoverState || settings.linkedImageMode) return null;
 
   // Calculate position in fixed viewport coords
   const { rect } = hoverState;

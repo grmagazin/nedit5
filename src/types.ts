@@ -86,11 +86,13 @@ export interface DocumentSettings {
   showNavigationPane?: boolean;
   showSeoPane?: boolean;
   showTableEditPane?: boolean;
+  showTableToolsPane?: boolean;
   enableTableHandle?: boolean; // auto activate if a table focused
   showBorderEditPane?: boolean;
   enableBorderHandle?: boolean; // auto activate if a table focused (deactivated by default)
   showHyperLinkPane?: boolean;
   hyperLinkMode?: 'navigate' | 'edit';
+  linkedImageMode?: boolean;
   showTranslatePane?: boolean;
   showAiAssistantPane?: boolean;
   aiAssistantIntent?: 'grammar' | 'improve' | 'summarize' | null;
@@ -111,6 +113,7 @@ export interface DocumentSettings {
   customWatermark?: string;
   doNotAddHeaderFooterToPrintArea?: boolean;
   kickOverflowPx?: number;
+  pageCalcMode?: 'auto' | 'manual';
 }
 
 export interface TableDimensions {

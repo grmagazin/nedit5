@@ -96,6 +96,13 @@ export const InsertLinkModal: React.FC<InsertLinkModalProps> = ({
     const target = openInNewWindow ? '_blank' : null;
     const rel = noFollow ? 'nofollow' : null;
 
+    // If an image is selected, apply link directly to the image node!
+    if (editor.isActive('image')) {
+      editor.chain().focus().setLink({ href: finalUrl, target, rel }).run();
+      onClose();
+      return;
+    }
+
     const { from, to } = editor.state.selection;
     const hasSelection = from !== to;
     const originalSelectedText = hasSelection
