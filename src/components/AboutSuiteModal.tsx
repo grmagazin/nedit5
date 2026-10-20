@@ -19,6 +19,13 @@ import {
   Printer,
   ChevronRight,
   Search,
+  Calculator,
+  Table as TableIcon,
+  Image as ImageIcon,
+  Smartphone,
+  Volume2,
+  ArrowUpDown,
+  Wand2,
 } from 'lucide-react';
 
 export type AboutTab =
@@ -48,9 +55,9 @@ const TAB_CONFIGS: TabConfig[] = [
   {
     id: 'futures',
     label: 'Features',
-    badge: 'v5.3',
+    badge: 'v5.5',
     icon: Zap,
-    description: 'Complete breakdown of Nedit v5.3 capabilities & ecosystem',
+    description: 'Complete breakdown of Nedit v5.5 capabilities & ecosystem',
   },
   {
     id: 'sortcuts',
@@ -133,7 +140,7 @@ export const AboutSuiteModal: React.FC<AboutSuiteModalProps> = ({
             <div>
               <div className="flex items-center space-x-2">
                 <h2 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white tracking-tight">
-                  Nedit v5.3 Document Suite
+                  Nedit v5.5 Document Suite
                 </h2>
                 <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-blue-100 dark:bg-blue-950/80 text-[#0062ff] dark:text-blue-400 border border-blue-200 dark:border-blue-800 tracking-wide uppercase">
                   Enterprise
@@ -214,83 +221,223 @@ export const AboutSuiteModal: React.FC<AboutSuiteModalProps> = ({
           {/* TAB 1: FEATURES */}
           {activeTab === 'futures' && (
             <div className="max-w-6xl mx-auto space-y-6 animate-in fade-in duration-100">
-              <div className="bg-white dark:bg-[#1e1e1e] p-6 rounded-xl border border-neutral-200 dark:border-neutral-800 shadow-xs">
-                <div className="flex items-center space-x-3 mb-2">
-                  <div className="p-2 rounded-lg bg-blue-50 dark:bg-blue-950/60 text-[#0062ff]">
-                    <Zap size={22} />
+              {/* Header Box */}
+              <div className="bg-white dark:bg-[#1e1e1e] p-6 rounded-xl border border-neutral-200 dark:border-neutral-800 shadow-xs space-y-6">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-neutral-200 dark:border-neutral-800">
+                  <div className="flex items-center space-x-3.5">
+                    <div className="p-2.5 rounded-xl bg-gradient-to-tr from-[#0062ff] to-[#4f46e5] text-white shadow-md shadow-blue-500/20">
+                      <Zap size={22} />
+                    </div>
+                    <div>
+                      <div className="flex items-center space-x-2">
+                        <h3 className="text-lg font-bold text-slate-900 dark:text-white">
+                          Nedit v5.0 → v5.5 Milestone Capability Matrix
+                        </h3>
+                        <span className="text-[10px] bg-emerald-100 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-300 font-extrabold px-2 py-0.5 rounded-full border border-emerald-300 dark:border-emerald-800 uppercase tracking-wider">
+                          v5.5 Active
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-500 dark:text-neutral-400">
+                        Zero-latency, modular lazy-loaded document suite with smart calculations, responsive image engine, and full roundtrip export.
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <h3 className="text-lg font-bold text-slate-900 dark:text-white">
-                      Nedit v5.3 Features &amp; Capability Matrix
-                    </h3>
-                    <p className="text-xs text-slate-500 dark:text-neutral-400">
-                      Engineered for zero-latency, cloud-free local document creation and formatting.
-                    </p>
+
+                  {/* Highlights Summary Pills */}
+                  <div className="flex flex-wrap gap-1.5 items-center">
+                    <span className="text-[10.5px] font-semibold px-2 py-0.5 rounded-md bg-blue-50 dark:bg-blue-950/50 text-[#0062ff] dark:text-blue-300 border border-blue-200 dark:border-blue-800 flex items-center space-x-1">
+                      <Calculator size={11} />
+                      <span>Table Tools &amp; Math</span>
+                    </span>
+                    <span className="text-[10.5px] font-semibold px-2 py-0.5 rounded-md bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 flex items-center space-x-1">
+                      <Smartphone size={11} />
+                      <span>Responsive Images</span>
+                    </span>
+                    <span className="text-[10.5px] font-semibold px-2 py-0.5 rounded-md bg-purple-50 dark:bg-purple-950/50 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800 flex items-center space-x-1">
+                      <Volume2 size={11} />
+                      <span>TTS Read Aloud</span>
+                    </span>
+                    <span className="text-[10.5px] font-semibold px-2 py-0.5 rounded-md bg-amber-50 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800 flex items-center space-x-1">
+                      <Zap size={11} />
+                      <span>Lazy-Loaded Tabs</span>
+                    </span>
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6">
-                  {/* Card 1 */}
-                  <div className="p-4 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-slate-50/50 dark:bg-[#202020] space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-[#0062ff]">FORMAT ENGINES</span>
-                      <span className="text-[10px] bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300 font-bold px-1.5 py-0.5 rounded">
-                        Full Roundtrip
-                      </span>
+                {/* 6 Capability Pillars Grid */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                  {/* Pillar 1: Table Tools & Smart Calculations */}
+                  <div className="p-4 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-slate-50/60 dark:bg-[#202020] space-y-2.5 flex flex-col justify-between shadow-2xs hover:border-emerald-300 dark:hover:border-emerald-800 transition-colors">
+                    <div>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 flex items-center space-x-1">
+                          <Calculator size={13} />
+                          <span>TABLE TOOLS &amp; MATH</span>
+                        </span>
+                        <span className="text-[10px] bg-emerald-100 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-200 font-extrabold px-1.5 py-0.2 rounded">
+                          v5.5
+                        </span>
+                      </div>
+                      <h4 className="text-sm font-bold text-slate-800 dark:text-white">
+                        Smart Calculations &amp; Targeted Sort
+                      </h4>
+                      <ul className="text-xs text-slate-600 dark:text-neutral-300 space-y-1.5 pt-2">
+                        <li>&bull; <strong>1-Click Math:</strong> SUM, AVG, MIN, MAX, COUNT, PRODUCT</li>
+                        <li>&bull; <strong>Directional Execution:</strong> <code>&rarr; RIGHT</code> row result &amp; <code>&darr; DOWN</code> column result</li>
+                        <li>&bull; <strong>Smart Sort (Selected Area):</strong> Green button strictly sorts selected cells (A–Z / Z–A) preserving outside rows &amp; totals</li>
+                        <li>&bull; <strong>Automatic Parsing:</strong> Currency ($ &euro; &pound; &yen;), %, and European decimals</li>
+                        <li>&bull; <strong>Table Style Palette:</strong> 9 visual presets, custom header swatch &amp; borders</li>
+                      </ul>
                     </div>
-                    <h4 className="text-sm font-bold text-slate-800 dark:text-white">
-                      6 Native Export Workstations
-                    </h4>
-                    <ul className="text-xs text-slate-600 dark:text-neutral-300 space-y-1.5 pt-1">
-                      <li>&bull; <strong>Microsoft Word (.docx):</strong> Styles, numbering &amp; tables</li>
-                      <li>&bull; <strong>OpenDocument (.odt):</strong> Open standards format</li>
-                      <li>&bull; <strong>Vector PDF:</strong> Print layout with headers/footers</li>
-                      <li>&bull; <strong>HTML+Images (ZIP):</strong> Offline web package</li>
-                      <li>&bull; <strong>Markdown (.md):</strong> GitHub-flavored format</li>
-                      <li>&bull; <strong>JSON Snapshot:</strong> Atomic instant restoration</li>
-                    </ul>
+                    <div className="pt-2 border-t border-neutral-200 dark:border-neutral-700/60 flex items-center justify-between text-[11px] text-emerald-700 dark:text-emerald-400 font-medium">
+                      <span>Lazy-loaded right toolbar</span>
+                      <span>1-click math</span>
+                    </div>
                   </div>
 
-                  {/* Card 2 */}
-                  <div className="p-4 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-slate-50/50 dark:bg-[#202020] space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-purple-600">SMART TEMPLATES</span>
-                      <span className="text-[10px] bg-purple-100 dark:bg-purple-900/60 text-purple-700 dark:text-purple-300 font-bold px-1.5 py-0.5 rounded">
-                        20+ Ready
-                      </span>
+                  {/* Pillar 2: Image Wizard & Fluid Responsive Engine */}
+                  <div className="p-4 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-slate-50/60 dark:bg-[#202020] space-y-2.5 flex flex-col justify-between shadow-2xs hover:border-blue-300 dark:hover:border-blue-800 transition-colors">
+                    <div>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className="text-xs font-bold text-blue-600 dark:text-blue-400 flex items-center space-x-1">
+                          <ImageIcon size={13} />
+                          <span>IMAGE WIZARD &amp; RESPONSIVE</span>
+                        </span>
+                        <span className="text-[10px] bg-blue-100 dark:bg-blue-900/60 text-blue-800 dark:text-blue-200 font-extrabold px-1.5 py-0.2 rounded">
+                          v5.5
+                        </span>
+                      </div>
+                      <h4 className="text-sm font-bold text-slate-800 dark:text-white">
+                        Fluid Adaptive Media Engine
+                      </h4>
+                      <ul className="text-xs text-slate-600 dark:text-neutral-300 space-y-1.5 pt-2">
+                        <li>&bull; <strong>Make Image Responsive [Save]:</strong> 100% fluid width, height auto, and mobile/tablet responsive</li>
+                        <li>&bull; <strong>Dimension Presets:</strong> Real-time 600px, 800px, 1200px, 1600px re-encoding</li>
+                        <li>&bull; <strong>Web Compression:</strong> WebP, JPG, PNG with 60%–100% quality slider</li>
+                        <li>&bull; <strong>1-Click Instant Save:</strong> Save Image Link, Alt Text (SEO), &amp; Captions</li>
+                        <li>&bull; <strong>Screen Snip Tool:</strong> Drag to snip document area &amp; send to wizard</li>
+                      </ul>
                     </div>
-                    <h4 className="text-sm font-bold text-slate-800 dark:text-white">
-                      100% Dark/Light Adaptive
-                    </h4>
-                    <ul className="text-xs text-slate-600 dark:text-neutral-300 space-y-1.5 pt-1">
-                      <li>&bull; <strong>Executive Memos:</strong> Formal corporate letterhead</li>
-                      <li>&bull; <strong>Weekly Standups:</strong> Interactive task checklists</li>
-                      <li>&bull; <strong>Architecture ADRs:</strong> Context &amp; trade-off tables</li>
-                      <li>&bull; <strong>Incident Post-Mortems:</strong> 5-Whys RCA &amp; mitigations</li>
-                      <li>&bull; <strong>Confidentiality NDAs:</strong> Mutual signature blocks</li>
-                      <li>&bull; <strong>Custom Templates:</strong> Save locally with 1 click</li>
-                    </ul>
+                    <div className="pt-2 border-t border-neutral-200 dark:border-neutral-700/60 flex items-center justify-between text-[11px] text-blue-700 dark:text-blue-400 font-medium">
+                      <span>External linking or WebP</span>
+                      <span>Mobile ready</span>
+                    </div>
                   </div>
 
-                  {/* Card 3 */}
-                  <div className="p-4 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-slate-50/50 dark:bg-[#202020] space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-emerald-600">INTERACTIVE TOOLS</span>
-                      <span className="text-[10px] bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 font-bold px-1.5 py-0.5 rounded">
-                        High Precision
-                      </span>
+                  {/* Pillar 3: Modular Lazy-Loaded Ribbon & Convert Engine */}
+                  <div className="p-4 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-slate-50/60 dark:bg-[#202020] space-y-2.5 flex flex-col justify-between shadow-2xs hover:border-purple-300 dark:hover:border-purple-800 transition-colors">
+                    <div>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className="text-xs font-bold text-purple-600 dark:text-purple-400 flex items-center space-x-1">
+                          <Zap size={13} />
+                          <span>MODULAR LAZY RIBBON</span>
+                        </span>
+                        <span className="text-[10px] bg-purple-100 dark:bg-purple-900/60 text-purple-800 dark:text-purple-200 font-extrabold px-1.5 py-0.2 rounded">
+                          Fast Chunks
+                        </span>
+                      </div>
+                      <h4 className="text-sm font-bold text-slate-800 dark:text-white">
+                        Zero Bundle Bloat &amp; Sanitizer
+                      </h4>
+                      <ul className="text-xs text-slate-600 dark:text-neutral-300 space-y-1.5 pt-2">
+                        <li>&bull; <strong>Hover Preloading:</strong> Non-basic tabs (SEO, Convert, Help) preload on mouse hover for sub-millisecond tab switching</li>
+                        <li>&bull; <strong>Web Clean Sanitizer:</strong> Strips scripts, ads, trackers &amp; junk while strictly keeping tables and formatting intact</li>
+                        <li>&bull; <strong>Web Junk Clean:</strong> Unwraps complex layout tables into clean text</li>
+                        <li>&bull; <strong>Clean All Spacing:</strong> Fixes double spaces, trailing spaces &amp; line gaps</li>
+                        <li>&bull; <strong>Isolated State Trees:</strong> High stability with independent tab memory</li>
+                      </ul>
                     </div>
-                    <h4 className="text-sm font-bold text-slate-800 dark:text-white">
-                      Ruler &amp; Format Painter
-                    </h4>
-                    <ul className="text-xs text-slate-600 dark:text-neutral-300 space-y-1.5 pt-1">
-                      <li>&bull; <strong>Interactive Ruler:</strong> 1/8" snapping &amp; micro-inch shift</li>
-                      <li>&bull; <strong>Temporary Memo Lines:</strong> Remembers last indent positions</li>
-                      <li>&bull; <strong>Format Painter:</strong> Single and persistent paint modes</li>
-                      <li>&bull; <strong>Equation Wizard:</strong> LaTeX KaTeX math formulas</li>
-                      <li>&bull; <strong>TTS Speech Audio:</strong> Natural browser voice narration</li>
-                      <li>&bull; <strong>Context Menus:</strong> Fast inline Word &amp; Nedit tools</li>
-                    </ul>
+                    <div className="pt-2 border-t border-neutral-200 dark:border-neutral-700/60 flex items-center justify-between text-[11px] text-purple-700 dark:text-purple-400 font-medium">
+                      <span>Zero latency</span>
+                      <span>Clean HTML export</span>
+                    </div>
+                  </div>
+
+                  {/* Pillar 4: Text-to-Speech (TTS) Voice Narration */}
+                  <div className="p-4 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-slate-50/60 dark:bg-[#202020] space-y-2.5 flex flex-col justify-between shadow-2xs hover:border-teal-300 dark:hover:border-teal-800 transition-colors">
+                    <div>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className="text-xs font-bold text-teal-600 dark:text-teal-400 flex items-center space-x-1">
+                          <Volume2 size={13} />
+                          <span>DOCUMENT READ ALOUD</span>
+                        </span>
+                        <span className="text-[10px] bg-teal-100 dark:bg-teal-900/60 text-teal-800 dark:text-teal-200 font-extrabold px-1.5 py-0.2 rounded">
+                          v5.5 Audio
+                        </span>
+                      </div>
+                      <h4 className="text-sm font-bold text-slate-800 dark:text-white">
+                        Speech Synthesis Engine
+                      </h4>
+                      <ul className="text-xs text-slate-600 dark:text-neutral-300 space-y-1.5 pt-2">
+                        <li>&bull; <strong>System &amp; Browser Voices:</strong> Full access to all installed natural voice engines and accents</li>
+                        <li>&bull; <strong>Live Sentence Tracking:</strong> Real-time sentence display with active word indicator</li>
+                        <li>&bull; <strong>Speed Multipliers:</strong> 0.5x, 0.75x, 1.0x (Normal), 1.25x, 1.5x, 1.75x, 2.0x</li>
+                        <li>&bull; <strong>Play, Pause &amp; Resume:</strong> Non-destructive playback for selected text or entire document</li>
+                        <li>&bull; <strong>Accessible Narration:</strong> Proofread documents through natural audio</li>
+                      </ul>
+                    </div>
+                    <div className="pt-2 border-t border-neutral-200 dark:border-neutral-700/60 flex items-center justify-between text-[11px] text-teal-700 dark:text-teal-400 font-medium">
+                      <span>100% client-side</span>
+                      <span>Multi-voice audio</span>
+                    </div>
+                  </div>
+
+                  {/* Pillar 5: Ultimate Print Workstation & Page Layout */}
+                  <div className="p-4 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-slate-50/60 dark:bg-[#202020] space-y-2.5 flex flex-col justify-between shadow-2xs hover:border-indigo-300 dark:hover:border-indigo-800 transition-colors">
+                    <div>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className="text-xs font-bold text-indigo-600 dark:text-indigo-400 flex items-center space-x-1">
+                          <Printer size={13} />
+                          <span>PRINT &amp; PAGE LAYOUT</span>
+                        </span>
+                        <span className="text-[10px] bg-indigo-100 dark:bg-indigo-900/60 text-indigo-800 dark:text-indigo-200 font-extrabold px-1.5 py-0.2 rounded">
+                          WYSIWYG
+                        </span>
+                      </div>
+                      <h4 className="text-sm font-bold text-slate-800 dark:text-white">
+                        Absolute Print &amp; Layout Control
+                      </h4>
+                      <ul className="text-xs text-slate-600 dark:text-neutral-300 space-y-1.5 pt-2">
+                        <li>&bull; <strong>Paper Standards:</strong> A4, US Letter, US Legal, Executive, Statement, Ledger</li>
+                        <li>&bull; <strong>Multi-Column Layout:</strong> 1-column, 2-column, &amp; 3-column continuous flow</li>
+                        <li>&bull; <strong>Page Breaks &amp; Pages:</strong> Solid / dotted page breaks, blank pages, &amp; watermark</li>
+                        <li>&bull; <strong>Running Headers &amp; Footers:</strong> Dynamic <code>Page X of Y</code>, custom titles</li>
+                        <li>&bull; <strong>Interactive Ruler:</strong> Dual-unit Inches/mm with memo indent lines</li>
+                      </ul>
+                    </div>
+                    <div className="pt-2 border-t border-neutral-200 dark:border-neutral-700/60 flex items-center justify-between text-[11px] text-indigo-700 dark:text-indigo-400 font-medium">
+                      <span>Vector PDF engine</span>
+                      <span>Memo ruler guides</span>
+                    </div>
+                  </div>
+
+                  {/* Pillar 6: Roundtrip Export, AI Writing & Security */}
+                  <div className="p-4 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-slate-50/60 dark:bg-[#202020] space-y-2.5 flex flex-col justify-between shadow-2xs hover:border-amber-300 dark:hover:border-amber-800 transition-colors">
+                    <div>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className="text-xs font-bold text-amber-600 dark:text-amber-400 flex items-center space-x-1">
+                          <Shield size={13} />
+                          <span>SECURITY &amp; ROUNDTRIP EXPORT</span>
+                        </span>
+                        <span className="text-[10px] bg-amber-100 dark:bg-amber-900/60 text-amber-800 dark:text-amber-200 font-extrabold px-1.5 py-0.2 rounded">
+                          Privacy First
+                        </span>
+                      </div>
+                      <h4 className="text-sm font-bold text-slate-800 dark:text-white">
+                        6 Formats &amp; 100% Client-Side
+                      </h4>
+                      <ul className="text-xs text-slate-600 dark:text-neutral-300 space-y-1.5 pt-2">
+                        <li>&bull; <strong>6 Native Exports:</strong> Word (.docx), ODF (.odt), Vector PDF, HTML ZIP, Markdown, JSON</li>
+                        <li>&bull; <strong>100% Client Sandbox:</strong> No cloud telemetry, no document upload, total privacy</li>
+                        <li>&bull; <strong>IndexedDB Continuous Autosave:</strong> Instant state recovery on refresh</li>
+                        <li>&bull; <strong>Version History &amp; Snapshots:</strong> Atomic milestone rollbacks with visual diffs</li>
+                        <li>&bull; <strong>AI Writing &amp; Image Studio:</strong> Gemini-powered rewrite, tone, spell &amp; AI images</li>
+                      </ul>
+                    </div>
+                    <div className="pt-2 border-t border-neutral-200 dark:border-neutral-700/60 flex items-center justify-between text-[11px] text-amber-700 dark:text-amber-400 font-medium">
+                      <span>ECMA-376 Standard</span>
+                      <span>Offline resilience</span>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -694,6 +841,30 @@ export const AboutSuiteModal: React.FC<AboutSuiteModalProps> = ({
                       Press <kbd className="px-1.5 py-0.5 rounded bg-white dark:bg-neutral-800 border text-[10px]">Ctrl + /</kbd> to open the Command Palette. Type any action (e.g. &ldquo;Word Count&rdquo;, &ldquo;Add Table&rdquo;, &ldquo;Dark Mode&rdquo;) to trigger it instantly without hunting through ribbons.
                     </p>
                   </div>
+
+                  <div className="p-4 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-slate-50/50 dark:bg-[#202020] space-y-2">
+                    <h4 className="text-sm font-bold text-slate-900 dark:text-white flex items-center space-x-2">
+                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300">
+                        TIP 5 (v5.5)
+                      </span>
+                      <span>1-Click Table Math &amp; Target Sort</span>
+                    </h4>
+                    <p className="text-xs text-slate-600 dark:text-neutral-300 leading-relaxed">
+                      Highlight cells in any table, open <strong>Table &rarr; Tools</strong>, and calculate SUM, AVG, MIN, MAX, COUNT, or PRODUCT with <code>&rarr; RIGHT</code> or <code>&darr; DOWN</code>. Use the green <strong>Smart Sort (Selected Area)</strong> button to sort exclusively within selected cells (A–Z / Z–A) without disrupting outside rows or totals.
+                    </p>
+                  </div>
+
+                  <div className="p-4 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-slate-50/50 dark:bg-[#202020] space-y-2">
+                    <h4 className="text-sm font-bold text-slate-900 dark:text-white flex items-center space-x-2">
+                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-100 dark:bg-blue-950 text-blue-800 dark:text-blue-300">
+                        TIP 6 (v5.5)
+                      </span>
+                      <span>Make Image Responsive [Save]</span>
+                    </h4>
+                    <p className="text-xs text-slate-600 dark:text-neutral-300 leading-relaxed">
+                      Click any image in the document or load an asset in the <strong>Image Wizard</strong>. Click <strong>&ldquo;Make image responsive [save]&rdquo;</strong> to immediately lock 100% fluid mobile adaptation with auto-height scaling, or re-encode to WebP for minimum file weight.
+                    </p>
+                  </div>
                 </div>
               </div>
             </div>
@@ -791,7 +962,7 @@ export const AboutSuiteModal: React.FC<AboutSuiteModalProps> = ({
         {/* ========================================================= */}
         <div className="px-6 py-3 border-t border-neutral-200 dark:border-neutral-800 flex items-center justify-between bg-white dark:bg-[#1a1a1a]">
           <div className="hidden sm:flex items-center space-x-4 text-xs text-neutral-500 dark:text-neutral-400">
-            <span>&bull; Nedit v5.3.0 Enterprise</span>
+            <span>&bull; Nedit v5.5.0 Enterprise</span>
             <span>&bull; 100% Client-Side Sandbox</span>
             <span>&bull; ECMA-376 Standard</span>
           </div>

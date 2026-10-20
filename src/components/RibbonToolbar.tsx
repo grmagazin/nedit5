@@ -57,6 +57,7 @@ import {
   Sparkles,
   Columns,
   Maximize2,
+  Monitor,
   FileText,
   Copy,
   Scissors,
@@ -388,6 +389,9 @@ const RibbonToolbarComponent: React.FC<RibbonToolbarProps> = ({
   const [capturedSnapshotImage, setCapturedSnapshotImage] = useState<string | null>(null);
   const [showScreenCaptureTool, setShowScreenCaptureTool] = useState(false);
   const [screenCaptureBaseImage, setScreenCaptureBaseImage] = useState<string | null>(null);
+  const [screenCaptureSource, setScreenCaptureSource] = useState<'device_screen' | 'document_page' | 'photo_file' | 'clipboard'>('device_screen');
+  const [showScreenshotMenu, setShowScreenshotMenu] = useState(false);
+  const screenshotMenuRef = useRef<HTMLDivElement>(null);
 
   // Robust Indent & Outdent handlers supporting lists AND standard paragraphs/headings
   const handleIncreaseIndent = useCallback(() => {
@@ -416,29 +420,67 @@ const RibbonToolbarComponent: React.FC<RibbonToolbarProps> = ({
     editor.chain().focus().decreaseParagraphIndent().run();
   }, [editor]);
 
-  // Lazy-load free screen capture library and open lightweight screen capture tool
-  const handleCaptureScreenSnapshot = useCallback(async () => {
+  // Lazy-load free screen capture library and open lightweight universal screen capture tool
+  const handleCaptureScreenSnapshot = useCallback(async (mode: 'device' | 'document' = 'device') => {
     setIsCapturingSnapshot(true);
-    setReviewNotification('📸 Initializing Screen Capture Tool...');
+    setReviewNotification(
+      mode === 'device'
+        ? '🖥️ Initializing Device Screen / Browser Tab Capture...'
+        : '📸 Capturing Document Page Snapshot...'
+    );
     try {
-      const result = await captureDocumentScreenSnapshot({ pixelRatio: 1.5 });
+      const { captureDeviceScreenSnapshot, captureDocumentScreenSnapshot } = await import('../utils/screenSnapshot');
+
+      let result;
+      if (mode === 'device') {
+        result = await captureDeviceScreenSnapshot();
+        // If device screen was unsupported, gracefully fallback to document page
+        if (!result.success && result.error && !result.error.includes('cancelled') && !result.error.includes('denied')) {
+          setReviewNotification('⚠️ Device screen not available, falling back to document page...');
+          result = await captureDocumentScreenSnapshot({ pixelRatio: 1.5 });
+        }
+      } else {
+        result = await captureDocumentScreenSnapshot({ pixelRatio: 1.5 });
+      }
+
       if (!result.success || !result.dataUrl) {
-        throw new Error(result.error || 'Failed to capture document screen snapshot');
+        if (result.error?.includes('cancelled') || result.error?.includes('denied')) {
+          setReviewNotification('Screen capture was cancelled.');
+          setTimeout(() => setReviewNotification(null), 2500);
+          return;
+        }
+        throw new Error(result.error || 'Failed to capture screen');
       }
 
       setScreenCaptureBaseImage(result.dataUrl);
+      setScreenCaptureSource(result.source || (mode === 'device' ? 'device_screen' : 'document_page'));
       setShowScreenCaptureTool(true);
-      setReviewNotification('✂️ Screen Capture Tool ready! Drag to select an area.');
+      setReviewNotification('✂️ Screen Capture Tool ready! Drag to select an area to snip.');
       setTimeout(() => setReviewNotification(null), 3000);
     } catch (err: any) {
       console.error('Snapshot capture error:', err);
-      const failMsg = err?.message || 'Screen capture failed. Check document visibility.';
+      const failMsg = err?.message || 'Screen capture failed.';
       setReviewNotification(`❌ ${failMsg}`);
       setTimeout(() => setReviewNotification(null), 4500);
     } finally {
       setIsCapturingSnapshot(false);
     }
   }, []);
+
+  // Directly insert captured / snipped area into editor
+  const handleInsertCapturedImageToDocument = useCallback(
+    (capturedAreaUrl: string) => {
+      setShowScreenCaptureTool(false);
+      setCapturedSnapshotImage(capturedAreaUrl);
+      snapshotStore.setLatestSnapshot(capturedAreaUrl, 'snip');
+      if (editor) {
+        editor.chain().focus().setImage({ src: capturedAreaUrl }).run();
+        setReviewNotification('✅ Screenshot inserted directly into document!');
+        setTimeout(() => setReviewNotification(null), 3000);
+      }
+    },
+    [editor]
+  );
 
   // When the user captures an area in the screen capture tool:
   // Send it to Image Wizard and save it in resilient multi-tier snapshotStore!
@@ -550,12 +592,16 @@ const RibbonToolbarComponent: React.FC<RibbonToolbarProps> = ({
       showWatermarkDropdown ||
       showShadowDropdown ||
       showLanguageDropdown ||
+      showScreenshotMenu ||
       showFontSizeDropdown;
 
     if (!hasAnyDropdownOpen) return;
 
     const handleClickOutside = (event: MouseEvent) => {
       const target = event.target as Node;
+      if (showScreenshotMenu && screenshotMenuRef.current && !screenshotMenuRef.current.contains(target)) {
+        setShowScreenshotMenu(false);
+      }
       if (showFontSizeDropdown && fontSizeDropdownRef.current && !fontSizeDropdownRef.current.contains(target)) {
         setShowFontSizeDropdown(false);
       }
@@ -1134,6 +1180,30 @@ const RibbonToolbarComponent: React.FC<RibbonToolbarProps> = ({
     view.dispatch(tr);
     editor.commands.focus();
   };
+
+  // Smart lazy load manual "Split Table & Repeat Header" command
+  const [isSplittingTable, setIsSplittingTable] = useState(false);
+  const handleSplitTableAndRepeatHeader = useCallback(async () => {
+    if (!editor || !editor.isActive('table')) return;
+
+    try {
+      setIsSplittingTable(true);
+      // Smart lazy load with timeout protection and safe error handling
+      const { safeImport } = await import('../utils/safeLazyLoad');
+      const { splitTableAndRepeatHeader } = await safeImport(
+        () => import('../utils/tableSplitUtils'),
+        { name: 'tableSplitUtils', timeoutMs: 8000 }
+      );
+      const res = splitTableAndRepeatHeader(editor);
+      if (!res.success && res.message) {
+        console.warn(res.message);
+      }
+    } catch (err) {
+      console.error('Failed to execute Split Table & Repeat Header command:', err);
+    } finally {
+      setIsSplittingTable(false);
+    }
+  }, [editor]);
 
   const isTableActive = editor?.isActive('table') ?? false;
   let isTableFullWidth = false;
@@ -2270,6 +2340,58 @@ const RibbonToolbarComponent: React.FC<RibbonToolbarProps> = ({
                     </span>
                   </button>
 
+                  {/* Screenshot (Universal Screen, Browser Tab, Photo & Document Clipping) */}
+                  <div className="relative" ref={screenshotMenuRef}>
+                    <button
+                      onClick={() => setShowScreenshotMenu(!showScreenshotMenu)}
+                      title="Screenshot — Capture any place on your screen, web browser tab, photo, or document"
+                      className={`flex flex-col items-center justify-start px-2 py-1.5 rounded cursor-pointer transition-all border ${
+                        showScreenshotMenu
+                          ? 'bg-[#cde4f7] border-[#185abd] text-[#185abd]'
+                          : 'border-transparent hover:bg-white hover:border-neutral-300 text-neutral-700'
+                      }`}
+                    >
+                      <Camera size={20} className="text-[#059669] mb-1 group-hover:scale-105 transition-transform" />
+                      <span className="text-[11px] font-medium leading-tight text-center flex items-center">
+                        Screen<br />shot <ChevronDown size={10} className="ml-0.5 text-neutral-500" />
+                      </span>
+                    </button>
+
+                    {showScreenshotMenu && (
+                      <div className="absolute top-full left-0 mt-1 bg-white border border-neutral-300 rounded-lg shadow-2xl p-1.5 z-50 w-64 text-xs animate-in fade-in slide-in-from-top-1">
+                        <div className="px-2 py-1 text-[10px] font-bold text-neutral-500 border-b border-neutral-100 uppercase tracking-wider mb-1">
+                          Screen & Window Clipping
+                        </div>
+                        <button
+                          onClick={() => {
+                            setShowScreenshotMenu(false);
+                            handleCaptureScreenSnapshot('device');
+                          }}
+                          className="w-full text-left px-2.5 py-2 hover:bg-blue-50 text-neutral-800 rounded flex items-start gap-2.5 cursor-pointer transition-colors group"
+                        >
+                          <Monitor size={16} className="text-[#185abd] shrink-0 mt-0.5" />
+                          <div>
+                            <div className="font-semibold text-xs group-hover:text-[#185abd]">Device Screen / Browser Tab</div>
+                            <div className="text-[10px] text-neutral-500">Capture any tab, external window, or photo</div>
+                          </div>
+                        </button>
+                        <button
+                          onClick={() => {
+                            setShowScreenshotMenu(false);
+                            handleCaptureScreenSnapshot('document');
+                          }}
+                          className="w-full text-left px-2.5 py-2 hover:bg-emerald-50 text-neutral-800 rounded flex items-start gap-2.5 cursor-pointer transition-colors group mt-0.5"
+                        >
+                          <FileText size={16} className="text-[#059669] shrink-0 mt-0.5" />
+                          <div>
+                            <div className="font-semibold text-xs group-hover:text-[#059669]">Document Page Snapshot</div>
+                            <div className="text-[10px] text-neutral-500">Snip the current active document sheet</div>
+                          </div>
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
                   {/* Image Wizard (Opens / Closes Right Toolbar Image Wizard) */}
                   <button
                     onClick={() => onUpdateSettings({ showImageWizardPane: !settings.showImageWizardPane })}
@@ -2833,6 +2955,45 @@ const RibbonToolbarComponent: React.FC<RibbonToolbarProps> = ({
                   >
                     <Pilcrow size={18} className="text-neutral-700 mb-0.5" />
                     <span className="text-[11px] font-medium leading-tight">below</span>
+                  </button>
+
+                  {/* Vertical Divider */}
+                  <div className="h-8 w-px bg-[#dad9d8] self-center my-auto" />
+
+                  {/* Button: Split Table & Repeat Header (icon only) */}
+                  <button
+                    onClick={handleSplitTableAndRepeatHeader}
+                    disabled={!isTableActive || isSplittingTable}
+                    title="Split Table & Repeat Header"
+                    aria-label="Split Table & Repeat Header"
+                    className="h-[38px] px-2.5 flex items-center justify-center self-start mt-0.5 rounded border border-transparent hover:bg-white hover:border-neutral-300 hover:shadow-xs text-neutral-700 hover:text-[#185abd] active:bg-blue-50 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed transition-all group"
+                  >
+                    {isSplittingTable ? (
+                      <RotateCw size={18} className="animate-spin text-[#185abd]" />
+                    ) : (
+                      <svg
+                        width="20"
+                        height="20"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.9"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        className="group-hover:scale-105 transition-transform"
+                      >
+                        {/* Top table */}
+                        <rect x="3" y="3" width="18" height="6.5" rx="1.5" />
+                        <line x1="3" y1="6.5" x2="21" y2="6.5" strokeWidth="1.2" />
+                        <line x1="12" y1="3" x2="12" y2="9.5" strokeWidth="1.2" />
+                        {/* Split divider / gap */}
+                        <line x1="2" y1="12" x2="22" y2="12" strokeDasharray="2 2" strokeWidth="1.5" />
+                        {/* Bottom table with repeated header */}
+                        <rect x="3" y="14.5" width="18" height="6.5" rx="1.5" />
+                        <line x1="3" y1="18" x2="21" y2="18" strokeWidth="1.2" />
+                        <line x1="12" y1="14.5" x2="12" y2="21" strokeWidth="1.2" />
+                      </svg>
+                    )}
                   </button>
 
                   {/* Vertical Divider */}
@@ -3721,9 +3882,9 @@ const RibbonToolbarComponent: React.FC<RibbonToolbarProps> = ({
               <div className="flex items-start space-x-2 px-1.5">
                 {/* 10. Save Snapshot (Green Camera) */}
                 <button
-                  onClick={handleCaptureScreenSnapshot}
+                  onClick={() => handleCaptureScreenSnapshot('device')}
                   disabled={isCapturingSnapshot}
-                  title="Capture Document Screen Snapshot & Send to Image Wizard (Ready to resize & paste)"
+                  title="Capture Device Screen, Browser Tab, Photo or Document Snapshot"
                   className="flex flex-col items-center justify-start px-2.5 py-1 rounded cursor-pointer transition-all border border-transparent hover:bg-white hover:border-neutral-300 text-neutral-700 min-w-[58px] disabled:opacity-50"
                 >
                   <div className="relative">
@@ -4853,8 +5014,10 @@ const RibbonToolbarComponent: React.FC<RibbonToolbarProps> = ({
           <ScreenCaptureTool
             isOpen={showScreenCaptureTool}
             baseImageUrl={screenCaptureBaseImage}
+            initialSource={screenCaptureSource}
             onClose={() => setShowScreenCaptureTool(false)}
             onConfirmCapture={handleConfirmAreaCapture}
+            onInsertToDocument={handleInsertCapturedImageToDocument}
           />
         </React.Suspense>
       )}

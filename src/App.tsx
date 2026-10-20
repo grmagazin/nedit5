@@ -76,55 +76,72 @@ import {
   asyncLoadDocumentSettings,
   clearStorageCache,
 } from './utils/indexedDbStorage';
+import { safeLazy, LazyModuleBoundary } from './utils/safeLazyLoad';
 
-const FindReplaceModal = React.lazy(() =>
-  import('./components/FindReplaceModal').then((m) => ({ default: m.FindReplaceModal }))
+const FindReplaceModal = safeLazy(
+  () => import('./components/FindReplaceModal').then((m) => ({ default: m.FindReplaceModal })),
+  { name: 'FindReplaceModal', timeoutMs: 12000 }
 );
-const DocumentStatsModal = React.lazy(() =>
-  import('./components/DocumentStatsModal').then((m) => ({ default: m.DocumentStatsModal }))
+const DocumentStatsModal = safeLazy(
+  () => import('./components/DocumentStatsModal').then((m) => ({ default: m.DocumentStatsModal })),
+  { name: 'DocumentStatsModal', timeoutMs: 12000 }
 );
-const FileBackstage = React.lazy(() =>
-  import('./components/FileBackstage').then((m) => ({ default: m.FileBackstage }))
+const FileBackstage = safeLazy(
+  () => import('./components/FileBackstage').then((m) => ({ default: m.FileBackstage })),
+  { name: 'FileBackstage', timeoutMs: 15000 }
 );
-const NavigationPane = React.lazy(() =>
-  import('./components/NavigationPane').then((m) => ({ default: m.NavigationPane }))
+const NavigationPane = safeLazy(
+  () => import('./components/NavigationPane').then((m) => ({ default: m.NavigationPane })),
+  { name: 'NavigationPane', timeoutMs: 12000 }
 );
-const SeoCheckSidebar = React.lazy(() =>
-  import('./components/SeoCheckSidebar').then((m) => ({ default: m.SeoCheckSidebar }))
+const SeoCheckSidebar = safeLazy(
+  () => import('./components/SeoCheckSidebar').then((m) => ({ default: m.SeoCheckSidebar })),
+  { name: 'SeoCheckSidebar', timeoutMs: 12000 }
 );
-const TableEditSidebar = React.lazy(() =>
-  import('./components/TableEditSidebar').then((m) => ({ default: m.TableEditSidebar }))
+const TableEditSidebar = safeLazy(
+  () => import('./components/TableEditSidebar').then((m) => ({ default: m.TableEditSidebar })),
+  { name: 'TableEditSidebar', timeoutMs: 12000 }
 );
-const TableToolsSidebar = React.lazy(() =>
-  import('./components/TableToolsSidebar').then((m) => ({ default: m.TableToolsSidebar }))
+const TableToolsSidebar = safeLazy(
+  () => import('./components/TableToolsSidebar').then((m) => ({ default: m.TableToolsSidebar })),
+  { name: 'TableToolsSidebar', timeoutMs: 12000 }
 );
-const BorderEditSidebar = React.lazy(() =>
-  import('./components/BorderEditSidebar').then((m) => ({ default: m.BorderEditSidebar }))
+const BorderEditSidebar = safeLazy(
+  () => import('./components/BorderEditSidebar').then((m) => ({ default: m.BorderEditSidebar })),
+  { name: 'BorderEditSidebar', timeoutMs: 12000 }
 );
-const ImageWizardSidebar = React.lazy(() =>
-  import('./components/ImageWizardSidebar').then((m) => ({ default: m.ImageWizardSidebar }))
+const ImageWizardSidebar = safeLazy(
+  () => import('./components/ImageWizardSidebar').then((m) => ({ default: m.ImageWizardSidebar })),
+  { name: 'ImageWizardSidebar', timeoutMs: 12000 }
 );
-const QuickBlocksSidebar = React.lazy(() =>
-  import('./components/QuickBlocksSidebar').then((m) => ({ default: m.QuickBlocksSidebar }))
+const QuickBlocksSidebar = safeLazy(
+  () => import('./components/QuickBlocksSidebar').then((m) => ({ default: m.QuickBlocksSidebar })),
+  { name: 'QuickBlocksSidebar', timeoutMs: 12000 }
 );
-const FormatterSidebar = React.lazy(() =>
-  import('./components/FormatterSidebar').then((m) => ({ default: m.FormatterSidebar }))
+const FormatterSidebar = safeLazy(
+  () => import('./components/FormatterSidebar').then((m) => ({ default: m.FormatterSidebar })),
+  { name: 'FormatterSidebar', timeoutMs: 12000 }
 );
-const AiAssistantSidebar = React.lazy(() =>
-  import('./components/AiAssistantSidebar').then((m) => ({ default: m.AiAssistantSidebar }))
+const AiAssistantSidebar = safeLazy(
+  () => import('./components/AiAssistantSidebar').then((m) => ({ default: m.AiAssistantSidebar })),
+  { name: 'AiAssistantSidebar', timeoutMs: 12000 }
 );
-const HyperLinkSidebar = React.lazy(() =>
-  import('./components/HyperLinkSidebar').then((m) => ({ default: m.HyperLinkSidebar }))
+const HyperLinkSidebar = safeLazy(
+  () => import('./components/HyperLinkSidebar').then((m) => ({ default: m.HyperLinkSidebar })),
+  { name: 'HyperLinkSidebar', timeoutMs: 12000 }
 );
 
-const VoiceCommandSidebar = React.lazy(() =>
-  import('./components/VoiceCommandSidebar').then((m) => ({ default: m.VoiceCommandSidebar }))
+const VoiceCommandSidebar = safeLazy(
+  () => import('./components/VoiceCommandSidebar').then((m) => ({ default: m.VoiceCommandSidebar })),
+  { name: 'VoiceCommandSidebar', timeoutMs: 12000 }
 );
-const SpellCheckSidebar = React.lazy(() =>
-  import('./components/SpellCheckSidebar').then((m) => ({ default: m.SpellCheckSidebar }))
+const SpellCheckSidebar = safeLazy(
+  () => import('./components/SpellCheckSidebar').then((m) => ({ default: m.SpellCheckSidebar })),
+  { name: 'SpellCheckSidebar', timeoutMs: 12000 }
 );
-const TranslateSidebar = React.lazy(() =>
-  import('./components/TranslateSidebar').then((m) => ({ default: m.TranslateSidebar }))
+const TranslateSidebar = safeLazy(
+  () => import('./components/TranslateSidebar').then((m) => ({ default: m.TranslateSidebar })),
+  { name: 'TranslateSidebar', timeoutMs: 12000 }
 );
 
 const SidebarLoadingFallback = () => (
@@ -792,10 +809,10 @@ export default function App() {
     }
   }, [editor, settings.viewMode]);
 
-  // Sync document.title with document name and Nedit v5.3 branding
+  // Sync document.title with document name and Nedit v5.5 branding
   useEffect(() => {
     const docName = settings.title?.trim();
-    document.title = docName ? `${docName} - Nedit v5.3` : 'Nedit v5.3';
+    document.title = docName ? `${docName} - Nedit v5.5` : 'Nedit v5.5';
   }, [settings.title]);
 
   // Startup sync: Load document content & settings asynchronously from IndexedDB
@@ -1221,17 +1238,24 @@ export default function App() {
       {/* Main Workspace Body: Navigation Pane + Document Canvas */}
       <div className="flex-1 flex overflow-hidden relative z-0" style={{ position: 'relative', zIndex: 0 }}>
         {settings.showNavigationPane && (
-          <Suspense fallback={<NavPaneLoadingFallback />}>
-            <NavigationPane
-              editor={editor}
-              onClose={() => handleUpdateSettings({ showNavigationPane: false })}
-              wordCount={stats.words}
-              themeMode={effectiveThemeMode}
-              pageSize={settings.pageSize}
-              orientation={settings.orientation}
-              onPageCountChange={handlePageCountChange}
-            />
-          </Suspense>
+          <LazyModuleBoundary
+            moduleName="NavigationPane"
+            onClose={() => handleUpdateSettings({ showNavigationPane: false })}
+            variant="sidebar"
+            fallbackTitle="Navigation Pane"
+          >
+            <Suspense fallback={<NavPaneLoadingFallback />}>
+              <NavigationPane
+                editor={editor}
+                onClose={() => handleUpdateSettings({ showNavigationPane: false })}
+                wordCount={stats.words}
+                themeMode={effectiveThemeMode}
+                pageSize={settings.pageSize}
+                orientation={settings.orientation}
+                onPageCountChange={handlePageCountChange}
+              />
+            </Suspense>
+          </LazyModuleBoundary>
         )}
 
         {/* Page Workspace Canvas */}
@@ -1254,163 +1278,250 @@ export default function App() {
 
         {/* SEO Check Sidebar (Toggled via Analyze SEO button) */}
         {settings.showSeoPane && (
-          <Suspense fallback={<SidebarLoadingFallback />}>
-            <SeoCheckSidebar
-              editor={editor}
-              onClose={() => handleUpdateSettings({ showSeoPane: false })}
-              wordCount={stats.words}
-            />
-          </Suspense>
+          <LazyModuleBoundary
+            moduleName="SeoCheckSidebar"
+            onClose={() => handleUpdateSettings({ showSeoPane: false })}
+            variant="sidebar"
+            fallbackTitle="SEO Analyzer"
+          >
+            <Suspense fallback={<SidebarLoadingFallback />}>
+              <SeoCheckSidebar
+                editor={editor}
+                onClose={() => handleUpdateSettings({ showSeoPane: false })}
+                wordCount={stats.words}
+              />
+            </Suspense>
+          </LazyModuleBoundary>
         )}
 
         {/* Table Edit Right Toolbar (Toggled via Table Edit button or auto when table focused) */}
         {settings.showTableEditPane && (
-          <Suspense fallback={<SidebarLoadingFallback />}>
-            <TableEditSidebar
-              editor={editor}
-              themeMode={effectiveThemeMode}
-              onClose={() => handleUpdateSettings({ showTableEditPane: false })}
-              enableTableHandle={settings.enableTableHandle ?? true}
-              onToggleEnableHandle={(enabled) => {
-                try {
-                  localStorage.setItem('wordpad_enable_table_handle', String(enabled));
-                } catch {
-                  // ignore
-                }
-                handleUpdateSettings({ enableTableHandle: enabled });
-              }}
-            />
-          </Suspense>
+          <LazyModuleBoundary
+            moduleName="TableEditSidebar"
+            onClose={() => handleUpdateSettings({ showTableEditPane: false })}
+            variant="sidebar"
+            fallbackTitle="Table Edit"
+          >
+            <Suspense fallback={<SidebarLoadingFallback />}>
+              <TableEditSidebar
+                editor={editor}
+                themeMode={effectiveThemeMode}
+                onClose={() => handleUpdateSettings({ showTableEditPane: false })}
+                enableTableHandle={settings.enableTableHandle ?? true}
+                onToggleEnableHandle={(enabled: boolean) => {
+                  try {
+                    localStorage.setItem('wordpad_enable_table_handle', String(enabled));
+                  } catch {
+                    // ignore
+                  }
+                  handleUpdateSettings({ enableTableHandle: enabled });
+                }}
+              />
+            </Suspense>
+          </LazyModuleBoundary>
         )}
 
         {/* Table Tools Right Toolbar (Toggled via Table Tools button in Table tab) */}
         {settings.showTableToolsPane && (
-          <Suspense fallback={<SidebarLoadingFallback />}>
-            <TableToolsSidebar
-              editor={editor}
-              themeMode={effectiveThemeMode}
-              onClose={() => handleUpdateSettings({ showTableToolsPane: false })}
-            />
-          </Suspense>
+          <LazyModuleBoundary
+            moduleName="TableToolsSidebar"
+            onClose={() => handleUpdateSettings({ showTableToolsPane: false })}
+            variant="sidebar"
+            fallbackTitle="Table Tools"
+          >
+            <Suspense fallback={<SidebarLoadingFallback />}>
+              <TableToolsSidebar
+                editor={editor}
+                themeMode={effectiveThemeMode}
+                onClose={() => handleUpdateSettings({ showTableToolsPane: false })}
+              />
+            </Suspense>
+          </LazyModuleBoundary>
         )}
 
         {/* Border Edit Right Toolbar (Toggled via Borders button or auto when table focused) */}
         {settings.showBorderEditPane && (
-          <Suspense fallback={<SidebarLoadingFallback />}>
-            <BorderEditSidebar
-              editor={editor}
-              themeMode={effectiveThemeMode}
-              onClose={() => handleUpdateSettings({ showBorderEditPane: false })}
-              enableBorderHandle={settings.enableBorderHandle ?? false}
-              onToggleEnableHandle={(enabled) => {
-                try {
-                  localStorage.setItem('wordpad_enable_border_handle', String(enabled));
-                } catch {
-                  // ignore
-                }
-                handleUpdateSettings({ enableBorderHandle: enabled });
-              }}
-            />
-          </Suspense>
+          <LazyModuleBoundary
+            moduleName="BorderEditSidebar"
+            onClose={() => handleUpdateSettings({ showBorderEditPane: false })}
+            variant="sidebar"
+            fallbackTitle="Borders & Shading"
+          >
+            <Suspense fallback={<SidebarLoadingFallback />}>
+              <BorderEditSidebar
+                editor={editor}
+                themeMode={effectiveThemeMode}
+                onClose={() => handleUpdateSettings({ showBorderEditPane: false })}
+                enableBorderHandle={settings.enableBorderHandle ?? false}
+                onToggleEnableHandle={(enabled: boolean) => {
+                  try {
+                    localStorage.setItem('wordpad_enable_border_handle', String(enabled));
+                  } catch {
+                    // ignore
+                  }
+                  handleUpdateSettings({ enableBorderHandle: enabled });
+                }}
+              />
+            </Suspense>
+          </LazyModuleBoundary>
         )}
 
         {/* Image Wizard Right Toolbar (Toggled via Image Wizard button) */}
         {settings.showImageWizardPane && (
-          <Suspense fallback={<SidebarLoadingFallback />}>
-            <ImageWizardSidebar
-              editor={editor}
-              onClose={() => handleUpdateSettings({ showImageWizardPane: false })}
-            />
-          </Suspense>
+          <LazyModuleBoundary
+            moduleName="ImageWizardSidebar"
+            onClose={() => handleUpdateSettings({ showImageWizardPane: false })}
+            variant="sidebar"
+            fallbackTitle="Image Wizard"
+          >
+            <Suspense fallback={<SidebarLoadingFallback />}>
+              <ImageWizardSidebar
+                editor={editor}
+                onClose={() => handleUpdateSettings({ showImageWizardPane: false })}
+              />
+            </Suspense>
+          </LazyModuleBoundary>
         )}
 
         {/* Formatter Right Toolbar (Toggled via Formatter button in Format tab) */}
         {settings.showFormatterPane && (
-          <Suspense fallback={<SidebarLoadingFallback />}>
-            <FormatterSidebar
-              editor={editor}
-              onClose={() => handleUpdateSettings({ showFormatterPane: false })}
-              formatPainter={formatPainter}
-              onToggleFormatPainter={handleToggleFormatPainter}
-              onClearFormatPainter={handleClearFormatPainter}
-              onApplyFormatPainter={handleApplyFormatPainter}
-              themeMode={effectiveThemeMode}
-            />
-          </Suspense>
+          <LazyModuleBoundary
+            moduleName="FormatterSidebar"
+            onClose={() => handleUpdateSettings({ showFormatterPane: false })}
+            variant="sidebar"
+            fallbackTitle="Format Inspector"
+          >
+            <Suspense fallback={<SidebarLoadingFallback />}>
+              <FormatterSidebar
+                editor={editor}
+                onClose={() => handleUpdateSettings({ showFormatterPane: false })}
+                formatPainter={formatPainter}
+                onToggleFormatPainter={handleToggleFormatPainter}
+                onClearFormatPainter={handleClearFormatPainter}
+                onApplyFormatPainter={handleApplyFormatPainter}
+                themeMode={effectiveThemeMode}
+              />
+            </Suspense>
+          </LazyModuleBoundary>
         )}
 
         {/* Quick Blocks Right Toolbar (Toggled via Quick Blocks button) */}
         {settings.showQuickBlocksPane && (
-          <Suspense fallback={<SidebarLoadingFallback />}>
-            <QuickBlocksSidebar
-              editor={editor}
-              themeMode={effectiveThemeMode}
-              onClose={() => handleUpdateSettings({ showQuickBlocksPane: false })}
-            />
-          </Suspense>
+          <LazyModuleBoundary
+            moduleName="QuickBlocksSidebar"
+            onClose={() => handleUpdateSettings({ showQuickBlocksPane: false })}
+            variant="sidebar"
+            fallbackTitle="Quick Blocks"
+          >
+            <Suspense fallback={<SidebarLoadingFallback />}>
+              <QuickBlocksSidebar
+                editor={editor}
+                themeMode={effectiveThemeMode}
+                onClose={() => handleUpdateSettings({ showQuickBlocksPane: false })}
+              />
+            </Suspense>
+          </LazyModuleBoundary>
         )}
 
         {/* Voice Command Right Toolbar (Toggled via Command button) */}
         {settings.showVoiceCommandPane && (
-          <Suspense fallback={<SidebarLoadingFallback />}>
-            <VoiceCommandSidebar
-              editor={editor}
-              onClose={() => handleUpdateSettings({ showVoiceCommandPane: false })}
-            />
-          </Suspense>
+          <LazyModuleBoundary
+            moduleName="VoiceCommandSidebar"
+            onClose={() => handleUpdateSettings({ showVoiceCommandPane: false })}
+            variant="sidebar"
+            fallbackTitle="Voice Command"
+          >
+            <Suspense fallback={<SidebarLoadingFallback />}>
+              <VoiceCommandSidebar
+                editor={editor}
+                onClose={() => handleUpdateSettings({ showVoiceCommandPane: false })}
+              />
+            </Suspense>
+          </LazyModuleBoundary>
         )}
 
         {/* Spell API Right Toolbar (Toggled via Spell API button in Review tab) */}
         {settings.showSpellCheckPane && (
-          <Suspense fallback={<SidebarLoadingFallback />}>
-            <SpellCheckSidebar
-              editor={editor}
-              onClose={() => handleUpdateSettings({ showSpellCheckPane: false })}
-            />
-          </Suspense>
+          <LazyModuleBoundary
+            moduleName="SpellCheckSidebar"
+            onClose={() => handleUpdateSettings({ showSpellCheckPane: false })}
+            variant="sidebar"
+            fallbackTitle="Spell Check API"
+          >
+            <Suspense fallback={<SidebarLoadingFallback />}>
+              <SpellCheckSidebar
+                editor={editor}
+                onClose={() => handleUpdateSettings({ showSpellCheckPane: false })}
+              />
+            </Suspense>
+          </LazyModuleBoundary>
         )}
 
         {/* Hyper Link Right Toolbar (Toggled via Hyper button in Insert tab) */}
         {settings.showHyperLinkPane && (
-          <Suspense fallback={<SidebarLoadingFallback />}>
-            <HyperLinkSidebar
-              editor={editor}
-              onClose={() => handleUpdateSettings({ showHyperLinkPane: false })}
-              mode={settings.hyperLinkMode || 'navigate'}
-              onToggleMode={(newMode) => handleUpdateSettings({ hyperLinkMode: newMode })}
-            />
-          </Suspense>
+          <LazyModuleBoundary
+            moduleName="HyperLinkSidebar"
+            onClose={() => handleUpdateSettings({ showHyperLinkPane: false })}
+            variant="sidebar"
+            fallbackTitle="HyperLink Manager"
+          >
+            <Suspense fallback={<SidebarLoadingFallback />}>
+              <HyperLinkSidebar
+                editor={editor}
+                onClose={() => handleUpdateSettings({ showHyperLinkPane: false })}
+                mode={settings.hyperLinkMode || 'navigate'}
+                onToggleMode={(newMode: any) => handleUpdateSettings({ hyperLinkMode: newMode })}
+              />
+            </Suspense>
+          </LazyModuleBoundary>
         )}
 
         {/* AI Writing Assistant Right Toolbar (Toggled via Help Tab AI Assistant button or Review Tab Spelling & Grammar) */}
         {settings.showAiAssistantPane && (
-          <Suspense fallback={<SidebarLoadingFallback />}>
-            <AiAssistantSidebar
-              editor={editor}
-              themeMode={effectiveThemeMode}
-              initialIntent={settings.aiAssistantIntent}
-              triggerTimestamp={settings.aiAssistantTriggerTimestamp}
-              onClose={() => handleUpdateSettings({ showAiAssistantPane: false, aiAssistantIntent: null })}
-            />
-          </Suspense>
+          <LazyModuleBoundary
+            moduleName="AiAssistantSidebar"
+            onClose={() => handleUpdateSettings({ showAiAssistantPane: false, aiAssistantIntent: null })}
+            variant="sidebar"
+            fallbackTitle="AI Writing Assistant"
+          >
+            <Suspense fallback={<SidebarLoadingFallback />}>
+              <AiAssistantSidebar
+                editor={editor}
+                themeMode={effectiveThemeMode}
+                initialIntent={settings.aiAssistantIntent}
+                triggerTimestamp={settings.aiAssistantTriggerTimestamp}
+                onClose={() => handleUpdateSettings({ showAiAssistantPane: false, aiAssistantIntent: null })}
+              />
+            </Suspense>
+          </LazyModuleBoundary>
         )}
 
         {/* Smart Translate Right Toolbar (Toggled via Review Tab Translate button) */}
         {settings.showTranslatePane && (
-          <Suspense fallback={<SidebarLoadingFallback />}>
-            <TranslateSidebar
-              editor={editor}
-              onClose={() => handleUpdateSettings({ showTranslatePane: false })}
-            />
-          </Suspense>
+          <LazyModuleBoundary
+            moduleName="TranslateSidebar"
+            onClose={() => handleUpdateSettings({ showTranslatePane: false })}
+            variant="sidebar"
+            fallbackTitle="Smart Translate"
+          >
+            <Suspense fallback={<SidebarLoadingFallback />}>
+              <TranslateSidebar
+                editor={editor}
+                onClose={() => handleUpdateSettings({ showTranslatePane: false })}
+              />
+            </Suspense>
+          </LazyModuleBoundary>
         )}
       </div>
 
       {/* Table Context Bar (Floats when selection is inside a table) */}
       <TableContextMenu
         editor={editor}
-        onOpenTableEdit={() => handleUpdateSettings({ showTableEditPane: true })}
-        onOpenBorderEdit={() => handleUpdateSettings({ showBorderEditPane: true })}
+        themeMode={effectiveThemeMode}
+        isTableEditOpen={!!settings.showTableEditPane}
+        isBorderEditOpen={!!settings.showBorderEditPane}
+        onOpenTableEdit={() => handleUpdateSettings({ showTableEditPane: !settings.showTableEditPane })}
+        onOpenBorderEdit={() => handleUpdateSettings({ showBorderEditPane: !settings.showBorderEditPane })}
       />
 
       {/* Microsoft Word Bottom Status Bar */}
@@ -1435,39 +1546,60 @@ export default function App() {
 
       {/* Modals */}
       {showFindReplace && (
-        <Suspense fallback={null}>
-          <FindReplaceModal
-            editor={editor}
-            onClose={handleCloseFindReplace}
-          />
-        </Suspense>
+        <LazyModuleBoundary
+          moduleName="FindReplaceModal"
+          onClose={handleCloseFindReplace}
+          variant="modal"
+          fallbackTitle="Find & Replace"
+        >
+          <Suspense fallback={null}>
+            <FindReplaceModal
+              editor={editor}
+              onClose={handleCloseFindReplace}
+            />
+          </Suspense>
+        </LazyModuleBoundary>
       )}
 
       {showStatsModal && (
-        <Suspense fallback={null}>
-          <DocumentStatsModal
-            stats={stats}
-            onClose={handleCloseStatsModal}
-          />
-        </Suspense>
+        <LazyModuleBoundary
+          moduleName="DocumentStatsModal"
+          onClose={handleCloseStatsModal}
+          variant="modal"
+          fallbackTitle="Document Statistics"
+        >
+          <Suspense fallback={null}>
+            <DocumentStatsModal
+              stats={stats}
+              onClose={handleCloseStatsModal}
+            />
+          </Suspense>
+        </LazyModuleBoundary>
       )}
 
       {showBackstage && typeof document !== 'undefined' && createPortal(
-        <Suspense fallback={<BackstageLoadingFallback />}>
-          <FileBackstage
-            editor={editor}
-            settings={settings}
-            stats={stats}
-            onUpdateSettings={handleUpdateSettings}
-            onClose={handleCloseBackstage}
-            onSaveToLocalStorage={handleSaveToLocalStorage}
-            onPrint={handlePrint}
-            autoSaveEnabled={autoSaveEnabled}
-            onToggleAutoSave={handleToggleAutoSave}
-            onCleanLocalStorage={handleCleanLocalStorage}
-            initialTab={backstageInitialTab}
-          />
-        </Suspense>,
+        <LazyModuleBoundary
+          moduleName="FileBackstage"
+          onClose={handleCloseBackstage}
+          variant="fullscreen"
+          fallbackTitle="File Backstage"
+        >
+          <Suspense fallback={<BackstageLoadingFallback />}>
+            <FileBackstage
+              editor={editor}
+              settings={settings}
+              stats={stats}
+              onUpdateSettings={handleUpdateSettings}
+              onClose={handleCloseBackstage}
+              onSaveToLocalStorage={handleSaveToLocalStorage}
+              onPrint={handlePrint}
+              autoSaveEnabled={autoSaveEnabled}
+              onToggleAutoSave={handleToggleAutoSave}
+              onCleanLocalStorage={handleCleanLocalStorage}
+              initialTab={backstageInitialTab}
+            />
+          </Suspense>
+        </LazyModuleBoundary>,
         document.body
       )}
 

@@ -15,12 +15,12 @@ import {
   ExternalLink,
   Save,
   Link2,
+  Smartphone,
 } from 'lucide-react';
 const ScreenCaptureTool = React.lazy(() =>
   import('./ScreenCaptureTool').then((m) => ({ default: m.ScreenCaptureTool }))
 );
 import { snapshotStore } from '../utils/snapshotStore';
-import { captureDocumentScreenSnapshot } from '../utils/screenSnapshot';
 
 interface ImageWizardSidebarProps {
   editor: Editor | null;
@@ -243,22 +243,46 @@ export const ImageWizardSidebar: React.FC<ImageWizardSidebarProps> = ({ editor, 
   }, []);
 
   // Screen capture tool function directly available in Image Wizard
-  const handleCaptureScreenSnapshot = async () => {
+  const [screenCaptureSource, setScreenCaptureSource] = useState<'device_screen' | 'document_page' | 'photo_file' | 'clipboard'>('device_screen');
+
+  const handleCaptureScreenSnapshot = async (mode: 'device' | 'document' = 'device') => {
     setIsCapturing(true);
-    setAppliedMessage('📸 Capturing document screen...');
+    setAppliedMessage(
+      mode === 'device'
+        ? '🖥️ Initializing Screen / Tab Capture...'
+        : '📸 Capturing Document Screen...'
+    );
     try {
-      const result = await captureDocumentScreenSnapshot({ pixelRatio: 1.5 });
+      const { captureDeviceScreenSnapshot, captureDocumentScreenSnapshot } = await import('../utils/screenSnapshot');
+
+      let result;
+      if (mode === 'device') {
+        result = await captureDeviceScreenSnapshot();
+        if (!result.success && result.error && !result.error.includes('cancelled') && !result.error.includes('denied')) {
+          setAppliedMessage('⚠️ Device screen not available, capturing document page...');
+          result = await captureDocumentScreenSnapshot({ pixelRatio: 1.5 });
+        }
+      } else {
+        result = await captureDocumentScreenSnapshot({ pixelRatio: 1.5 });
+      }
+
       if (!result.success || !result.dataUrl) {
-        throw new Error(result.error || 'Failed to generate document screenshot');
+        if (result.error?.includes('cancelled') || result.error?.includes('denied')) {
+          setAppliedMessage('Screen capture was cancelled.');
+          setTimeout(() => setAppliedMessage(null), 2500);
+          return;
+        }
+        throw new Error(result.error || 'Failed to generate screenshot');
       }
 
       setScreenCaptureBaseImage(result.dataUrl);
+      setScreenCaptureSource(result.source || (mode === 'device' ? 'device_screen' : 'document_page'));
       setShowScreenCaptureTool(true);
       setAppliedMessage('✂️ Screen Capture Tool ready! Drag to select an area.');
       setTimeout(() => setAppliedMessage(null), 3000);
     } catch (err: any) {
       console.error('Failed to capture snapshot in Image Wizard:', err);
-      const failMsg = err?.message || 'Screen capture failed. Check document visibility.';
+      const failMsg = err?.message || 'Screen capture failed.';
       setAppliedMessage(`❌ ${failMsg}`);
       setTimeout(() => setAppliedMessage(null), 4500);
     } finally {
@@ -630,6 +654,86 @@ export const ImageWizardSidebar: React.FC<ImageWizardSidebarProps> = ({ editor, 
     setTimeout(() => setAppliedMessage(null), 3500);
   };
 
+  // 5. Make image responsive [save]
+  const handleMakeImageResponsiveSave = () => {
+    if (!editor) return;
+
+    const currentLinkAttrs = editor.isActive('link') ? editor.getAttributes('link') : null;
+    const finalLinkHref = imageLink.trim() || currentLinkAttrs?.href;
+    const responsiveStyle = 'max-width: 100%; width: 100%; height: auto; display: block; margin-left: auto; margin-right: auto;';
+
+    // 1. If an image is currently active/selected in the editor:
+    if (editor.isActive('image')) {
+      const activeAttrs = editor.getAttributes('image');
+      editor
+        .chain()
+        .focus()
+        .updateAttributes('image', {
+          src: imageSrc || activeAttrs.src,
+          width: '100%',
+          height: 'auto',
+          style: responsiveStyle,
+          alt: altText || activeAttrs.alt || undefined,
+          title: caption || activeAttrs.title || undefined,
+        })
+        .run();
+
+      if (finalLinkHref) {
+        editor.chain().focus().setLink({ href: finalLinkHref }).run();
+      }
+    } else if (imageSrc) {
+      // 2. If no image currently selected, insert/update the image from Image Wizard with responsive styles
+      if (finalLinkHref) {
+        editor
+          .chain()
+          .focus()
+          .setImage({
+            src: imageSrc,
+            alt: altText || undefined,
+            title: caption || undefined,
+          })
+          .updateAttributes('image', {
+            width: '100%',
+            height: 'auto',
+            style: responsiveStyle,
+          })
+          .setLink({ ...currentLinkAttrs, href: finalLinkHref })
+          .run();
+      } else {
+        editor
+          .chain()
+          .focus()
+          .setImage({
+            src: imageSrc,
+            alt: altText || undefined,
+            title: caption || undefined,
+          })
+          .updateAttributes('image', {
+            width: '100%',
+            height: 'auto',
+            style: responsiveStyle,
+          })
+          .run();
+      }
+    } else {
+      // 3. Fallback: make all images in the document responsive
+      let html = editor.getHTML();
+      html = html.replace(/<img\b([^>]*)>/gi, (_match, attrs) => {
+        const cleanAttrs = attrs
+          .replace(/\s*(width|height)="[^"]*"/gi, '')
+          .replace(/\s*style="[^"]*"/gi, '');
+        return `<img ${cleanAttrs} style="${responsiveStyle}" />`;
+      });
+      editor.commands.setContent(html);
+    }
+
+    setSavedImageLink(finalLinkHref || '');
+    setSavedAltText(altText);
+    setSavedCaption(caption);
+    setAppliedMessage('📱 Image set to responsive (100% fluid, height: auto) [saved]!');
+    setTimeout(() => setAppliedMessage(null), 3500);
+  };
+
   // Reset to original HVAC sample or clear options
   const handleReset = () => {
     setImageSrc(DEFAULT_HVAC_SAMPLE);
@@ -738,10 +842,10 @@ export const ImageWizardSidebar: React.FC<ImageWizardSidebarProps> = ({ editor, 
               <span>Upload Image</span>
             </button>
             <button
-              onClick={handleCaptureScreenSnapshot}
+              onClick={() => handleCaptureScreenSnapshot('device')}
               disabled={isCapturing}
               className="w-full bg-[#059669] hover:bg-[#047857] text-white font-medium py-2 px-2.5 rounded-lg flex items-center justify-center space-x-1.5 text-xs cursor-pointer shadow-xs transition-colors disabled:opacity-50"
-              title="Capture screen snapshot of the document"
+              title="Capture device screen, web tab, photo, or document with Snipping Tool"
             >
               <Camera size={14} className={isCapturing ? 'animate-pulse' : ''} />
               <span>{isCapturing ? 'Capturing...' : 'Screen Snapshot'}</span>
@@ -813,6 +917,18 @@ export const ImageWizardSidebar: React.FC<ImageWizardSidebarProps> = ({ editor, 
                 </button>
               );
             })}
+          </div>
+          {/* Quick Responsive Action Button */}
+          <div className="pt-1.5">
+            <button
+              type="button"
+              onClick={handleMakeImageResponsiveSave}
+              className="w-full py-1.5 px-3 rounded-lg border border-emerald-600 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-semibold text-xs flex items-center justify-center space-x-1.5 cursor-pointer shadow-2xs transition-colors"
+              title="Set image to 100% fluid responsive width & height auto, and save into document"
+            >
+              <Smartphone size={13} className="text-emerald-600" />
+              <span>Make image responsive [save]</span>
+            </button>
           </div>
         </div>
 
@@ -1022,6 +1138,17 @@ export const ImageWizardSidebar: React.FC<ImageWizardSidebarProps> = ({ editor, 
           <span>Paste / Insert to Document</span>
         </button>
 
+        {/* Button: Make image responsive [save] */}
+        <button
+          type="button"
+          onClick={handleMakeImageResponsiveSave}
+          className="w-full bg-[#059669] hover:bg-[#047857] active:bg-[#065f46] text-white font-semibold py-2.5 px-4 rounded-lg flex items-center justify-center space-x-2 text-xs shadow-xs cursor-pointer transition-colors"
+          title="Make image 100% fluid responsive (max-width: 100%, height: auto) and save into document"
+        >
+          <Smartphone size={14} />
+          <span>Make image responsive [save]</span>
+        </button>
+
         {/* Secondary Apply Optimization Button */}
         <button
           onClick={handleApplyOptimization}
@@ -1089,8 +1216,16 @@ export const ImageWizardSidebar: React.FC<ImageWizardSidebarProps> = ({ editor, 
           <ScreenCaptureTool
             isOpen={showScreenCaptureTool}
             baseImageUrl={screenCaptureBaseImage}
+            initialSource={screenCaptureSource}
             onClose={() => setShowScreenCaptureTool(false)}
             onConfirmCapture={handleConfirmAreaCapture}
+            onInsertToDocument={(dataUrl) => {
+              setShowScreenCaptureTool(false);
+              if (editor) {
+                editor.chain().focus().setImage({ src: dataUrl }).run();
+              }
+              handleConfirmAreaCapture(dataUrl);
+            }}
           />
         </React.Suspense>
       )}

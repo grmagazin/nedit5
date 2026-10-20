@@ -21,6 +21,7 @@ import {
   ArrowUpDown,
   ArrowDownAZ,
   ArrowUpZA,
+  RotateCw,
 } from 'lucide-react';
 
 export type TableCalculationOp = 'SUM' | 'AVG' | 'MIN' | 'MAX' | 'COUNT' | 'PRODUCT';
@@ -160,7 +161,8 @@ export const TableToolsSidebar: React.FC<TableToolsSidebarProps> = ({
   const [selectedOp, setSelectedOp] = useState<TableCalculationOp>('SUM');
   const [formatMode, setFormatMode] = useState<FormatMode>('auto');
   const [makeBold, setMakeBold] = useState<boolean>(true);
-  const [autoAddEdge, setAutoAddEdge] = useState<boolean>(true);
+  const [createNewCol, setCreateNewCol] = useState<boolean>(true);
+  const [createNewRow, setCreateNewRow] = useState<boolean>(true);
   const [lastFeedback, setLastFeedback] = useState<string | null>(null);
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
   const [sortColumnIndex, setSortColumnIndex] = useState<number | null>(null);
@@ -184,6 +186,20 @@ export const TableToolsSidebar: React.FC<TableToolsSidebarProps> = ({
     setTimeout(() => setLastFeedback(null), 3500);
   };
 
+  const isInsertMode = createNewCol && createNewRow;
+
+  const toggleInsertEditMode = useCallback(() => {
+    if (createNewCol && createNewRow) {
+      setCreateNewCol(false);
+      setCreateNewRow(false);
+      notify('Edit Mode: Formulas will overwrite the last row/column.');
+    } else {
+      setCreateNewCol(true);
+      setCreateNewRow(true);
+      notify('Insert Mode: Formulas will create new rows/columns.');
+    }
+  }, [createNewCol, createNewRow]);
+
   // Theme-specific styles
   const isSepia = themeMode === 'sepia';
   const isDark = themeMode === 'fullDark' || themeMode === 'canvasDark';
@@ -205,6 +221,30 @@ export const TableToolsSidebar: React.FC<TableToolsSidebarProps> = ({
     : isSepia
     ? 'bg-[#fbf8ee] border-[#cfc2aa] text-[#2c231c]'
     : 'bg-slate-50/80 border-slate-200 text-slate-800';
+
+  const subCardBg = isDark
+    ? 'bg-neutral-800/80 border-neutral-700/60 text-neutral-200'
+    : isSepia
+    ? 'bg-[#f5eedc] border-[#cfc2aa] text-[#2c231c]'
+    : 'bg-white/80 border-slate-200/60 text-slate-800';
+
+  const inputBg = isDark
+    ? 'bg-neutral-800 border-neutral-700 text-neutral-100'
+    : isSepia
+    ? 'bg-[#fbf8ee] border-[#cfc2aa] text-[#2c231c]'
+    : 'bg-white border-slate-200 text-slate-800';
+
+  const btnSecondaryBg = isDark
+    ? 'bg-neutral-800 border-neutral-700 text-neutral-200 hover:bg-neutral-700'
+    : isSepia
+    ? 'bg-[#f5eedc] border-[#cfc2aa] text-[#2c231c] hover:bg-[#ebdcc0]'
+    : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50';
+
+  const opCardBaseBg = isDark
+    ? 'border-neutral-700 bg-neutral-800/70 text-neutral-200 hover:border-neutral-600'
+    : isSepia
+    ? 'border-[#ded3be] bg-[#fbf8ee] text-[#2c231c] hover:border-[#bfa98d]'
+    : 'border-slate-200 bg-white/70 text-slate-800 hover:border-slate-300';
 
   // Analyze active table and current selection
   const tableData = useMemo(() => {
@@ -326,36 +366,51 @@ export const TableToolsSidebar: React.FC<TableToolsSidebarProps> = ({
         const numRows = rect.bottom - rect.top;
         const numCols = rect.right - rect.left;
 
-        // Check if we need to auto-add a column at the right edge
-        if (numCols === 1 && rect.right === workingMap.width && autoAddEdge) {
-          editor.chain().focus().addColumnAfter().run();
+        let destCol: number = rect.right - 1;
+
+        if (createNewCol) {
+          // Focus the rightmost cell in selection and add a new column after
+          const rightmostCol = Math.min(rect.right - 1, workingMap.width - 1);
+          const anchorCellOffset = workingMap.map[rect.top * workingMap.width + rightmostCol];
+          const anchorCellPos = workingTableStart + anchorCellOffset;
+
+          editor.chain().focus().setTextSelection(anchorCellPos + 1).addColumnAfter().run();
+
           const refreshed = findTable(editor.state.selection.$from);
           if (refreshed) {
             workingTableNode = refreshed.node;
             workingTableStart = refreshed.start;
             workingMap = TableMap.get(workingTableNode);
           }
+
+          // Destination is the newly created column
+          destCol = rightmostCol + 1;
         }
 
         for (let r = rect.top; r < rect.bottom; r++) {
-          let destCol: number;
           let sourceCols: number[] = [];
 
-          if (rect.right - rect.left > 1) {
-            // Selected range has multiple columns -> Destination is rightmost column in selection
-            destCol = rect.right - 1;
-            for (let c = rect.left; c < destCol; c++) {
+          if (createNewCol) {
+            // Source columns: all columns in the original selection range
+            for (let c = rect.left; c < rect.right; c++) {
               sourceCols.push(c);
             }
           } else {
-            // 1 column selected -> Destination is adjacent column on right (or last column if at edge)
-            if (rect.right < workingMap.width) {
-              destCol = rect.right;
-              sourceCols.push(rect.left);
-            } else {
-              destCol = workingMap.width - 1;
-              for (let c = 0; c < destCol; c++) {
+            // In Last Col: replace the last column with the result
+            if (numCols > 1) {
+              destCol = rect.right - 1;
+              for (let c = rect.left; c < destCol; c++) {
                 sourceCols.push(c);
+              }
+            } else {
+              if (rect.right < workingMap.width) {
+                destCol = rect.right;
+                sourceCols.push(rect.left);
+              } else {
+                destCol = workingMap.width - 1;
+                for (let c = 0; c < destCol; c++) {
+                  sourceCols.push(c);
+                }
               }
             }
           }
@@ -398,37 +453,53 @@ export const TableToolsSidebar: React.FC<TableToolsSidebarProps> = ({
         // Direction: DOWN
         // Multi-column calculation: calculate selected column values -> insert into last cell at bottom
         const numRows = rect.bottom - rect.top;
+        const numCols = rect.right - rect.left;
 
-        // Check if we need to auto-add a row at the bottom edge
-        if (numRows === 1 && rect.bottom === workingMap.height && autoAddEdge) {
-          editor.chain().focus().addRowAfter().run();
+        let destRow: number = rect.bottom - 1;
+
+        if (createNewRow) {
+          // Focus the bottom-most cell in selection and add a new row after
+          const bottomRow = Math.min(rect.bottom - 1, workingMap.height - 1);
+          const anchorCellOffset = workingMap.map[bottomRow * workingMap.width + rect.left];
+          const anchorCellPos = workingTableStart + anchorCellOffset;
+
+          editor.chain().focus().setTextSelection(anchorCellPos + 1).addRowAfter().run();
+
           const refreshed = findTable(editor.state.selection.$from);
           if (refreshed) {
             workingTableNode = refreshed.node;
             workingTableStart = refreshed.start;
             workingMap = TableMap.get(workingTableNode);
           }
+
+          // Destination is the newly created row
+          destRow = bottomRow + 1;
         }
 
         for (let c = rect.left; c < rect.right; c++) {
-          let destRow: number;
           let sourceRows: number[] = [];
 
-          if (rect.bottom - rect.top > 1) {
-            // Selected range has multiple rows -> Destination is bottom-most row in selection
-            destRow = rect.bottom - 1;
-            for (let r = rect.top; r < destRow; r++) {
+          if (createNewRow) {
+            // Source rows: all rows in the original selection range
+            for (let r = rect.top; r < rect.bottom; r++) {
               sourceRows.push(r);
             }
           } else {
-            // 1 row selected -> Destination is adjacent row below (or last row if at edge)
-            if (rect.bottom < workingMap.height) {
-              destRow = rect.bottom;
-              sourceRows.push(rect.top);
-            } else {
-              destRow = workingMap.height - 1;
-              for (let r = 0; r < destRow; r++) {
+            // In Last Row: replace the last row with the result
+            if (numRows > 1) {
+              destRow = rect.bottom - 1;
+              for (let r = rect.top; r < destRow; r++) {
                 sourceRows.push(r);
+              }
+            } else {
+              if (rect.bottom < workingMap.height) {
+                destRow = rect.bottom;
+                sourceRows.push(rect.top);
+              } else {
+                destRow = workingMap.height - 1;
+                for (let r = 0; r < destRow; r++) {
+                  sourceRows.push(r);
+                }
               }
             }
           }
@@ -503,12 +574,18 @@ export const TableToolsSidebar: React.FC<TableToolsSidebarProps> = ({
 
       editor.view.dispatch(tr);
       notify(
-        `✓ ${operation} ${direction === 'RIGHT' ? '→ RIGHT' : '↓ DOWN'}: Inserted ${calculatedRowsOrCols} result${
-          calculatedRowsOrCols === 1 ? '' : 's'
-        }.`
+        `✓ ${operation} ${
+          direction === 'RIGHT'
+            ? createNewCol
+              ? '→ New Col'
+              : '→ In Last Col'
+            : createNewRow
+            ? '↓ New Row'
+            : '↓ In Last Row'
+        }: Calculated ${calculatedRowsOrCols} result${calculatedRowsOrCols === 1 ? '' : 's'}.`
       );
     },
-    [editor, tableData, formatMode, makeBold, autoAddEdge]
+    [editor, tableData, formatMode, makeBold, createNewCol, createNewRow]
   );
 
   // Quick Table Selection Helpers
@@ -778,25 +855,25 @@ export const TableToolsSidebar: React.FC<TableToolsSidebarProps> = ({
 
             {/* Quick Live Stats */}
             <div className="grid grid-cols-2 gap-2 text-xs pt-1">
-              <div className="bg-white/80 dark:bg-neutral-800/80 p-2 rounded-lg border border-slate-200/60 dark:border-neutral-700/60">
+              <div className={`p-2 rounded-lg border ${subCardBg}`}>
                 <span className="text-[10px] text-slate-400 dark:text-neutral-500 uppercase block">Numbers</span>
                 <span className="font-bold text-slate-800 dark:text-neutral-100 text-sm">
                   {tableData.stats.count} <span className="text-[10px] text-slate-400 font-normal">/ {tableData.stats.totalCellsCount} cells</span>
                 </span>
               </div>
-              <div className="bg-white/80 dark:bg-neutral-800/80 p-2 rounded-lg border border-slate-200/60 dark:border-neutral-700/60">
+              <div className={`p-2 rounded-lg border ${subCardBg}`}>
                 <span className="text-[10px] text-slate-400 dark:text-neutral-500 uppercase block">Live Sum</span>
                 <span className="font-bold text-blue-600 dark:text-blue-400 text-sm">
                   {tableData.stats.count > 0 ? tableData.stats.sum.toLocaleString() : '—'}
                 </span>
               </div>
-              <div className="bg-white/80 dark:bg-neutral-800/80 p-2 rounded-lg border border-slate-200/60 dark:border-neutral-700/60">
+              <div className={`p-2 rounded-lg border ${subCardBg}`}>
                 <span className="text-[10px] text-slate-400 dark:text-neutral-500 uppercase block">Average</span>
                 <span className="font-bold text-slate-700 dark:text-neutral-200 text-xs">
                   {tableData.stats.count > 0 ? tableData.stats.avg.toFixed(2) : '—'}
                 </span>
               </div>
-              <div className="bg-white/80 dark:bg-neutral-800/80 p-2 rounded-lg border border-slate-200/60 dark:border-neutral-700/60">
+              <div className={`p-2 rounded-lg border ${subCardBg}`}>
                 <span className="text-[10px] text-slate-400 dark:text-neutral-500 uppercase block">Min / Max</span>
                 <span className="font-bold text-slate-700 dark:text-neutral-200 text-xs">
                   {tableData.stats.count > 0 ? `${tableData.stats.min} / ${tableData.stats.max}` : '—'}
@@ -814,61 +891,167 @@ export const TableToolsSidebar: React.FC<TableToolsSidebarProps> = ({
               Click anywhere inside an existing table or select table cells to calculate values.
             </p>
             <button
-              onClick={() => editor?.chain().focus().insertTable({ rows: 4, cols: 4, withHeaderRow: true }).run()}
-              className="mt-2 w-full py-1.5 px-3 bg-amber-600 hover:bg-amber-700 text-white font-medium rounded-lg text-xs cursor-pointer transition-colors shadow-2xs"
+              onClick={toggleInsertEditMode}
+              className={`mt-2 w-full py-2 px-3 rounded-xl font-bold text-xs flex items-center justify-center space-x-2 cursor-pointer transition-all shadow-xs active:scale-98 ${
+                isInsertMode
+                  ? 'border-2 border-emerald-500 bg-emerald-50/80 hover:bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300'
+                  : 'bg-orange-500 hover:bg-orange-600 text-white border-2 border-orange-600'
+              }`}
+              title="Click to toggle between Insert Mode (creates new rows/cols) and Edit Mode (replaces last row/col)"
             >
-              Insert 4×4 Sample Table
+              <RotateCw size={13} className="shrink-0" />
+              <span>{isInsertMode ? 'Insert Mode' : 'Edit Mode'}</span>
             </button>
           </div>
         )}
 
         {/* Calculation Direction Section (Prominent Two Action Buttons) */}
-        <div className="space-y-2">
+        <div className="space-y-2.5">
           <div className="flex items-center justify-between">
             <h3 className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-neutral-300">
               Calculation Direction
             </h3>
-            <span className="text-[10px] text-blue-600 dark:text-blue-400 font-medium">Selected: {selectedOp}</span>
+            {!isInsertMode ? (
+              <span
+                className="text-[10px] font-bold text-rose-600 dark:text-rose-400 flex items-center space-x-1 animate-pulse"
+                title="Formulas will overwrite existing values in the last column or row"
+              >
+                <span>⚠️ Result replaces last line / col</span>
+              </span>
+            ) : (
+              <span className="text-[10px] text-blue-600 dark:text-blue-400 font-medium">Selected: {selectedOp}</span>
+            )}
           </div>
+
+          {/* Insert Mode / Edit Mode Carousel Button */}
+          <button
+            onClick={toggleInsertEditMode}
+            className={`w-full py-2 px-3 rounded-xl font-bold text-xs flex items-center justify-between cursor-pointer transition-all shadow-xs active:scale-98 ${
+              isInsertMode
+                ? 'border-2 border-emerald-500 bg-emerald-50/80 hover:bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300'
+                : 'bg-orange-500 hover:bg-orange-600 text-white border-2 border-orange-600'
+            }`}
+            title="Click to toggle between Insert Mode (creates new rows/cols) and Edit Mode (replaces last row/col)"
+          >
+            <div className="flex items-center space-x-2">
+              <RotateCw size={13} className="shrink-0" />
+              <span className="tracking-wide">{isInsertMode ? 'Insert Mode' : 'Edit Mode'}</span>
+            </div>
+            <span
+              className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
+                isInsertMode
+                  ? 'bg-emerald-200/60 dark:bg-emerald-900/60 text-emerald-900 dark:text-emerald-100'
+                  : 'bg-white/20 text-white'
+              }`}
+            >
+              {isInsertMode ? 'Creates New Lines' : 'Overwrites Last Line'}
+            </span>
+          </button>
 
           <div className="grid grid-cols-2 gap-2">
             {/* Action 1: RIGHT */}
-            <button
-              onClick={() => handleCalculate(selectedOp, 'RIGHT')}
-              className="group p-3 rounded-xl border border-blue-200 dark:border-blue-900 bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-950/40 dark:to-indigo-950/40 hover:from-blue-100 hover:to-indigo-100 dark:hover:from-blue-900/60 dark:hover:to-indigo-900/60 text-blue-950 dark:text-blue-100 text-left transition-all shadow-2xs cursor-pointer active:scale-98"
-              title={`Calculate ${selectedOp} for each row and insert into the rightmost cell`}
-            >
-              <div className="flex items-center justify-between mb-1.5">
-                <span className="font-bold text-xs flex items-center space-x-1 text-blue-700 dark:text-blue-300">
-                  <span>→ RIGHT</span>
-                </span>
-                <div className="w-6 h-6 rounded-full bg-blue-600 text-white flex items-center justify-center shadow-xs group-hover:translate-x-0.5 transition-transform">
-                  <ArrowRight size={14} />
+            <div className="flex flex-col space-y-1.5">
+              <button
+                onClick={() => handleCalculate(selectedOp, 'RIGHT')}
+                className={`group p-3 rounded-xl border text-left transition-all shadow-2xs cursor-pointer active:scale-98 w-full ${
+                  isDark
+                    ? 'border-blue-900/80 bg-gradient-to-br from-blue-950/40 to-indigo-950/40 hover:from-blue-900/60 hover:to-indigo-900/60 text-blue-100'
+                    : isSepia
+                    ? 'border-[#cfc2aa] bg-gradient-to-br from-[#f8f3e7] to-[#ede3cf] hover:from-[#f3ecd7] hover:to-[#e5dac2] text-[#2c231c]'
+                    : 'border-blue-200 bg-gradient-to-br from-blue-50 to-indigo-50 hover:from-blue-100 hover:to-indigo-100 text-blue-950'
+                }`}
+                title={`Calculate ${selectedOp} for each row and insert ${
+                  createNewCol ? 'into a newly created column on right' : 'into the last column (replaces existing content)'
+                }`}
+              >
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className={`font-bold text-xs flex items-center space-x-1 ${isSepia ? 'text-[#3f2e22]' : 'text-blue-700 dark:text-blue-300'}`}>
+                    <span>→ RIGHT</span>
+                  </span>
+                  <div className={`w-6 h-6 rounded-full flex items-center justify-center shadow-xs group-hover:translate-x-0.5 transition-transform ${isSepia ? 'bg-[#5c4033] text-white' : 'bg-blue-600 text-white'}`}>
+                    <ArrowRight size={14} />
+                  </div>
                 </div>
-              </div>
-              <p className="text-[10px] text-slate-600 dark:text-neutral-300 leading-tight">
-                Calculate row values &amp; insert into last cell on the right.
-              </p>
-            </button>
+                <p className="text-[10px] text-slate-600 dark:text-neutral-300 leading-tight">
+                  {createNewCol
+                    ? 'Calculate Rows → New Column'
+                    : 'Calculate Rows → In Last Column'}
+                </p>
+              </button>
+
+              {/* Option Checkbox: Create new Col / In Last Col */}
+              <label className="flex items-center space-x-1.5 px-1 py-0.5 text-xs cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={createNewCol}
+                  onChange={(e) => setCreateNewCol(e.target.checked)}
+                  className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 w-3.5 h-3.5"
+                />
+                <span
+                  className={`text-[11px] font-medium transition-colors ${
+                    !createNewCol
+                      ? 'text-rose-600 dark:text-rose-400 font-bold'
+                      : isSepia
+                      ? 'text-[#3f2e22]'
+                      : 'text-slate-700 dark:text-neutral-200'
+                  }`}
+                >
+                  {createNewCol ? 'Create new Col' : 'In Last Col'}
+                </span>
+              </label>
+            </div>
 
             {/* Action 2: DOWN */}
-            <button
-              onClick={() => handleCalculate(selectedOp, 'DOWN')}
-              className="group p-3 rounded-xl border border-emerald-200 dark:border-emerald-900 bg-gradient-to-br from-emerald-50 to-teal-50 dark:from-emerald-950/40 dark:to-teal-950/40 hover:from-emerald-100 hover:to-teal-100 dark:hover:from-emerald-900/60 dark:hover:to-teal-900/60 text-emerald-950 dark:text-emerald-100 text-left transition-all shadow-2xs cursor-pointer active:scale-98"
-              title={`Calculate ${selectedOp} for each column and insert into the last cell at the bottom`}
-            >
-              <div className="flex items-center justify-between mb-1.5">
-                <span className="font-bold text-xs flex items-center space-x-1 text-emerald-700 dark:text-emerald-300">
-                  <span>↓ DOWN</span>
-                </span>
-                <div className="w-6 h-6 rounded-full bg-emerald-600 text-white flex items-center justify-center shadow-xs group-hover:translate-y-0.5 transition-transform">
-                  <ArrowDown size={14} />
+            <div className="flex flex-col space-y-1.5">
+              <button
+                onClick={() => handleCalculate(selectedOp, 'DOWN')}
+                className={`group p-3 rounded-xl border text-left transition-all shadow-2xs cursor-pointer active:scale-98 w-full ${
+                  isDark
+                    ? 'border-emerald-900/80 bg-gradient-to-br from-emerald-950/40 to-teal-950/40 hover:from-emerald-900/60 hover:to-teal-900/60 text-emerald-100'
+                    : isSepia
+                    ? 'border-[#cfc2aa] bg-gradient-to-br from-[#f8f3e7] to-[#e4eed9] hover:from-[#f3ecd7] hover:to-[#dae7ce] text-[#2c231c]'
+                    : 'border-emerald-200 bg-gradient-to-br from-emerald-50 to-teal-50 hover:from-emerald-100 hover:to-teal-100 text-emerald-950'
+                }`}
+                title={`Calculate ${selectedOp} for each column and insert ${
+                  createNewRow ? 'into a newly created row at bottom' : 'into the last row (replaces existing content)'
+                }`}
+              >
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className={`font-bold text-xs flex items-center space-x-1 ${isSepia ? 'text-[#2e4d32]' : 'text-emerald-700 dark:text-emerald-300'}`}>
+                    <span>↓ DOWN</span>
+                  </span>
+                  <div className={`w-6 h-6 rounded-full flex items-center justify-center shadow-xs group-hover:translate-y-0.5 transition-transform ${isSepia ? 'bg-[#2e5d38] text-white' : 'bg-emerald-600 text-white'}`}>
+                    <ArrowDown size={14} />
+                  </div>
                 </div>
-              </div>
-              <p className="text-[10px] text-slate-600 dark:text-neutral-300 leading-tight">
-                Calculate col values &amp; insert into last cell at the bottom.
-              </p>
-            </button>
+                <p className="text-[10px] text-slate-600 dark:text-neutral-300 leading-tight">
+                  {createNewRow
+                    ? 'Calculate Column → New Rows'
+                    : 'Calculate Column → In Last Row'}
+                </p>
+              </button>
+
+              {/* Option Checkbox: Create new Row / In Last Row */}
+              <label className="flex items-center space-x-1.5 px-1 py-0.5 text-xs cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={createNewRow}
+                  onChange={(e) => setCreateNewRow(e.target.checked)}
+                  className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 w-3.5 h-3.5"
+                />
+                <span
+                  className={`text-[11px] font-medium transition-colors ${
+                    !createNewRow
+                      ? 'text-rose-600 dark:text-rose-400 font-bold'
+                      : isSepia
+                      ? 'text-[#3f2e22]'
+                      : 'text-slate-700 dark:text-neutral-200'
+                  }`}
+                >
+                  {createNewRow ? 'Create new Row' : 'In Last Row'}
+                </span>
+              </label>
+            </div>
           </div>
         </div>
 
@@ -890,16 +1073,26 @@ export const TableToolsSidebar: React.FC<TableToolsSidebarProps> = ({
                   onClick={() => setSelectedOp(op.id)}
                   className={`p-2.5 rounded-xl border transition-all flex items-center justify-between cursor-pointer ${
                     isSelected
-                      ? 'border-[#185abd] bg-blue-50/70 dark:bg-blue-950/30 text-blue-950 dark:text-blue-100 shadow-2xs'
-                      : 'border-slate-200 dark:border-neutral-700 hover:border-slate-300 dark:hover:border-neutral-600 bg-white/70 dark:bg-neutral-800/70'
+                      ? isDark
+                        ? 'border-blue-600 bg-blue-950/40 text-blue-100 shadow-2xs'
+                        : isSepia
+                        ? 'border-[#5c4033] bg-[#ede0cb] text-[#2c231c] shadow-2xs'
+                        : 'border-[#185abd] bg-blue-50/70 text-blue-950 shadow-2xs'
+                      : opCardBaseBg
                   }`}
                 >
                   <div className="flex items-center space-x-2.5">
                     <div
                       className={`w-7 h-7 rounded-lg flex items-center justify-center ${
                         isSelected
-                          ? 'bg-blue-600 text-white'
-                          : 'bg-slate-100 dark:bg-neutral-700 text-slate-600 dark:text-neutral-300'
+                          ? isSepia
+                            ? 'bg-[#5c4033] text-white'
+                            : 'bg-blue-600 text-white'
+                          : isDark
+                          ? 'bg-neutral-700 text-neutral-300'
+                          : isSepia
+                          ? 'bg-[#e5d8be] text-[#3f2e22]'
+                          : 'bg-slate-100 text-slate-600'
                       }`}
                     >
                       {op.icon}
@@ -907,7 +1100,13 @@ export const TableToolsSidebar: React.FC<TableToolsSidebarProps> = ({
                     <div>
                       <div className="flex items-center space-x-1.5">
                         <span className="text-xs font-bold">{op.name}</span>
-                        {isSelected && <span className="w-1.5 h-1.5 rounded-full bg-blue-600" />}
+                        {isSelected && (
+                          <span
+                            className={`w-1.5 h-1.5 rounded-full ${
+                              isSepia ? 'bg-[#5c4033]' : 'bg-blue-600'
+                            }`}
+                          />
+                        )}
                       </div>
                       <span className="text-[10px] text-slate-500 dark:text-neutral-400 leading-none">
                         {op.description}
@@ -920,14 +1119,14 @@ export const TableToolsSidebar: React.FC<TableToolsSidebarProps> = ({
                     <button
                       onClick={() => handleCalculate(op.id, 'RIGHT')}
                       title={`Calculate ${op.name} → RIGHT`}
-                      className="px-2 py-1 text-[11px] font-semibold bg-white dark:bg-neutral-700 hover:bg-blue-50 dark:hover:bg-blue-900 border border-slate-200 dark:border-neutral-600 rounded text-slate-700 dark:text-neutral-200 cursor-pointer transition-colors flex items-center space-x-0.5 active:scale-95"
+                      className={`px-2 py-1 text-[11px] font-semibold border rounded cursor-pointer transition-colors flex items-center space-x-0.5 active:scale-95 ${btnSecondaryBg}`}
                     >
                       <span>→</span>
                     </button>
                     <button
                       onClick={() => handleCalculate(op.id, 'DOWN')}
                       title={`Calculate ${op.name} ↓ DOWN`}
-                      className="px-2 py-1 text-[11px] font-semibold bg-white dark:bg-neutral-700 hover:bg-emerald-50 dark:hover:bg-emerald-900 border border-slate-200 dark:border-neutral-600 rounded text-slate-700 dark:text-neutral-200 cursor-pointer transition-colors flex items-center space-x-0.5 active:scale-95"
+                      className={`px-2 py-1 text-[11px] font-semibold border rounded cursor-pointer transition-colors flex items-center space-x-0.5 active:scale-95 ${btnSecondaryBg}`}
                     >
                       <span>↓</span>
                     </button>
@@ -963,7 +1162,7 @@ export const TableToolsSidebar: React.FC<TableToolsSidebarProps> = ({
               <select
                 value={activeSortCol}
                 onChange={(e) => setSortColumnIndex(Number(e.target.value))}
-                className="w-full text-xs p-1.5 rounded-lg border border-slate-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-slate-800 dark:text-neutral-100 cursor-pointer focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                className={`w-full text-xs p-1.5 rounded-lg border cursor-pointer focus:outline-none focus:ring-1 focus:ring-emerald-500 ${inputBg}`}
               >
                 {Array.from({ length: tableData.rect.right - tableData.rect.left }).map((_, i) => {
                   const c = tableData.rect.left + i;
@@ -1011,12 +1210,16 @@ export const TableToolsSidebar: React.FC<TableToolsSidebarProps> = ({
                 disabled={!tableData}
                 className={`py-1.5 px-2 rounded-lg border text-xs font-medium flex items-center justify-center space-x-1 cursor-pointer transition-colors disabled:opacity-50 ${
                   sortOrder === 'asc'
-                    ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-500 text-emerald-800 dark:text-emerald-200 font-semibold'
-                    : 'bg-white dark:bg-neutral-800 border-slate-200 dark:border-neutral-700 text-slate-700 dark:text-neutral-200 hover:bg-slate-50 dark:hover:bg-neutral-700'
+                    ? isDark
+                      ? 'bg-emerald-950/50 border-emerald-500 text-emerald-200 font-semibold'
+                      : isSepia
+                      ? 'bg-[#e5f0e4] border-[#2e5d38] text-[#1c3e24] font-semibold'
+                      : 'bg-emerald-50 border-emerald-500 text-emerald-800 font-semibold'
+                    : btnSecondaryBg
                 }`}
                 title="Sort selected area Ascending (A-Z / smallest to largest)"
               >
-                <ArrowDownAZ size={13} className="text-emerald-600 dark:text-emerald-400" />
+                <ArrowDownAZ size={13} className={isSepia ? 'text-[#2e5d38]' : 'text-emerald-600 dark:text-emerald-400'} />
                 <span>Ascending (A–Z)</span>
               </button>
 
@@ -1028,12 +1231,16 @@ export const TableToolsSidebar: React.FC<TableToolsSidebarProps> = ({
                 disabled={!tableData}
                 className={`py-1.5 px-2 rounded-lg border text-xs font-medium flex items-center justify-center space-x-1 cursor-pointer transition-colors disabled:opacity-50 ${
                   sortOrder === 'desc'
-                    ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-500 text-emerald-800 dark:text-emerald-200 font-semibold'
-                    : 'bg-white dark:bg-neutral-800 border-slate-200 dark:border-neutral-700 text-slate-700 dark:text-neutral-200 hover:bg-slate-50 dark:hover:bg-neutral-700'
+                    ? isDark
+                      ? 'bg-emerald-950/50 border-emerald-500 text-emerald-200 font-semibold'
+                      : isSepia
+                      ? 'bg-[#e5f0e4] border-[#2e5d38] text-[#1c3e24] font-semibold'
+                      : 'bg-emerald-50 border-emerald-500 text-emerald-800 font-semibold'
+                    : btnSecondaryBg
                 }`}
                 title="Sort selected area Descending (Z-A / largest to smallest)"
               >
-                <ArrowUpZA size={13} className="text-emerald-600 dark:text-emerald-400" />
+                <ArrowUpZA size={13} className={isSepia ? 'text-[#2e5d38]' : 'text-emerald-600 dark:text-emerald-400'} />
                 <span>Descending (Z–A)</span>
               </button>
             </div>
@@ -1043,7 +1250,7 @@ export const TableToolsSidebar: React.FC<TableToolsSidebarProps> = ({
         {/* Formatting & Behavior Settings */}
         <div className={`p-3 rounded-xl border space-y-2.5 ${cardBg}`}>
           <h4 className="text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:text-neutral-300 flex items-center space-x-1">
-            <Sparkles size={12} className="text-blue-500" />
+            <Sparkles size={12} className={isSepia ? 'text-[#5c4033]' : 'text-blue-500'} />
             <span>Format &amp; Behavior</span>
           </h4>
 
@@ -1055,7 +1262,7 @@ export const TableToolsSidebar: React.FC<TableToolsSidebarProps> = ({
             <select
               value={formatMode}
               onChange={(e) => setFormatMode(e.target.value as FormatMode)}
-              className="w-full text-xs p-1.5 rounded-lg border border-slate-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-slate-800 dark:text-neutral-100 cursor-pointer focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className={`w-full text-xs p-1.5 rounded-lg border cursor-pointer focus:outline-none focus:ring-1 focus:ring-blue-500 ${inputBg}`}
             >
               <option value="auto">Auto (Match input currency &amp; decimals)</option>
               <option value="2dec">Standard Decimal (1,234.56)</option>
@@ -1078,16 +1285,6 @@ export const TableToolsSidebar: React.FC<TableToolsSidebarProps> = ({
               />
               <span className="font-medium">Bold result in destination cell</span>
             </label>
-
-            <label className="flex items-center space-x-2 text-xs text-slate-700 dark:text-neutral-200 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={autoAddEdge}
-                onChange={(e) => setAutoAddEdge(e.target.checked)}
-                className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-              />
-              <span className="font-medium">Auto-add column/row if at table edge</span>
-            </label>
           </div>
         </div>
 
@@ -1100,7 +1297,7 @@ export const TableToolsSidebar: React.FC<TableToolsSidebarProps> = ({
             <button
               onClick={selectCurrentRow}
               disabled={!tableData}
-              className="py-1.5 px-2.5 rounded-lg border border-slate-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 hover:bg-slate-50 dark:hover:bg-neutral-700 text-slate-700 dark:text-neutral-200 text-xs font-medium flex items-center justify-center space-x-1.5 cursor-pointer disabled:opacity-50 transition-colors"
+              className={`py-1.5 px-2.5 rounded-lg border text-xs font-medium flex items-center justify-center space-x-1.5 cursor-pointer disabled:opacity-50 transition-colors ${btnSecondaryBg}`}
             >
               <Rows size={13} />
               <span>Select Row</span>
@@ -1108,7 +1305,7 @@ export const TableToolsSidebar: React.FC<TableToolsSidebarProps> = ({
             <button
               onClick={selectCurrentCol}
               disabled={!tableData}
-              className="py-1.5 px-2.5 rounded-lg border border-slate-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 hover:bg-slate-50 dark:hover:bg-neutral-700 text-slate-700 dark:text-neutral-200 text-xs font-medium flex items-center justify-center space-x-1.5 cursor-pointer disabled:opacity-50 transition-colors"
+              className={`py-1.5 px-2.5 rounded-lg border text-xs font-medium flex items-center justify-center space-x-1.5 cursor-pointer disabled:opacity-50 transition-colors ${btnSecondaryBg}`}
             >
               <Columns size={13} />
               <span>Select Col</span>
@@ -1116,7 +1313,7 @@ export const TableToolsSidebar: React.FC<TableToolsSidebarProps> = ({
             <button
               onClick={selectEntireTable}
               disabled={!tableData}
-              className="col-span-2 py-1.5 px-2.5 rounded-lg border border-slate-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 hover:bg-slate-50 dark:hover:bg-neutral-700 text-slate-700 dark:text-neutral-200 text-xs font-medium flex items-center justify-center space-x-1.5 cursor-pointer disabled:opacity-50 transition-colors"
+              className={`col-span-2 py-1.5 px-2.5 rounded-lg border text-xs font-medium flex items-center justify-center space-x-1.5 cursor-pointer disabled:opacity-50 transition-colors ${btnSecondaryBg}`}
             >
               <TableIcon size={13} />
               <span>Select Entire Table</span>
