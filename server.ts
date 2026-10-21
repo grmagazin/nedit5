@@ -39,12 +39,28 @@ async function startServer() {
   // Server-side text generation endpoint (migrated from client-side)
   app.post('/api/gemini/generate', async (req, res) => {
     try {
-      const { prompt, systemInstruction } = req.body;
+      const { prompt, systemInstruction, apiKey: clientApiKey } = req.body;
       if (!prompt) {
         return res.status(400).json({ error: 'Prompt is required' });
       }
 
-      const response = await ai.models.generateContent({
+      const activeKey = clientApiKey || (req.headers['x-gemini-api-key'] as string) || process.env.GEMINI_API_KEY;
+      if (!activeKey) {
+        return res.status(400).json({ error: 'No Gemini API key available. Please enter an API key or configure GEMINI_API_KEY.' });
+      }
+
+      const activeAi = clientApiKey
+        ? new GoogleGenAI({
+            apiKey: activeKey,
+            httpOptions: {
+              headers: {
+                'User-Agent': 'aistudio-build',
+              },
+            },
+          })
+        : ai;
+
+      const response = await activeAi.models.generateContent({
         model: 'gemini-3.8-flash',
         contents: prompt,
         config: systemInstruction ? { systemInstruction } : undefined,

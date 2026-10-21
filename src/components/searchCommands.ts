@@ -1048,6 +1048,22 @@ export const SEARCH_COMMANDS: SearchCommand[] = [
     },
   },
   {
+    id: 'tool-ai-rewrite',
+    label: 'AI Document & Selection Rewrite / Tone Optimizer',
+    description: 'Safe document and selection rewrite with executive, concise, formal, and Greek tone presets',
+    category: 'Review & AI',
+    keywords: ['rewrite', 'tone', 'optimize', 'polish', 'rephrase', 'paraphrase', 'greek', 'concise'],
+    iconType: 'sparkles',
+    action: ({ onUpdateSettings, notify }) => {
+      onUpdateSettings({
+        showAiAssistantPane: true,
+        aiAssistantIntent: 'rewrite',
+        aiAssistantTriggerTimestamp: Date.now(),
+      });
+      notify?.('Opened AI Rewrite & Tone Optimizer');
+    },
+  },
+  {
     id: 'tool-equation-wizard',
     label: 'Fx Equation Wizard (Κατασκευαστής Τύπων)',
     description: 'Insert mathematical equations (inline or block) with KaTeX at caret',

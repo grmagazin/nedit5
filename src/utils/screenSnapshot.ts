@@ -184,7 +184,7 @@ export async function captureDocumentScreenSnapshot(
 ): Promise<CaptureSnapshotResult> {
   const {
     targetElement,
-    pixelRatio = 1.25,
+    pixelRatio = 1.5,
     backgroundColor = '#ffffff',
   } = options;
 
@@ -205,16 +205,48 @@ export async function captureDocumentScreenSnapshot(
 
   // Ensure element is visible and has dimensions
   const rect = el.getBoundingClientRect();
-  if (rect.width <= 0 || rect.height <= 0) {
-    return {
-      success: false,
-      error: 'Document page has zero dimensions or is currently hidden.',
-    };
-  }
+  const width = Math.max(300, el.offsetWidth || el.scrollWidth || rect.width || 816);
+  const height = Math.max(200, el.offsetHeight || el.scrollHeight || rect.height || 1056);
 
   let lastError: any = null;
 
-  // --- ATTEMPT 1: html2canvas (Primary: robust against cross-origin Google Fonts & CSSStyleSheet.cssRules) ---
+  // --- ATTEMPT 1: html-to-image (Clean vector SVG to PNG rasterization with fontEmbedCSS bypassed) ---
+  try {
+    const { toPng } = await import('html-to-image');
+    const dataUrl = await toPng(el, {
+      backgroundColor,
+      pixelRatio,
+      skipFonts: true,
+      cacheBust: false,
+      fontEmbedCSS: '',
+      width,
+      height,
+      filter: (node) => {
+        if (node instanceof HTMLElement) {
+          if (node.tagName === 'LINK' || node.tagName === 'STYLE') return false;
+          if (node.classList?.contains('no-print') || node.classList?.contains('selection-marker') || node.id === 'word-cursor-caret') {
+            return false;
+          }
+        }
+        return true;
+      },
+    });
+
+    if (dataUrl && dataUrl.length > 300) {
+      return {
+        success: true,
+        dataUrl,
+        source: 'document_page',
+        width: Math.round(width * pixelRatio),
+        height: Math.round(height * pixelRatio),
+      };
+    }
+  } catch (err: any) {
+    console.warn('html-to-image capture attempt failed, trying html2canvas:', err);
+    lastError = err;
+  }
+
+  // --- ATTEMPT 2: html2canvas with robust cross-origin & layout configs ---
   try {
     const html2canvasModule = await import('html2canvas');
     const html2canvas = html2canvasModule.default || html2canvasModule;
@@ -226,17 +258,22 @@ export async function captureDocumentScreenSnapshot(
       allowTaint: true,
       logging: false,
       imageTimeout: 6000,
+      width,
+      height,
+      scrollX: 0,
+      scrollY: 0,
       ignoreElements: (element) => {
         return (
           element.classList?.contains('no-print') ||
           element.classList?.contains('selection-marker') ||
-          element.id === 'word-cursor-caret'
+          element.id === 'word-cursor-caret' ||
+          element.tagName === 'LINK'
         );
       },
     });
 
     const dataUrl = canvas.toDataURL('image/png');
-    if (dataUrl && dataUrl.length > 100) {
+    if (dataUrl && dataUrl.length > 300) {
       return {
         success: true,
         dataUrl,
@@ -246,67 +283,214 @@ export async function captureDocumentScreenSnapshot(
       };
     }
   } catch (err: any) {
-    console.warn('html2canvas capture attempt failed, falling back to html-to-image:', err);
+    console.warn('html2canvas capture attempt failed, falling back to SVG foreignObject / full document canvas renderer:', err);
     lastError = err;
   }
 
-  // --- ATTEMPT 2: html-to-image (Secondary with skipFonts to avoid Google Fonts CORS) ---
-  try {
-    const { toPng } = await import('html-to-image');
-    const dataUrl = await toPng(el, {
-      backgroundColor,
-      pixelRatio,
-      skipFonts: true,
-      cacheBust: false,
-      filter: (node) => {
-        if (node instanceof HTMLElement) {
-          return !node.classList.contains('no-print');
-        }
-        return true;
-      },
-    });
-
-    if (dataUrl && dataUrl.length > 100) {
-      return {
-        success: true,
-        dataUrl,
-        source: 'document_page',
-      };
-    }
-  } catch (err: any) {
-    console.warn('html-to-image capture attempt failed:', err);
-    lastError = err;
-  }
-
-  // --- ATTEMPT 3: Viewport Canvas Fallback (Tertiary: draw visible document area) ---
+  // --- ATTEMPT 3: High-Fidelity Multi-Block Document Canvas Renderer ---
+  // When external libraries encounter CSS/CORS restrictions, this comprehensively
+  // paints the full document: headers, titles, paragraphs, lists, tables, and borders.
   try {
     const fallbackCanvas = document.createElement('canvas');
-    const width = Math.max(300, Math.min(rect.width, 1600));
-    const height = Math.max(200, Math.min(rect.height, 2200));
     fallbackCanvas.width = width * pixelRatio;
     fallbackCanvas.height = height * pixelRatio;
     const ctx = fallbackCanvas.getContext('2d');
 
     if (ctx) {
       ctx.scale(pixelRatio, pixelRatio);
-      ctx.fillStyle = backgroundColor;
+      
+      // Page background
+      const computedStyle = window.getComputedStyle(el);
+      const computedBg = computedStyle.backgroundColor && computedStyle.backgroundColor !== 'rgba(0, 0, 0, 0)'
+        ? computedStyle.backgroundColor
+        : backgroundColor;
+      ctx.fillStyle = computedBg;
       ctx.fillRect(0, 0, width, height);
 
-      // Draw subtle page shadow/border
+      // Subtle page border
       ctx.strokeStyle = '#e2e8f0';
       ctx.lineWidth = 1;
-      ctx.strokeRect(1, 1, width - 2, height - 2);
+      ctx.strokeRect(0, 0, width, height);
 
-      // Render text summary or text block snapshot
-      const textContent = el.textContent || 'Word Document Snapshot';
-      ctx.fillStyle = '#0f172a';
-      ctx.font = '16px system-ui, -apple-system, sans-serif';
+      // Extract editor content root
+      const proseMirror = el.querySelector('.ProseMirror') || el;
+      const childNodes = Array.from(proseMirror.children) as HTMLElement[];
 
-      const lines = textContent.slice(0, 500).split('\n').filter(Boolean);
-      let y = 40;
-      for (const line of lines.slice(0, 15)) {
-        ctx.fillText(line.slice(0, 80), 30, y);
-        y += 24;
+      let cursorY = 48;
+      const marginX = 48;
+      const maxLineWidth = width - marginX * 2;
+
+      // Word wrapping helper
+      const wrapText = (text: string, font: string, maxW: number): string[] => {
+        ctx.font = font;
+        const words = text.split(/\s+/).filter(Boolean);
+        if (words.length === 0) return [];
+        const lines: string[] = [];
+        let currentLine = words[0];
+
+        for (let i = 1; i < words.length; i++) {
+          const testLine = `${currentLine} ${words[i]}`;
+          if (ctx.measureText(testLine).width <= maxW) {
+            currentLine = testLine;
+          } else {
+            lines.push(currentLine);
+            currentLine = words[i];
+          }
+        }
+        lines.push(currentLine);
+        return lines;
+      };
+
+      if (childNodes.length === 0) {
+        // Fallback for single text block
+        const text = (el.textContent || '').trim() || 'Document Snapshot';
+        const lines = wrapText(text, '15px system-ui, sans-serif', maxLineWidth);
+        ctx.fillStyle = '#1e293b';
+        ctx.font = '15px system-ui, sans-serif';
+        for (const line of lines) {
+          if (cursorY > height - 30) break;
+          ctx.fillText(line, marginX, cursorY);
+          cursorY += 22;
+        }
+      } else {
+        // Crawl through every document block
+        for (const child of childNodes) {
+          if (cursorY > height - 30) break;
+          if (child.classList.contains('no-print')) continue;
+
+          const tag = child.tagName.toLowerCase();
+
+          if (tag === 'h1') {
+            const font = 'bold 24px system-ui, sans-serif';
+            ctx.fillStyle = '#0f172a';
+            const lines = wrapText(child.textContent || '', font, maxLineWidth);
+            cursorY += 12;
+            for (const line of lines) {
+              if (cursorY > height - 30) break;
+              ctx.fillText(line, marginX, cursorY);
+              cursorY += 30;
+            }
+            cursorY += 6;
+          } else if (tag === 'h2') {
+            const font = 'bold 20px system-ui, sans-serif';
+            ctx.fillStyle = '#1e293b';
+            const lines = wrapText(child.textContent || '', font, maxLineWidth);
+            cursorY += 10;
+            for (const line of lines) {
+              if (cursorY > height - 30) break;
+              ctx.fillText(line, marginX, cursorY);
+              cursorY += 26;
+            }
+            cursorY += 4;
+          } else if (tag === 'h3') {
+            const font = 'bold 16px system-ui, sans-serif';
+            ctx.fillStyle = '#334155';
+            const lines = wrapText(child.textContent || '', font, maxLineWidth);
+            cursorY += 8;
+            for (const line of lines) {
+              if (cursorY > height - 30) break;
+              ctx.fillText(line, marginX, cursorY);
+              cursorY += 22;
+            }
+            cursorY += 4;
+          } else if (tag === 'ul' || tag === 'ol') {
+            const items = Array.from(child.querySelectorAll('li'));
+            let itemIdx = 1;
+            for (const li of items) {
+              if (cursorY > height - 30) break;
+              const bullet = tag === 'ol' ? `${itemIdx}. ` : '• ';
+              ctx.font = '14px system-ui, sans-serif';
+              ctx.fillStyle = '#475569';
+              ctx.fillText(bullet, marginX, cursorY);
+              
+              const bulletIndent = tag === 'ol' ? 24 : 16;
+              const lines = wrapText(li.textContent || '', '14px system-ui, sans-serif', maxLineWidth - bulletIndent);
+              ctx.fillStyle = '#1e293b';
+              for (let liLineIdx = 0; liLineIdx < lines.length; liLineIdx++) {
+                if (cursorY > height - 30) break;
+                ctx.fillText(lines[liLineIdx], marginX + bulletIndent, cursorY);
+                cursorY += 20;
+              }
+              itemIdx++;
+            }
+            cursorY += 6;
+          } else if (tag === 'table') {
+            // Render structured table
+            const rows = Array.from(child.querySelectorAll('tr'));
+            if (rows.length > 0) {
+              const numCols = Math.max(...rows.map((r) => r.children.length), 1);
+              const colWidth = Math.floor(maxLineWidth / numCols);
+              const cellPadding = 8;
+
+              cursorY += 8;
+              for (let rIdx = 0; rIdx < rows.length; rIdx++) {
+                if (cursorY > height - 30) break;
+                const row = rows[rIdx];
+                const cells = Array.from(row.children) as HTMLElement[];
+                const rowH = 28;
+
+                // Draw cell borders and background
+                for (let cIdx = 0; cIdx < cells.length; cIdx++) {
+                  const cell = cells[cIdx];
+                  const cellX = marginX + cIdx * colWidth;
+                  
+                  // Header row background
+                  if (rIdx === 0 || cell.tagName.toLowerCase() === 'th') {
+                    ctx.fillStyle = '#f1f5f9';
+                    ctx.fillRect(cellX, cursorY, colWidth, rowH);
+                    ctx.font = 'bold 12px system-ui, sans-serif';
+                    ctx.fillStyle = '#0f172a';
+                  } else {
+                    ctx.font = '12px system-ui, sans-serif';
+                    ctx.fillStyle = '#334155';
+                  }
+
+                  // Border
+                  ctx.strokeStyle = '#cbd5e1';
+                  ctx.strokeRect(cellX, cursorY, colWidth, rowH);
+
+                  // Cell text
+                  const cellText = (cell.textContent || '').trim();
+                  ctx.fillText(cellText.slice(0, 30), cellX + cellPadding, cursorY + 18);
+                }
+                cursorY += rowH;
+              }
+              cursorY += 12;
+            }
+          } else if (tag === 'p') {
+            const text = (child.textContent || '').trim();
+            if (text.length > 0) {
+              const font = '14px system-ui, sans-serif';
+              ctx.font = font;
+              ctx.fillStyle = '#1e293b';
+              const lines = wrapText(text, font, maxLineWidth);
+              for (const line of lines) {
+                if (cursorY > height - 30) break;
+                ctx.fillText(line, marginX, cursorY);
+                cursorY += 21;
+              }
+              cursorY += 6;
+            } else {
+              // Empty paragraph line spacing
+              cursorY += 14;
+            }
+          } else {
+            // General text elements (blockquotes, pre, divs)
+            const text = (child.textContent || '').trim();
+            if (text.length > 0) {
+              const font = '14px system-ui, sans-serif';
+              ctx.font = font;
+              ctx.fillStyle = '#334155';
+              const lines = wrapText(text, font, maxLineWidth);
+              for (const line of lines) {
+                if (cursorY > height - 30) break;
+                ctx.fillText(line, marginX, cursorY);
+                cursorY += 20;
+              }
+              cursorY += 6;
+            }
+          }
+        }
       }
 
       const fallbackDataUrl = fallbackCanvas.toDataURL('image/png');

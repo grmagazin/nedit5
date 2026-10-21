@@ -3687,14 +3687,30 @@ const RibbonToolbarComponent: React.FC<RibbonToolbarProps> = ({
                   </span>
                 </button>
 
-                {/* 3. AI Rewrite (Purple Sparkles) */}
+                {/* 3. AI Rewrite (Purple Sparkles) - Toggles Right Assistant Toolbar on Rewrite Tab */}
                 <button
                   onClick={() => {
-                    setAiRewriteOutput('');
-                    setShowAiRewriteModal(true);
+                    const isAlreadyOpenOnRewrite =
+                      settings.showAiAssistantPane && settings.aiAssistantIntent === 'rewrite';
+                    if (isAlreadyOpenOnRewrite) {
+                      onUpdateSettings({
+                        showAiAssistantPane: false,
+                        aiAssistantIntent: null,
+                      });
+                    } else {
+                      onUpdateSettings({
+                        showAiAssistantPane: true,
+                        aiAssistantIntent: 'rewrite',
+                        aiAssistantTriggerTimestamp: Date.now(),
+                      });
+                    }
                   }}
-                  title="AI Document & Selection Rewrite"
-                  className="flex flex-col items-center justify-start px-2 py-1 rounded cursor-pointer transition-all border border-transparent hover:bg-white hover:border-neutral-300 text-neutral-700 min-w-[54px]"
+                  title="AI Document & Selection Rewrite / Tone Optimizer (Opens Assistant Toolbar)"
+                  className={`flex flex-col items-center justify-start px-2 py-1 rounded cursor-pointer transition-all border min-w-[54px] ${
+                    settings.showAiAssistantPane && settings.aiAssistantIntent === 'rewrite'
+                      ? 'bg-purple-100 border-[#9333ea] text-[#9333ea] shadow-xs'
+                      : 'border-transparent hover:bg-white hover:border-neutral-300 text-neutral-700'
+                  }`}
                 >
                   <Sparkles size={22} className="text-[#9333ea] mb-0.5" />
                   <span className="text-[11px] font-medium leading-tight text-center text-neutral-700">
@@ -5170,6 +5186,14 @@ const RibbonToolbarComponent: React.FC<RibbonToolbarProps> = ({
             onClose={() => {
               setShowAiRewriteModal(false);
               editor?.commands.focus();
+            }}
+            onDockToSidebar={() => {
+              setShowAiRewriteModal(false);
+              onUpdateSettings({
+                showAiAssistantPane: true,
+                aiAssistantIntent: 'rewrite',
+                aiAssistantTriggerTimestamp: Date.now(),
+              });
             }}
             editor={editor}
             onNotify={(msg) => {

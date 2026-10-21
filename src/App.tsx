@@ -511,6 +511,8 @@ export default function App() {
           levels: [1, 2, 3],
         },
         horizontalRule: false,
+        link: false,
+        underline: false,
         undoRedo: {
           depth: 50,
           newGroupDelay: 800,

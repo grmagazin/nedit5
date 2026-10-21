@@ -95,7 +95,7 @@ export interface DocumentSettings {
   linkedImageMode?: boolean;
   showTranslatePane?: boolean;
   showAiAssistantPane?: boolean;
-  aiAssistantIntent?: 'grammar' | 'improve' | 'summarize' | null;
+  aiAssistantIntent?: 'grammar' | 'improve' | 'summarize' | 'rewrite' | null;
   aiAssistantTriggerTimestamp?: number;
   showImageWizardPane?: boolean;
   showQuickBlocksPane?: boolean;
