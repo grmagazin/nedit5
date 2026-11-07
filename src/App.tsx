@@ -143,6 +143,14 @@ const TranslateSidebar = safeLazy(
   () => import('./components/TranslateSidebar').then((m) => ({ default: m.TranslateSidebar })),
   { name: 'TranslateSidebar', timeoutMs: 12000 }
 );
+const CommentsSidebar = safeLazy(
+  () => import('./components/CommentsSidebar').then((m) => ({ default: m.CommentsSidebar })),
+  { name: 'CommentsSidebar', timeoutMs: 12000 }
+);
+const FxWizardSidebar = safeLazy(
+  () => import('./components/FxWizardSidebar').then((m) => ({ default: m.FxWizardSidebar })),
+  { name: 'FxWizardSidebar', timeoutMs: 12000 }
+);
 
 const SidebarLoadingFallback = () => (
   <div className="w-84 sm:w-88 flex-shrink-0 bg-white dark:bg-neutral-800 border-l border-slate-200 dark:border-neutral-700 flex items-center justify-center p-8 text-xs text-slate-400 dark:text-neutral-400">
@@ -355,6 +363,7 @@ export default function App() {
       })(),
       linkedImageMode: false,
       showImageWizardPane: false,
+      showFxWizardPane: false,
       showFormatterPane: false,
       showQuickBlocksPane: false,
       showVoiceCommandPane: false,
@@ -685,8 +694,13 @@ export default function App() {
             if (href.startsWith('mailto:') || href.startsWith('tel:') || href.startsWith('#')) {
               window.location.href = href;
             } else {
-              const targetAttr = link.getAttribute('target') || '_blank';
-              window.open(href, targetAttr, 'noopener,noreferrer');
+              const targetAttr = link.getAttribute('target');
+              const fullUrl = href.startsWith('http://') || href.startsWith('https://') ? href : `https://${href}`;
+              if (targetAttr === '_blank') {
+                window.open(fullUrl, '_blank', 'noopener,noreferrer');
+              } else {
+                window.location.href = fullUrl;
+              }
             }
           }
           event.preventDefault();
@@ -816,6 +830,21 @@ export default function App() {
     const docName = settings.title?.trim();
     document.title = docName ? `${docName} - Nedit v5.5` : 'Nedit v5.5';
   }, [settings.title]);
+
+  // Listen for open-fx-wizard dispatched from math extension node clicks
+  useEffect(() => {
+    const handleOpenFx = (e: any) => {
+      handleUpdateSettings({
+        showFxWizardPane: true,
+        fxWizardLatex: e.detail?.latex || '',
+        fxWizardIsBlock: !!e.detail?.isBlock,
+      });
+    };
+    window.addEventListener('open-fx-wizard', handleOpenFx);
+    return () => {
+      window.removeEventListener('open-fx-wizard', handleOpenFx);
+    };
+  }, [handleUpdateSettings]);
 
   // Startup sync: Load document content & settings asynchronously from IndexedDB
   useEffect(() => {
@@ -1206,6 +1235,7 @@ export default function App() {
             onOpenThemes={handleOpenThemes}
             commentsCount={comments.length}
             onToggleComments={handleToggleCommentsPanel}
+            isCommentsOpen={showCommentsPanel}
           />
         </div>
       )}
@@ -1510,6 +1540,46 @@ export default function App() {
               <TranslateSidebar
                 editor={editor}
                 onClose={() => handleUpdateSettings({ showTranslatePane: false })}
+              />
+            </Suspense>
+          </LazyModuleBoundary>
+        )}
+
+        {/* Comments Toolbar / Floating Panel (Toggled via Comments button in RibbonHeader or Review tab) */}
+        {showCommentsPanel && (
+          <LazyModuleBoundary
+            moduleName="CommentsSidebar"
+            onClose={() => handleToggleCommentsPanel(false)}
+            variant="sidebar"
+            fallbackTitle="Document Comments"
+          >
+            <Suspense fallback={<SidebarLoadingFallback />}>
+              <CommentsSidebar
+                editor={editor}
+                comments={comments}
+                onSetComments={setComments}
+                onClose={() => handleToggleCommentsPanel(false)}
+                themeMode={effectiveThemeMode}
+              />
+            </Suspense>
+          </LazyModuleBoundary>
+        )}
+
+        {/* Fx Equation Wizard Right Toolbar (Toggled via Fx button in Insert tab or clicking math nodes) */}
+        {settings.showFxWizardPane && (
+          <LazyModuleBoundary
+            moduleName="FxWizardSidebar"
+            onClose={() => handleUpdateSettings({ showFxWizardPane: false })}
+            variant="sidebar"
+            fallbackTitle="Fx Equation Wizard"
+          >
+            <Suspense fallback={<SidebarLoadingFallback />}>
+              <FxWizardSidebar
+                editor={editor}
+                onClose={() => handleUpdateSettings({ showFxWizardPane: false })}
+                initialLatex={settings.fxWizardLatex}
+                isBlockDefault={settings.fxWizardIsBlock}
+                themeMode={effectiveThemeMode}
               />
             </Suspense>
           </LazyModuleBoundary>

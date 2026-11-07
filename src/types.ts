@@ -1,4 +1,4 @@
-export type RibbonTab = 'file' | 'home' | 'insert' | 'table' | 'layout' | 'review' | 'view' | 'format' | 'convert' | 'seo' | 'help';
+export type RibbonTab = 'file' | 'home' | 'insert' | 'table' | 'layout' | 'review' | 'view' | 'format' | 'convert' | 'seo' | 'plugin' | 'help';
 
 export type PageOrientation = 'portrait' | 'landscape';
 
@@ -98,6 +98,9 @@ export interface DocumentSettings {
   aiAssistantIntent?: 'grammar' | 'improve' | 'summarize' | 'rewrite' | null;
   aiAssistantTriggerTimestamp?: number;
   showImageWizardPane?: boolean;
+  showFxWizardPane?: boolean;
+  fxWizardLatex?: string;
+  fxWizardIsBlock?: boolean;
   showQuickBlocksPane?: boolean;
   showVoiceCommandPane?: boolean;
   showSpellCheckPane?: boolean;

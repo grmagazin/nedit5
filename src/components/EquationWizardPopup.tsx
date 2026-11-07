@@ -13,43 +13,43 @@ interface EquationPreset {
 
 const PRESET_EQUATIONS: EquationPreset[] = [
   {
-    title: 'Δευτεροβάθμια Εξίσωση',
+    title: 'Quadratic Formula',
     latex: 'x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}',
   },
   {
-    title: 'Πυθαγόρειο Θεώρημα',
+    title: 'Pythagorean Theorem',
     latex: 'a^2 + b^2 = c^2',
   },
   {
-    title: 'Τύπος Euler',
+    title: "Euler's Formula",
     latex: 'e^{i\\pi} + 1 = 0',
   },
   {
-    title: 'Άθροισμα Gauss',
+    title: 'Gauss Summation',
     latex: '\\sum_{i=1}^{n} i = \\frac{n(n+1)}{2}',
   },
   {
-    title: 'Ολοκλήρωμα',
+    title: 'Definite Integral',
     latex: '\\int_{a}^{b} f(x)\\,dx',
   },
   {
-    title: 'Παράγωγος Δύναμης',
+    title: 'Power Rule Derivative',
     latex: '\\frac{d}{dx} x^n = n x^{n-1}',
   },
   {
-    title: 'Κανονική Κατανομή (Gauss)',
+    title: 'Normal Distribution (Gaussian)',
     latex: 'f(x) = \\frac{1}{\\sigma \\sqrt{2\\pi}} e^{-\\frac{1}{2}\\left(\\frac{x-\\mu}{\\sigma}\\right)^2}',
   },
   {
-    title: 'Όριο (Limit)',
+    title: 'Limit',
     latex: '\\lim_{x \\to 0} \\frac{\\sin x}{x} = 1',
   },
   {
-    title: 'Μήτρα 2x2 (Matrix)',
+    title: '2x2 Matrix',
     latex: '\\begin{pmatrix} a & b \\\\ c & d \\end{pmatrix}',
   },
   {
-    title: 'Κλάσμα & Ρίζα (Fraction)',
+    title: 'Fraction & Square Root',
     latex: '\\sqrt{\\frac{a + b}{c - d}}',
   },
 ];

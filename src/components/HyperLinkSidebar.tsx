@@ -232,6 +232,7 @@ export const HyperLinkSidebar: React.FC<HyperLinkSidebarProps> = ({
           .chain()
           .focus()
           .extendMarkRange('link')
+          .unsetLink()
           .setLink({ href: finalUrl, target, rel })
           .run();
       }
@@ -427,15 +428,44 @@ export const HyperLinkSidebar: React.FC<HyperLinkSidebarProps> = ({
             Link Options
           </span>
 
-          <label className="flex items-center space-x-2.5 cursor-pointer select-none">
-            <input
-              type="checkbox"
-              checked={openInNewWindow}
-              onChange={(e) => setOpenInNewWindow(e.target.checked)}
-              className="w-3.5 h-3.5 rounded border-neutral-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
-            />
-            <span className="text-neutral-700">Open in new window</span>
-          </label>
+          {/* Target Window / Tab Option (Exact user requirement) */}
+          <div className="p-3 bg-neutral-50/90 rounded-lg border border-neutral-200/90 transition-all">
+            <label className="flex items-start space-x-2.5 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                id="hyperlink-target-blank-checkbox"
+                checked={openInNewWindow}
+                onChange={(e) => setOpenInNewWindow(e.target.checked)}
+                className="mt-0.5 w-4 h-4 rounded border-neutral-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+              />
+              <div className="flex-1 space-y-1.5">
+                <div className="flex items-center justify-between flex-wrap gap-1">
+                  <span className="text-xs font-semibold text-neutral-800">
+                    Open link in new tab/window
+                  </span>
+                  <code className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-neutral-200/90 text-neutral-700 font-semibold">
+                    target=&quot;_blank&quot;
+                  </code>
+                </div>
+
+                {/* Clear visual state indicator matching user brief */}
+                <div
+                  className={`text-[11px] font-medium px-2 py-1 rounded border flex items-center space-x-1.5 ${
+                    openInNewWindow
+                      ? 'bg-blue-50/90 text-blue-800 border-blue-200'
+                      : 'bg-white text-neutral-700 border-neutral-200'
+                  }`}
+                >
+                  <span className="font-bold text-xs">{openInNewWindow ? '☑' : '☐'}</span>
+                  <span>
+                    {openInNewWindow
+                      ? 'Checked → Link opens in a new tab/window'
+                      : 'Unchecked → Link opens in the same tab'}
+                  </span>
+                </div>
+              </div>
+            </label>
+          </div>
 
           <label className="flex items-center space-x-2.5 cursor-pointer select-none">
             <input

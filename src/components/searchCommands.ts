@@ -1070,9 +1070,118 @@ export const SEARCH_COMMANDS: SearchCommand[] = [
     category: 'Formatting',
     keywords: ['equation', 'math', 'fx', 'formula', 'latex', 'katex', 'τύπος', 'εξίσωση', 'μαθηματικά'],
     iconType: 'wand',
-    action: ({ notify }) => {
+    action: ({ onUpdateSettings, notify }) => {
+      onUpdateSettings?.({ showFxWizardPane: true, fxWizardLatex: '', fxWizardIsBlock: false });
       window.dispatchEvent(new CustomEvent('open-fx-wizard', { detail: {} }));
       notify?.('Opened Fx Equation Wizard');
+    },
+  },
+  {
+    id: 'tool-plugin-ncalc',
+    label: 'ncalc (Spreadsheet)',
+    description: 'Open ncalc spreadsheet application (https://ncalc5.netlify.app/)',
+    category: 'Insert',
+    keywords: ['ncalc', 'spreadsheet', 'sheet', 'excel', 'calc', 'υπολογιστικά φύλλα'],
+    iconType: 'table',
+    action: ({ notify }) => {
+      window.open('https://ncalc5.netlify.app/', '_blank', 'noopener,noreferrer');
+      notify?.('Opening ncalc Spreadsheet in new tab...');
+    },
+  },
+  {
+    id: 'tool-plugin-npaint',
+    label: 'npaint (Photo Editor)',
+    description: 'Open npaint photo and graphics editor (https://ndraw.base44.app/)',
+    category: 'Insert',
+    keywords: ['npaint', 'paint', 'photo editor', 'draw', 'drawing', 'επεξεργασία εικόνας'],
+    iconType: 'image',
+    action: ({ notify }) => {
+      window.open('https://ndraw.base44.app/', '_blank', 'noopener,noreferrer');
+      notify?.('Opening npaint Photo Editor in new tab...');
+    },
+  },
+  {
+    id: 'tool-plugin-omniai',
+    label: 'OmniAi (Ai Web finder)',
+    description: 'Open OmniAi Web finder (https://omn.base44.app/)',
+    category: 'Review & AI',
+    keywords: ['omniai', 'ai', 'web finder', 'search', 'studio', 'gemini', 'assistant', 'τεχνητή νοημοσύνη'],
+    iconType: 'wand',
+    action: ({ notify }) => {
+      window.open('https://omn.base44.app/', '_blank', 'noopener,noreferrer');
+      notify?.('Opening OmniAi Web finder in new tab...');
+    },
+  },
+  {
+    id: 'tool-plugin-pixfind',
+    label: 'PixFind (Pics Finder)',
+    description: 'Open PixFind picture search engine (https://photo.zite.so/)',
+    category: 'Insert',
+    keywords: ['pixfind', 'pics finder', 'picture', 'photos', 'images', 'search photos', 'εύρεση φωτογραφιών'],
+    iconType: 'image',
+    action: ({ notify }) => {
+      window.open('https://photo.zite.so/', '_blank', 'noopener,noreferrer');
+      notify?.('Opening PixFind Pics Finder in new tab...');
+    },
+  },
+  {
+    id: 'tool-plugin-slide',
+    label: 'Slide (Presentation)',
+    description: 'Open Slide presentation creator (https://nsl.base44.app/)',
+    category: 'Insert',
+    keywords: ['slide', 'presentation', 'slideshow', 'powerpoint', 'παρουσίαση'],
+    iconType: 'grid',
+    action: ({ notify }) => {
+      window.open('https://nsl.base44.app/', '_blank', 'noopener,noreferrer');
+      notify?.('Opening Slide Presentation in new tab...');
+    },
+  },
+  {
+    id: 'tool-plugin-calcfx',
+    label: 'CalcFX (Scientific Calculator)',
+    description: 'Open CalcFX Scientific Calculator in a new window (https://calcfx.ai.studio/)',
+    category: 'Formatting',
+    keywords: ['calcfx', 'calculator', 'scientific', 'math', 'calc', 'υπολογιστής', 'κομπιουτεράκι'],
+    iconType: 'wand',
+    action: ({ notify }) => {
+      window.open('https://calcfx.ai.studio/', '_blank', 'noopener,noreferrer');
+      notify?.('Opening CalcFX Scientific Calculator in new window...');
+    },
+  },
+  {
+    id: 'tool-plugin-solver',
+    label: 'Solver (Math Solver)',
+    description: 'Open Solver mathematical problem solver (https://slv.base44.app/)',
+    category: 'Formatting',
+    keywords: ['solver', 'math solver', 'equations', 'calculator', 'άλγεβρα', 'επίλυση'],
+    iconType: 'wand',
+    action: ({ notify }) => {
+      window.open('https://slv.base44.app/', '_blank', 'noopener,noreferrer');
+      notify?.('Opening Math Solver in new tab...');
+    },
+  },
+  {
+    id: 'tool-plugin-engine',
+    label: 'Engine (Search Engine)',
+    description: 'Open Engine search engine (https://engine.zite.so/)',
+    category: 'View',
+    keywords: ['engine', 'search', 'search engine', 'google', 'αναζήτηση'],
+    iconType: 'grid',
+    action: ({ notify }) => {
+      window.open('https://engine.zite.so/', '_blank', 'noopener,noreferrer');
+      notify?.('Opening Search Engine in new tab...');
+    },
+  },
+  {
+    id: 'tool-tab-plugin',
+    label: 'Plugin Tab',
+    description: 'Switch to the Plugin tab for external tools and add-ins',
+    category: 'View',
+    keywords: ['plugin', 'plugins', 'addons', 'add-ins', 'calculator', 'tools'],
+    iconType: 'grid',
+    action: ({ onSelectTab, notify }) => {
+      onSelectTab?.('plugin');
+      notify?.('Switched to Plugin tab');
     },
   },
   {

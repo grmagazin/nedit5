@@ -244,11 +244,12 @@ export const HyperLinkOverlay: React.FC<HyperLinkOverlayProps> = ({
               if (href.startsWith('mailto:') || href.startsWith('tel:') || href.startsWith('#')) {
                 window.location.href = href;
               } else {
-                window.open(
-                  href.startsWith('http://') || href.startsWith('https://') ? href : `https://${href}`,
-                  '_blank',
-                  'noopener,noreferrer'
-                );
+                const fullUrl = href.startsWith('http://') || href.startsWith('https://') ? href : `https://${href}`;
+                if (hoverState.target === '_blank') {
+                  window.open(fullUrl, '_blank', 'noopener,noreferrer');
+                } else {
+                  window.location.href = fullUrl;
+                }
               }
             }
           } else {

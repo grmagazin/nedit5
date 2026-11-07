@@ -35,6 +35,7 @@ interface RibbonHeaderProps {
   onOpenThemes?: () => void;
   commentsCount?: number;
   onToggleComments?: () => void;
+  isCommentsOpen?: boolean;
 }
 
 export const RibbonHeader: React.FC<RibbonHeaderProps> = ({
@@ -53,6 +54,7 @@ export const RibbonHeader: React.FC<RibbonHeaderProps> = ({
   onOpenThemes,
   commentsCount = 1,
   onToggleComments,
+  isCommentsOpen = false,
 }) => {
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [manualSaveFeedback, setManualSaveFeedback] = useState<string | null>(null);
@@ -259,8 +261,12 @@ export const RibbonHeader: React.FC<RibbonHeaderProps> = ({
         {/* 4. Comments & (Comments number) */}
         <button
           onClick={onToggleComments}
-          title={`Comments (${commentsCount ?? 0} active)`}
-          className="relative p-1.5 rounded-md hover:bg-white/20 active:scale-95 text-white/90 hover:text-white transition-all cursor-pointer flex items-center justify-center"
+          title={isCommentsOpen ? `Close Comments (${commentsCount ?? 0} active)` : `Open Comments (${commentsCount ?? 0} active)`}
+          className={`relative p-1.5 rounded-md transition-all cursor-pointer flex items-center justify-center ${
+            isCommentsOpen
+              ? 'bg-white/30 text-white shadow-xs ring-1 ring-white/40'
+              : 'hover:bg-white/20 active:scale-95 text-white/90 hover:text-white'
+          }`}
         >
           <MessageSquare size={17} />
           {(commentsCount ?? 0) > 0 && (

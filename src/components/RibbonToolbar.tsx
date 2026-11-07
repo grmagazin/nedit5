@@ -135,9 +135,6 @@ const SymbolsPickerModal = React.lazy(() => import('./SymbolsPickerModal'));
 const InsertLinkModal = React.lazy(() =>
   import('./InsertLinkModal').then((m) => ({ default: m.InsertLinkModal }))
 );
-const EquationWizardPopup = React.lazy(() =>
-  import('./EquationWizardPopup').then((m) => ({ default: m.EquationWizardPopup }))
-);
 const AiImageModal = React.lazy(() => import('./AiImageModal'));
 const ScreenCaptureTool = React.lazy(() =>
   import('./ScreenCaptureTool').then((m) => ({ default: m.ScreenCaptureTool }))
@@ -146,6 +143,7 @@ const AiRewriteModal = React.lazy(() => import('./modals/AiRewriteModal'));
 const VersionHistoryModal = React.lazy(() => import('./modals/VersionHistoryModal'));
 const ChartGeneratorModal = React.lazy(() => import('./modals/ChartGeneratorModal'));
 const SeoTab = React.lazy(() => import('./ribbon/tabs/SeoTab'));
+const PluginTab = React.lazy(() => import('./ribbon/tabs/PluginTab'));
 const HelpTab = React.lazy(() => import('./ribbon/tabs/HelpTab'));
 const ConvertTab = React.lazy(() => import('./ribbon/tabs/ConvertTab'));
 import { snapshotStore } from '../utils/snapshotStore';
@@ -329,14 +327,10 @@ const RibbonToolbarComponent: React.FC<RibbonToolbarProps> = ({
   const [internalShowCommentsPanel, setInternalShowCommentsPanel] = useState(false);
   const showCommentsPanel = propShowCommentsPanel ?? internalShowCommentsPanel;
   const setShowCommentsPanel = (val: boolean | ((prev: boolean) => boolean)) => {
+    const nextVal = typeof val === 'function' ? val(showCommentsPanel) : val;
+    setInternalShowCommentsPanel(nextVal);
     if (onToggleCommentsPanel) {
-      if (typeof val === 'function') {
-        onToggleCommentsPanel(val(showCommentsPanel));
-      } else {
-        onToggleCommentsPanel(val);
-      }
-    } else {
-      setInternalShowCommentsPanel(val);
+      onToggleCommentsPanel(nextVal);
     }
   };
   const [showNewCommentModal, setShowNewCommentModal] = useState(false);
@@ -534,28 +528,10 @@ const RibbonToolbarComponent: React.FC<RibbonToolbarProps> = ({
   const [aiRewriteOutput, setAiRewriteOutput] = useState('');
   const [reviewNotification, setReviewNotification] = useState<string | null>(null);
 
-  // Fx Equation Wizard state (Lazy loaded only when Fx is clicked)
-  const [showEquationPopup, setShowEquationPopup] = useState(false);
-  const [equationEditingLatex, setEquationEditingLatex] = useState('');
-  const [equationIsBlock, setEquationIsBlock] = useState(false);
-
   useEffect(() => {
-    const handleOpenFx = (e: any) => {
-      if (e.detail?.latex) {
-        setEquationEditingLatex(e.detail.latex);
-        setEquationIsBlock(!!e.detail.isBlock);
-      } else {
-        setEquationEditingLatex('');
-        setEquationIsBlock(false);
-      }
-      setShowEquationPopup(true);
-    };
     const handleOpenChart = () => setShowChartModal(true);
-
-    window.addEventListener('open-fx-wizard', handleOpenFx);
     window.addEventListener('open-chart-modal', handleOpenChart);
     return () => {
-      window.removeEventListener('open-fx-wizard', handleOpenFx);
       window.removeEventListener('open-chart-modal', handleOpenChart);
     };
   }, []);
@@ -1258,6 +1234,8 @@ const RibbonToolbarComponent: React.FC<RibbonToolbarProps> = ({
   const preloadTab = useCallback((tab: RibbonTab) => {
     if (tab === 'seo') {
       import('./ribbon/tabs/SeoTab');
+    } else if (tab === 'plugin') {
+      import('./ribbon/tabs/PluginTab');
     } else if (tab === 'help') {
       import('./ribbon/tabs/HelpTab');
     } else if (tab === 'convert') {
@@ -1282,7 +1260,7 @@ const RibbonToolbarComponent: React.FC<RibbonToolbarProps> = ({
             File
           </button>
 
-          {(['home', 'insert', 'table', 'layout', 'review', 'view', 'format', 'convert', 'seo', 'help'] as RibbonTab[]).map((tab) => {
+          {(['home', 'insert', 'table', 'layout', 'review', 'view', 'format', 'convert', 'seo', 'plugin', 'help'] as RibbonTab[]).map((tab) => {
             const isActive = activeTab === tab;
             const activeTabClass = isDarkUi
               ? 'text-blue-400 font-semibold bg-[#202020] border-t-2 border-blue-500 border-x border-[#333333] shadow-2xs'
@@ -1309,7 +1287,7 @@ const RibbonToolbarComponent: React.FC<RibbonToolbarProps> = ({
                   isActive ? activeTabClass : inactiveTabClass
                 }`}
               >
-                {tab === 'seo' ? 'SEO' : tab.charAt(0).toUpperCase() + tab.slice(1)}
+                {tab === 'seo' ? 'SEO' : tab === 'plugin' ? 'Plugin' : tab.charAt(0).toUpperCase() + tab.slice(1)}
               </button>
             );
           })}
@@ -2511,7 +2489,7 @@ const RibbonToolbarComponent: React.FC<RibbonToolbarProps> = ({
                   </button>
                   <button
                     onClick={() => onUpdateSettings({ showHyperLinkPane: !settings.showHyperLinkPane })}
-                    title={`Hyper Link Toolbar (Current: ${settings.hyperLinkMode === 'edit' ? 'Edit mode' : 'Navigate mode'})`}
+                    title={`Hyperlink Right Toolbar (Current: ${settings.hyperLinkMode === 'edit' ? 'Edit mode' : 'Navigate mode'} - Set URL, open in new tab target="_blank", navigate/edit)`}
                     className={`relative flex flex-col items-center justify-start px-2.5 py-1.5 rounded hover:bg-white hover:shadow-xs cursor-pointer transition-colors ${
                       settings.showHyperLinkPane ? 'bg-blue-100/70 text-[#185abd] shadow-xs' : 'text-neutral-700'
                     }`}
@@ -2524,7 +2502,7 @@ const RibbonToolbarComponent: React.FC<RibbonToolbarProps> = ({
                         }`}
                       />
                     </div>
-                    <span className="text-[11px] font-medium">Hyper</span>
+                    <span className="text-[11px] font-medium">Hyperlink</span>
                   </button>
                 </div>
                 <span className="text-[10px] text-center text-neutral-400 font-medium tracking-wide">Links</span>
@@ -3873,7 +3851,7 @@ const RibbonToolbarComponent: React.FC<RibbonToolbarProps> = ({
                 {/* 9. Comments (Blue MessageSquare with orange badge count) */}
                 <button
                   onClick={() => setShowCommentsPanel(!showCommentsPanel)}
-                  title="Show / Hide Comments Panel"
+                  title={showCommentsPanel ? "Close Comments Toolbar" : "Open Comments Toolbar"}
                   className={`flex flex-col items-center justify-start px-2.5 py-1 rounded cursor-pointer transition-all border min-w-[58px] ${
                     showCommentsPanel
                       ? 'bg-[#dbeafe] border-[#185abd] text-[#185abd]'
@@ -4632,14 +4610,16 @@ const RibbonToolbarComponent: React.FC<RibbonToolbarProps> = ({
               {/* GROUP 6: Math (Fx Equation) */}
               <div className="flex flex-col items-center pr-1.5">
                 <button
-                  onClick={() => {
-                    setEquationEditingLatex('');
-                    setEquationIsBlock(false);
-                    setShowEquationPopup(true);
-                  }}
-                  title="Fx Wizard — Insert Mathematical Equation at current caret"
+                  onClick={() =>
+                    onUpdateSettings({
+                      showFxWizardPane: !settings.showFxWizardPane,
+                      fxWizardLatex: '',
+                      fxWizardIsBlock: false,
+                    })
+                  }
+                  title={`Fx Wizard — ${settings.showFxWizardPane ? 'Close' : 'Open'} Fx Mathematical Equation Right Toolbar`}
                   className={`flex flex-col items-center justify-start px-2.5 py-1 rounded-lg border cursor-pointer min-w-[48px] transition-all ${
-                    showEquationPopup
+                    settings.showFxWizardPane
                       ? isDarkUi
                         ? 'bg-[#1e3a5f] border-[#0078d4] text-[#60a5fa]'
                         : 'bg-[#cde4f7] border-[#185abd] text-[#185abd] shadow-xs'
@@ -4698,6 +4678,29 @@ const RibbonToolbarComponent: React.FC<RibbonToolbarProps> = ({
               }
             >
               <SeoTab
+                editor={editor}
+                settings={settings}
+                onUpdateSettings={onUpdateSettings}
+                isDarkUi={isDarkUi}
+                onNotify={(msg) => {
+                  setReviewNotification(msg);
+                  setTimeout(() => setReviewNotification(null), 3500);
+                }}
+              />
+            </React.Suspense>
+          )}
+
+          {/* PLUGIN TAB (Lazy Loaded with Fast Preload) */}
+          {activeTab === 'plugin' && (
+            <React.Suspense
+              fallback={
+                <div className="flex items-center space-x-2 py-4 px-4 text-xs text-neutral-500">
+                  <div className="w-4 h-4 border-2 border-[#185abd] border-t-transparent rounded-full animate-spin" />
+                  <span>Loading Plugins...</span>
+                </div>
+              }
+            >
+              <PluginTab
                 editor={editor}
                 settings={settings}
                 onUpdateSettings={onUpdateSettings}
@@ -4835,119 +4838,7 @@ const RibbonToolbarComponent: React.FC<RibbonToolbarProps> = ({
         </div>
       )}
 
-      {/* Comments Slide-Over Panel */}
-      {showCommentsPanel && (
-        <div className="fixed top-28 right-6 w-80 bg-white rounded-xl shadow-2xl border border-neutral-200 z-40 overflow-hidden flex flex-col max-h-[calc(100vh-140px)] animate-in fade-in duration-200">
-          <div className="flex items-center justify-between px-4 py-3 bg-neutral-50 border-b border-neutral-200">
-            <div className="flex items-start space-x-2">
-              <MessageSquare size={17} className="text-[#2563eb]" />
-              <h3 className="text-sm font-bold text-neutral-800">Document Comments ({comments.length})</h3>
-            </div>
-            <div className="flex items-start space-x-1">
-              <button
-                onClick={() => {
-                  const sel = editor?.state.doc.textBetween(
-                    editor.state.selection.from,
-                    editor.state.selection.to,
-                    ' '
-                  ) || '';
-                  setCommentTargetSelection(sel);
-                  setShowNewCommentModal(true);
-                }}
-                className="p-1 rounded text-neutral-500 hover:text-neutral-800 hover:bg-neutral-200 transition-colors cursor-pointer"
-                title="Add New Comment"
-              >
-                <MessageSquarePlus size={16} />
-              </button>
-              <button
-                onClick={() => setShowCommentsPanel(false)}
-                className="p-1 rounded text-neutral-500 hover:text-neutral-800 hover:bg-neutral-200 transition-colors cursor-pointer"
-                title="Close Comments Panel"
-              >
-                <X size={16} />
-              </button>
-            </div>
-          </div>
 
-          <div className="flex-1 overflow-y-auto p-3 space-y-3">
-            {comments.length === 0 ? (
-              <div className="text-center py-8 text-neutral-400 text-xs">
-                <MessageSquare size={32} className="mx-auto mb-2 text-neutral-300 opacity-60" />
-                No comments yet. Highlight text and click "New Comment".
-              </div>
-            ) : (
-              comments.map((comment) => (
-                <div
-                  key={comment.id}
-                  className={`p-3 rounded-lg border text-xs transition-all ${
-                    comment.resolved
-                      ? 'bg-neutral-50/70 border-neutral-200 opacity-60'
-                      : 'bg-blue-50/40 border-blue-100 shadow-2xs'
-                  }`}
-                >
-                  <div className="flex items-center justify-between mb-1.5">
-                    <div className="flex items-start space-x-1.5">
-                      <div className="w-5 h-5 rounded-full bg-[#185abd] text-white flex items-center justify-center text-[10px] font-bold">
-                        {comment.author.charAt(0)}
-                      </div>
-                      <span className="font-semibold text-neutral-800">{comment.author}</span>
-                    </div>
-                    <span className="text-[10px] text-neutral-400">{comment.timestamp}</span>
-                  </div>
-
-                  {comment.selectedText && (
-                    <div className="text-[11px] italic bg-white/90 border-l-2 border-[#185abd] px-2 py-1 my-1.5 text-neutral-600 rounded-r">
-                      "{comment.selectedText}"
-                    </div>
-                  )}
-
-                  <p className="text-neutral-700 text-[12px] leading-relaxed mb-2">{comment.text}</p>
-
-                  <div className="flex items-center justify-end space-x-2 pt-1 border-t border-neutral-100">
-                    <button
-                      onClick={() => {
-                        setComments((prev) =>
-                          prev.map((c) => (c.id === comment.id ? { ...c, resolved: !c.resolved } : c))
-                        );
-                      }}
-                      className="text-[11px] font-medium text-blue-600 hover:text-blue-800 transition-colors cursor-pointer"
-                    >
-                      {comment.resolved ? 'Reopen' : '✓ Resolve'}
-                    </button>
-                    <span className="text-neutral-300">•</span>
-                    <button
-                      onClick={() => {
-                        setComments((prev) => prev.filter((c) => c.id !== comment.id));
-                      }}
-                      className="text-[11px] font-medium text-red-500 hover:text-red-700 transition-colors cursor-pointer"
-                    >
-                      Delete
-                    </button>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-
-          <div className="p-2.5 bg-neutral-50 border-t border-neutral-200">
-            <button
-              onClick={() => {
-                const sel = editor?.state.doc.textBetween(
-                  editor.state.selection.from,
-                  editor.state.selection.to,
-                  ' '
-                ) || '';
-                setCommentTargetSelection(sel);
-                setShowNewCommentModal(true);
-              }}
-              className="w-full py-1.5 bg-[#185abd] hover:bg-[#114b9c] text-white rounded-md text-xs font-medium flex items-center justify-center space-x-1.5 transition-colors cursor-pointer"
-            >
-              <MessageSquarePlus size={14} />
-              <span>Add Comment</span>
-            </button>
-          </div>
-        </div>
-      )}
 
       {/* New Comment Modal */}
       {showNewCommentModal && createPortal(
@@ -5204,22 +5095,7 @@ const RibbonToolbarComponent: React.FC<RibbonToolbarProps> = ({
         </React.Suspense>
       )}
 
-      {/* Fx Wizard Equation Popup (Lazy-loaded only when Fx is clicked) */}
-      {showEquationPopup && (
-        <React.Suspense fallback={null}>
-          <EquationWizardPopup
-            editor={editor}
-            initialLatex={equationEditingLatex}
-            isBlockDefault={equationIsBlock}
-            onClose={() => {
-              setShowEquationPopup(false);
-              setEquationEditingLatex('');
-              setEquationIsBlock(false);
-              editor?.commands.focus();
-            }}
-          />
-        </React.Suspense>
-      )}
+
     </div>
   );
 };
